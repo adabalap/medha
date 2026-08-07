@@ -47,7 +47,7 @@ class LocalServer(
 ) {
     private var server: ApplicationEngine? = null
     private val memory = MemoryRepository(db)
-    private val retriever = Retriever(db.documentDao()) // keyword mode until an embedder is wired
+    private val retriever = Retriever(db) // keyword mode until an embedder is wired
 
     fun start() {
         if (server != null) return
@@ -192,19 +192,7 @@ class LocalServer(
                 // ---------- RAG ----------
                 post("/rag/ingest") {
                     val req = call.receive<RagIngestRequest>()
-                    retriever.ingest(
-                        req.collection, req.title, req.source, req.text,
-                        docInsert = { coll, title, source ->
-                            db.documentDao().insertDocument(
-                                com.example.litertservice.data.DocumentEntity(collection = coll, title = title, source = source)
-                            )
-                        },
-                        chunkInsert = { docId, coll, text, emb ->
-                            db.documentDao().insertChunk(
-                                com.example.litertservice.data.ChunkEntity(documentId = docId, collection = coll, text = text, embedding = emb)
-                            )
-                        }
-                    )
+                    retriever.ingest(req.collection, req.title, req.source, req.text)
                     call.respondText("""{"status":"ingested","collection":${jsonStr(req.collection)}}""", ContentType.Application.Json)
                 }
 

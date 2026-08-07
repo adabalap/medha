@@ -6,30 +6,24 @@ import com.example.litertservice.data.MessageEntity
 
 /**
  * Multi-turn memory on top of SQLite. A consumer PWA passes a stable sessionId;
- * Medha keeps the full thread and rebuilds context each turn (bounded to the
- * most recent N messages to protect the KV cache / RAM).
+ * Medha keeps the full thread and rebuilds bounded context each turn.
  */
 class MemoryRepository(private val db: MedhaDatabase) {
 
-    suspend fun getOrCreate(sessionId: String, systemInstruction: String?): ConversationEntity {
-        db.conversationDao().findBySession(sessionId)?.let { return it }
-        val id = db.conversationDao().insert(
-            ConversationEntity(sessionId = sessionId, systemInstruction = systemInstruction)
-        )
-        return db.conversationDao().findBySession(sessionId)!!.copy(id = id)
+    fun getOrCreate(sessionId: String, systemInstruction: String?): ConversationEntity {
+        db.findConversation(sessionId)?.let { return it }
+        db.insertConversation(sessionId, systemInstruction)
+        return db.findConversation(sessionId)!!
     }
 
-    suspend fun appendMessage(conversationId: Long, role: String, content: String) {
-        db.messageDao().insert(MessageEntity(conversationId = conversationId, role = role, content = content))
-        db.conversationDao().touch(conversationId)
+    fun appendMessage(conversationId: Long, role: String, content: String) {
+        db.insertMessage(conversationId, role, content)
+        db.touchConversation(conversationId, null)
     }
 
-    suspend fun history(conversationId: Long, maxMessages: Int = 20): List<MessageEntity> {
-        val recent = db.messageDao().recentForConversation(conversationId, maxMessages)
-        return recent.sortedBy { it.id }
-    }
+    fun history(conversationId: Long, maxMessages: Int = 20): List<MessageEntity> =
+        db.recentMessages(conversationId, maxMessages).sortedBy { it.id }
 
-    /** Flatten history + optional retrieved context into a single prompt. */
     fun buildPrompt(
         systemInstruction: String?,
         history: List<MessageEntity>,
@@ -42,21 +36,21 @@ class MemoryRepository(private val db: MedhaDatabase) {
             retrievedContext.forEachIndexed { i, c -> append("[${i + 1}] ").append(c).append("\n") }
             append("\n")
         }
-        history.forEach { m -> append(m.role.replaceFirstChar { it.uppercase() }).append(": ").append(m.content).append("\n") }
+        history.forEach { m ->
+            append(m.role.replaceFirstChar { it.uppercase() }).append(": ").append(m.content).append("\n")
+        }
         append("User: ").append(userMessage).append("\n")
         append("Assistant:")
     }
 
-    suspend fun clear(sessionId: String) {
-        db.conversationDao().findBySession(sessionId)?.let {
-            db.messageDao().clearConversation(it.id)
-        }
+    fun clear(sessionId: String) {
+        db.findConversation(sessionId)?.let { db.clearMessages(it.id) }
     }
 
-    suspend fun stats(): Map<String, Int> = mapOf(
-        "conversations" to db.conversationDao().count(),
-        "messages" to db.messageDao().count(),
-        "documents" to db.documentDao().docCount(),
-        "chunks" to db.documentDao().chunkCount()
+    fun stats(): Map<String, Int> = mapOf(
+        "conversations" to db.countConversations(),
+        "messages" to db.countMessages(),
+        "documents" to db.countDocuments(),
+        "chunks" to db.countChunks()
     )
 }
