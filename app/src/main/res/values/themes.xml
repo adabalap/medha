@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Medha" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/indigo</item>
+        <item name="colorOnPrimary">@color/on_indigo</item>
+        <item name="colorPrimaryContainer">@color/indigo_container</item>
+        <item name="colorOnPrimaryContainer">@color/on_indigo_container</item>
+        <item name="colorSecondary">@color/saffron</item>
+        <item name="colorOnSecondary">@color/on_saffron</item>
+        <item name="android:statusBarColor">@color/indigo_dark</item>
+    </style>
+</resources>

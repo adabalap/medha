@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- antenna stalk -->
+    <path
+        android:pathData="M54,32 L54,24"
+        android:strokeColor="#FFE9E4FF"
+        android:strokeWidth="2.4"
+        android:strokeLineCap="round" />
+
+    <!-- diya flame (the spark of medha / intelligence) -->
+    <path
+        android:pathData="M54,15 C57.5,19 58.5,22 56.5,24.6 C55.4,26 52.6,26 51.5,24.6 C49.5,22 50.5,19 54,15 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="54" android:startY="15"
+                android:endX="54" android:endY="26"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#FFFFD36E" />
+                <item android:offset="1.0" android:color="#FFF48C2E" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- head: soft rounded square -->
+    <path
+        android:pathData="M36,33 m0,14 a14,14 0,0 1,14 -14 h8 a14,14 0,0 1,14 14 v14 a14,14 0,0 1,-14 14 h-8 a14,14 0,0 1,-14 -14 z"
+        android:fillColor="#FFF3F0FF" />
+
+    <!-- head subtle inner shading -->
+    <path
+        android:pathData="M50,33 h8 a14,14 0,0 1,14 14 v14 a14,14 0,0 1,-14 14 h-8 z"
+        android:fillColor="#FFE7E0FA" />
+
+    <!-- left eye -->
+    <path
+        android:pathData="M48,52 m-4.5,0 a4.5,4.5 0,1 0,9 0 a4.5,4.5 0,1 0,-9 0z"
+        android:fillColor="#FF3B2E7E" />
+    <!-- right eye -->
+    <path
+        android:pathData="M64,52 m-4.5,0 a4.5,4.5 0,1 0,9 0 a4.5,4.5 0,1 0,-9 0z"
+        android:fillColor="#FF3B2E7E" />
+    <!-- eye sparkles -->
+    <path
+        android:pathData="M46.4,50.2 m-1.4,0 a1.4,1.4 0,1 0,2.8 0 a1.4,1.4 0,1 0,-2.8 0z"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:pathData="M62.4,50.2 m-1.4,0 a1.4,1.4 0,1 0,2.8 0 a1.4,1.4 0,1 0,-2.8 0z"
+        android:fillColor="#FFFFFFFF" />
+
+    <!-- cheeks (saffron blush) -->
+    <path
+        android:pathData="M42,60 m-2.4,0 a2.4,2.4 0,1 0,4.8 0 a2.4,2.4 0,1 0,-4.8 0z"
+        android:fillColor="#33F48C2E" />
+    <path
+        android:pathData="M70,60 m-2.4,0 a2.4,2.4 0,1 0,4.8 0 a2.4,2.4 0,1 0,-4.8 0z"
+        android:fillColor="#33F48C2E" />
+
+    <!-- smile -->
+    <path
+        android:pathData="M50,62 Q56,68 62,62"
+        android:strokeColor="#FF5B3FA8"
+        android:strokeWidth="2.6"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+
+    <!-- side ears -->
+    <path android:pathData="M34,50 h-3 v8 h3 z" android:fillColor="#FFCFC4F0" />
+    <path android:pathData="M74,50 h3 v8 h-3 z" android:fillColor="#FFCFC4F0" />
+</vector>
