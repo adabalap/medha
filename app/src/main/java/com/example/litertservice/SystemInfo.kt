@@ -3,6 +3,8 @@ package com.example.litertservice
 import android.app.ActivityManager
 import android.content.Context
 import android.os.Build
+import android.os.PowerManager
+import android.os.StatFs
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.max
 
@@ -11,58 +13,102 @@ import kotlin.math.max
  *
  * Honest note on backend: LiteRT-LM does not expose a "which accelerator am I
  * actually on" getter. We report the *configured* backend (what we asked for)
- * and whether the engine initialized successfully. If GPU init fails the runtime
- * may fall back internally; we surface "configured" vs "loadOk" so the UI can be
- * truthful rather than claim a backend we can't verify.
+ * and whether the engine initialized successfully. If GPU init fails the
+ * runtime may fall back internally; we surface "configured" vs "loadOk" so the
+ * UI can be truthful rather than claim a backend we cannot verify.
  */
 object SystemInfo {
+
+    private val processStart = System.currentTimeMillis()
 
     fun deviceInfo(): Map<String, String> = mapOf(
         "manufacturer" to Build.MANUFACTURER,
         "model" to Build.MODEL,
-        "soc" to (runCatching {
+        "soc" to runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
                 "${Build.SOC_MANUFACTURER} ${Build.SOC_MODEL}" else "unknown"
-        }.getOrDefault("unknown")),
+        }.getOrDefault("unknown"),
         "androidSdk" to Build.VERSION.SDK_INT.toString(),
         "abis" to Build.SUPPORTED_ABIS.joinToString(",")
     )
 
     data class Memory(
-        val totalMb: Long, val availMb: Long, val usedMb: Long,
-        val lowMemory: Boolean, val appUsedMb: Long
+        val totalMb: Long,
+        val availMb: Long,
+        val usedMb: Long,
+        val lowMemory: Boolean,
+        val appUsedMb: Long,
+        val appMaxMb: Long
     )
 
     fun memory(context: Context): Memory {
         val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         val mi = ActivityManager.MemoryInfo()
         am.getMemoryInfo(mi)
-        val totalMb = mi.totalMem / (1024 * 1024)
-        val availMb = mi.availMem / (1024 * 1024)
+        val totalMb = mi.totalMem / MB
+        val availMb = mi.availMem / MB
         val rt = Runtime.getRuntime()
-        val appUsedMb = (rt.totalMemory() - rt.freeMemory()) / (1024 * 1024)
         return Memory(
             totalMb = totalMb,
             availMb = availMb,
             usedMb = max(0, totalMb - availMb),
             lowMemory = mi.lowMemory,
-            appUsedMb = appUsedMb
+            appUsedMb = (rt.totalMemory() - rt.freeMemory()) / MB,
+            appMaxMb = rt.maxMemory() / MB
         )
     }
 
-    // --- Aggregate inference metrics (thread-safe, cheap) ---
+    /** Free space where the model and DB live. A stalled import is usually this. */
+    fun freeStorageMb(context: Context): Long = runCatching {
+        val fs = StatFs(context.filesDir.absolutePath)
+        (fs.availableBlocksLong * fs.blockSizeLong) / MB
+    }.getOrDefault(-1L)
+
+    /**
+     * Thermal headroom matters a lot for sustained on-device inference: a
+     * throttled SoC halves tokens/sec, and without this the dashboard makes it
+     * look like the model got slower for no reason.
+     */
+    fun thermalStatus(context: Context): String {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return "unknown"
+        return runCatching {
+            val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+            when (pm.currentThermalStatus) {
+                PowerManager.THERMAL_STATUS_NONE -> "none"
+                PowerManager.THERMAL_STATUS_LIGHT -> "light"
+                PowerManager.THERMAL_STATUS_MODERATE -> "moderate"
+                PowerManager.THERMAL_STATUS_SEVERE -> "severe"
+                PowerManager.THERMAL_STATUS_CRITICAL -> "critical"
+                PowerManager.THERMAL_STATUS_EMERGENCY -> "emergency"
+                PowerManager.THERMAL_STATUS_SHUTDOWN -> "shutdown"
+                else -> "unknown"
+            }
+        }.getOrDefault("unknown")
+    }
+
+    fun uptimeMs(): Long = System.currentTimeMillis() - processStart
+
+    // ---- Aggregate inference metrics (thread-safe, cheap) ----
     private val requests = AtomicLong(0)
+    private val failures = AtomicLong(0)
+    private val promptTokens = AtomicLong(0)
     private val totalTokens = AtomicLong(0)
     private val totalMs = AtomicLong(0)
+
     @Volatile private var lastTokensPerSec: Double = 0.0
     @Volatile private var lastLatencyMs: Long = 0
 
-    fun record(tokens: Int, ms: Long) {
+    fun record(promptToks: Int, completionToks: Int, ms: Long) {
         requests.incrementAndGet()
-        totalTokens.addAndGet(tokens.toLong())
+        promptTokens.addAndGet(promptToks.toLong())
+        totalTokens.addAndGet(completionToks.toLong())
         totalMs.addAndGet(ms)
         lastLatencyMs = ms
-        lastTokensPerSec = if (ms > 0) tokens * 1000.0 / ms else 0.0
+        lastTokensPerSec = if (ms > 0) completionToks * 1000.0 / ms else 0.0
+    }
+
+    fun recordFailure() {
+        failures.incrementAndGet()
     }
 
     fun metrics(): Map<String, Any> {
@@ -71,14 +117,23 @@ object SystemInfo {
         val ms = totalMs.get()
         return mapOf(
             "totalRequests" to reqs,
+            "totalFailures" to failures.get(),
+            "totalPromptTokens" to promptTokens.get(),
             "totalTokens" to toks,
             "avgTokensPerSec" to if (ms > 0) toks * 1000.0 / ms else 0.0,
             "avgLatencyMs" to if (reqs > 0) ms / reqs else 0L,
             "lastTokensPerSec" to lastTokensPerSec,
-            "lastLatencyMs" to lastLatencyMs
+            "lastLatencyMs" to lastLatencyMs,
+            "uptimeMs" to uptimeMs()
         )
     }
 
-    /** Rough token estimate when the engine doesn't return a count (~4 chars/token). */
-    fun estimateTokens(text: String): Int = max(1, text.length / 4)
+    /**
+     * Rough token estimate when the engine does not return a count (~4 chars per
+     * token for English). Reported as an estimate everywhere it surfaces; do not
+     * bill anything on it.
+     */
+    fun estimateTokens(text: String): Int = if (text.isEmpty()) 0 else max(1, text.length / 4)
+
+    private const val MB = 1024L * 1024L
 }

@@ -3,10 +3,17 @@ name: Build Medha APK
 on:
   push:
     branches: [ main, master ]
-  workflow_dispatch:   # lets you trigger a build manually from the Actions tab
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
 
 permissions:
-  contents: write       # needed to attach APK to a release
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -14,6 +21,39 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # ---------------------------------------------------------------
+      # Fail fast with an actionable message instead of 200 lines of
+      # "Unresolved reference 'room'". This is the exact failure mode that
+      # broke v0.1.1: a Room-annotated source file survived the migration to
+      # hand-written SQL while the dependency and KSP plugin were gone.
+      # ---------------------------------------------------------------
+      - name: Guard against orphaned Room sources
+        run: |
+          set -euo pipefail
+          # Comment lines are stripped before matching: app/build.gradle.kts
+          # documents how to re-enable Room, and that prose must not read as a
+          # live configuration.
+          USES_ROOM=$(grep -rlE "^[^/]*(androidx\.room|@Dao|@Entity|RoomDatabase)" \
+            --include='*.kt' --include='*.java' app/src || true)
+          HAS_DEP=$(grep -rhE "androidx\.room:room-(runtime|compiler|ktx)" \
+            app/build.gradle.kts gradle/libs.versions.toml 2>/dev/null \
+            | grep -vE '^[[:space:]]*(//|#|\*)' || true)
+          HAS_KSP=$(grep -rhE "com\.google\.devtools\.ksp|kotlin-kapt" \
+            build.gradle.kts app/build.gradle.kts 2>/dev/null \
+            | grep -vE '^[[:space:]]*(//|#|\*)' || true)
+
+          if [ -n "$USES_ROOM" ] && { [ -z "$HAS_DEP" ] || [ -z "$HAS_KSP" ]; }; then
+            echo "::error::Room annotations found but Room dependencies and/or KSP are not configured."
+            echo "Offending files:"
+            echo "$USES_ROOM"
+            echo ""
+            echo "This project uses hand-written SQL in data/MedhaDatabase.kt and does NOT use Room."
+            echo "Either delete the file(s) above, or add room-runtime + room-compiler + the KSP"
+            echo "plugin together. See the NOTE ON ROOM block in app/build.gradle.kts."
+            exit 1
+          fi
+          echo "Room guard OK (no orphaned Room sources)."
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -23,20 +63,29 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
       # Generate the Gradle wrapper if it isn't committed, so ./gradlew exists.
+      # Committing gradle/wrapper/gradle-wrapper.jar + gradlew is strongly
+      # preferred: it pins the build tool and removes this step's variability.
       - name: Ensure Gradle wrapper
         run: |
-          if [ ! -f ./gradlew ]; then
+          if [ ! -f ./gradlew ] || [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
+            echo "Wrapper missing; generating one."
             gradle wrapper --gradle-version 8.9
           fi
           chmod +x ./gradlew
 
       - name: Build debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: ./gradlew assembleDebug --stacktrace --no-daemon
+
+      - name: Lint
+        continue-on-error: true
+        run: ./gradlew lintDebug --no-daemon
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -45,10 +94,18 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
-      # Optional: on a tag push, publish the APK as a GitHub Release asset so you
-      # can download it straight to your phone's browser and sideload.
+      - name: Upload lint report
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-report
+          path: app/build/reports/lint-results-debug.html
+          if-no-files-found: ignore
+
       - name: Publish release (tags only)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: app/build/outputs/apk/debug/*.apk
+          generate_release_notes: true

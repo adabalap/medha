@@ -14,18 +14,27 @@
     background:radial-gradient(circle at 50% 40%, #FFD36E, #F48C2E); box-shadow:0 0 18px #f48c2e88; }
   header h1 { margin:0; font-size:20px; }
   header p { margin:2px 0 0; font-size:12px; opacity:.85; }
-  main { padding:16px; max-width:640px; margin:0 auto; }
+  main { padding:16px; max-width:680px; margin:0 auto; }
   .card { background:#fff; border:1px solid var(--line); border-radius:18px; padding:16px; margin-bottom:14px; }
   .row { display:flex; gap:10px; flex-wrap:wrap; }
-  .stat { flex:1; min-width:120px; background:var(--soft); border-radius:12px; padding:10px 12px; }
+  .stat { flex:1; min-width:110px; background:var(--soft); border-radius:12px; padding:10px 12px; }
   .stat .k { font-size:11px; color:#7a6fa8; } .stat .v { font-size:18px; font-weight:700; }
-  textarea { width:100%; border:1px solid var(--line); border-radius:12px; padding:12px; font-size:15px; resize:vertical; }
-  button { background:var(--indigo); color:#fff; border:0; border-radius:12px; padding:12px 18px; font-size:15px; font-weight:600; }
+  textarea, input { width:100%; border:1px solid var(--line); border-radius:12px; padding:12px;
+    font-size:15px; resize:vertical; font-family:inherit; }
+  button { background:var(--indigo); color:#fff; border:0; border-radius:12px; padding:12px 18px;
+    font-size:15px; font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
   button.ghost { background:transparent; color:var(--indigo); }
-  pre { white-space:pre-wrap; background:var(--soft); border-radius:12px; padding:12px; min-height:48px; margin:10px 0 0; }
+  pre { white-space:pre-wrap; word-break:break-word; background:var(--soft); border-radius:12px;
+    padding:12px; min-height:48px; margin:10px 0 0; font-size:14px; }
   .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:12px; font-weight:600; }
-  .ok{background:#d6f5e0;color:#1b8a3a} .warn{background:#fdeecb;color:#a86b00} .err{background:#f7d6d1;color:#c0392b} .idle{background:#e6e0f5;color:#6a5aa0}
-  h3 { margin:0 0 10px; font-size:14px; }
+  .ok{background:#d6f5e0;color:#1b8a3a} .warn{background:#fdeecb;color:#a86b00}
+  .err{background:#f7d6d1;color:#c0392b} .idle{background:#e6e0f5;color:#6a5aa0}
+  h3 { margin:0 0 10px; font-size:14px; display:flex; align-items:center; gap:8px; }
+  .msg { padding:8px 12px; border-radius:12px; margin-bottom:8px; font-size:14px; }
+  .msg.user { background:var(--soft); }
+  .msg.bot { background:#fff; border:1px solid var(--line); }
+  .hint { font-size:11px; color:#7a6fa8; margin-top:8px; }
 </style>
 </head>
 <body>
@@ -50,7 +59,7 @@
   </div>
 
   <div class="card">
-    <h3>Try it</h3>
+    <h3>One-shot generation</h3>
     <textarea id="prompt" rows="3">Give me three tips to save money on daily spending.</textarea>
     <div class="row" style="margin-top:10px">
       <button id="send">Generate</button>
@@ -58,51 +67,215 @@
     </div>
     <pre id="out"></pre>
   </div>
+
+  <div class="card">
+    <h3>Chat with memory</h3>
+    <div id="thread"></div>
+    <textarea id="chatInput" rows="2" placeholder="Medha remembers this thread across restarts…"></textarea>
+    <div class="row" style="margin-top:10px">
+      <button id="chatSend">Send</button>
+      <button id="chatClear" class="ghost">New session</button>
+    </div>
+    <p class="hint">Session: <span id="sid"></span></p>
+  </div>
+
+  <div class="card">
+    <h3>Knowledge (RAG)</h3>
+    <input id="coll" value="demo" placeholder="collection name" />
+    <textarea id="doc" rows="3" style="margin-top:8px"
+      placeholder="Paste text to ingest, then ask a question about it."></textarea>
+    <div class="row" style="margin-top:10px">
+      <button id="ingest">Ingest</button>
+      <button id="ask" class="ghost">Ask with context</button>
+    </div>
+    <pre id="ragOut"></pre>
+  </div>
 </main>
+
 <script>
-const base = location.origin;
-async function j(u){ const r=await fetch(base+u); return r.json(); }
-async function refresh(){
-  try{
-    const h=await j('/health'), s=await j('/system'), m=await j('/metrics');
-    const pill=document.getElementById('pill');
-    if(h.modelLoaded){pill.className='pill ok';pill.textContent='running';}
-    else if(h.error){pill.className='pill err';pill.textContent='load failed';}
-    else{pill.className='pill warn';pill.textContent='loading…';}
-    document.getElementById('backend').textContent=(s.backendConfigured||'—')+(s.backendVerified?'':' (cfg)');
-    document.getElementById('mem').textContent=(s.memUsedMb||0)+'/'+(s.memTotalMb||0)+'MB';
-    document.getElementById('speed').textContent=(m.avgTokensPerSec||0).toFixed(1)+' t/s';
-    document.getElementById('reqs').textContent=m.totalRequests||0;
-    document.getElementById('chats').textContent=m.db_conversations||0;
-    document.getElementById('load').textContent=(s.loadMs||0)+'ms';
-    document.getElementById('device').textContent=(s.manufacturer||'')+' '+(s.model||'')+' · '+(s.soc||'');
-  }catch(e){
-    const pill=document.getElementById('pill'); pill.className='pill idle'; pill.textContent='not running';
+// The Android service substitutes these when serving this page, so the bundled
+// UI needs no setup. Third-party PWAs send the token from the Medha app.
+var TOKEN = "__MEDHA_TOKEN__";
+var base = location.origin;
+
+function headers() {
+  var h = { "Content-Type": "application/json" };
+  if (TOKEN && TOKEN.indexOf("__MEDHA") !== 0) h["Authorization"] = "Bearer " + TOKEN;
+  return h;
+}
+
+async function api(path, opts) {
+  var r = await fetch(base + path, Object.assign({ headers: headers() }, opts || {}));
+  if (!r.ok) {
+    var detail = "HTTP " + r.status;
+    try { var e = await r.json(); if (e.error) detail = e.error; } catch (_) {}
+    throw new Error(detail);
+  }
+  return r.json();
+}
+
+// ------------------------------- status -------------------------------
+
+async function refresh() {
+  var pill = document.getElementById("pill");
+  try {
+    var h = await api("/health");
+    if (h.modelLoaded && h.busy) { pill.className = "pill ok"; pill.textContent = "generating"; }
+    else if (h.modelLoaded)      { pill.className = "pill ok"; pill.textContent = "running"; }
+    else if (h.error)            { pill.className = "pill err"; pill.textContent = "load failed"; }
+    else                         { pill.className = "pill warn"; pill.textContent = "loading…"; }
+
+    var s = await api("/system");
+    var m = await api("/metrics");
+    document.getElementById("backend").textContent =
+      (s.backendConfigured || "—") + (s.backendVerified ? "" : " (cfg)");
+    document.getElementById("mem").textContent = (s.memUsedMb || 0) + "/" + (s.memTotalMb || 0) + "MB";
+    document.getElementById("speed").textContent = (m.avgTokensPerSec || 0).toFixed(1) + " t/s";
+    document.getElementById("reqs").textContent = m.totalRequests || 0;
+    document.getElementById("chats").textContent = m.db_conversations || 0;
+    document.getElementById("load").textContent = (s.loadMs || 0) + "ms";
+    var dev = (s.manufacturer || "") + " " + (s.model || "") + " · " + (s.soc || "");
+    if (s.thermal && s.thermal !== "none" && s.thermal !== "unknown") dev += " · thermal: " + s.thermal;
+    document.getElementById("device").textContent = dev;
+  } catch (e) {
+    pill.className = "pill idle";
+    pill.textContent = String(e.message).indexOf("token") >= 0 ? "unauthorized" : "not running";
   }
 }
-document.getElementById('send').onclick=async()=>{
-  const out=document.getElementById('out'); out.textContent='…';
-  try{
-    const r=await fetch(base+'/generate',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({prompt:document.getElementById('prompt').value})});
-    const d=await r.json();
-    out.textContent=(d.text||JSON.stringify(d))+'\n\n['+d.tokens+' tok · '+d.ms+'ms · '+(d.tokensPerSec||0).toFixed(1)+' t/s]';
-  }catch(e){out.textContent='error: '+e;}
+
+// ---------------------------- one-shot ----------------------------
+
+document.getElementById("send").onclick = async function () {
+  var out = document.getElementById("out");
+  out.textContent = "…";
+  try {
+    var d = await api("/generate", {
+      method: "POST",
+      body: JSON.stringify({ prompt: document.getElementById("prompt").value })
+    });
+    out.textContent = (d.text || JSON.stringify(d)) +
+      "\n\n[" + d.tokens + " tok · " + d.ms + "ms · " + (d.tokensPerSec || 0).toFixed(1) + " t/s]";
+  } catch (e) { out.textContent = "error: " + e.message; }
 };
-document.getElementById('stream').onclick=async()=>{
-  const out=document.getElementById('out'); out.textContent='';
-  try{
-    const r=await fetch(base+'/generate/stream',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({prompt:document.getElementById('prompt').value})});
-    const reader=r.body.getReader(); const dec=new TextDecoder();
-    while(true){ const {value,done}=await reader.read(); if(done)break;
-      dec.decode(value).split('\n').forEach(line=>{
-        if(line.startsWith('data: ')){ const t=line.slice(6); if(t==='[DONE]')return; out.textContent+=t.replace(/\\n/g,'\n'); }
-      });
+
+/**
+ * SSE reader. The previous version split each network chunk on newlines
+ * independently, so an event straddling a chunk boundary was silently
+ * corrupted. This buffers until a complete "\n\n"-terminated event arrives.
+ */
+async function readSse(path, body, onDelta) {
+  var r = await fetch(base + path, {
+    method: "POST", headers: headers(), body: JSON.stringify(body)
+  });
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  var reader = r.body.getReader();
+  var dec = new TextDecoder();
+  var buf = "";
+  for (;;) {
+    var res = await reader.read();
+    if (res.done) break;
+    buf += dec.decode(res.value, { stream: true });
+    var i;
+    while ((i = buf.indexOf("\n\n")) >= 0) {
+      var evt = buf.slice(0, i);
+      buf = buf.slice(i + 2);
+      var lines = evt.split("\n");
+      for (var n = 0; n < lines.length; n++) {
+        if (lines[n].indexOf("data: ") !== 0) continue;
+        var raw = lines[n].slice(6);
+        if (raw === "[DONE]") return;
+        // Payload is a JSON string, so embedded newlines round-trip intact.
+        try { onDelta(JSON.parse(raw)); } catch (_) { onDelta(raw); }
+      }
     }
-  }catch(e){out.textContent='error: '+e;}
+  }
+}
+
+document.getElementById("stream").onclick = async function () {
+  var out = document.getElementById("out");
+  out.textContent = "";
+  try {
+    await readSse("/generate/stream",
+      { prompt: document.getElementById("prompt").value },
+      function (d) { out.textContent += d; });
+  } catch (e) { out.textContent = "error: " + e.message; }
 };
-refresh(); setInterval(refresh,2500);
+
+// ------------------------------ chat ------------------------------
+
+function newSession() {
+  var id = "demo-" + Math.random().toString(36).slice(2, 10);
+  document.getElementById("sid").textContent = id;
+  document.getElementById("thread").innerHTML = "";
+  return id;
+}
+var sessionId = newSession();
+
+function bubble(role, text) {
+  var d = document.createElement("div");
+  d.className = "msg " + (role === "user" ? "user" : "bot");
+  d.textContent = text;
+  document.getElementById("thread").appendChild(d);
+  return d;
+}
+
+document.getElementById("chatSend").onclick = async function () {
+  var input = document.getElementById("chatInput");
+  var text = input.value.trim();
+  if (!text) return;
+  input.value = "";
+  bubble("user", text);
+  var pending = bubble("bot", "…");
+  try {
+    var d = await api("/chat", {
+      method: "POST",
+      body: JSON.stringify({ sessionId: sessionId, message: text })
+    });
+    pending.textContent = d.text;
+  } catch (e) { pending.textContent = "error: " + e.message; }
+};
+
+document.getElementById("chatClear").onclick = function () { sessionId = newSession(); };
+
+// ------------------------------- RAG -------------------------------
+
+document.getElementById("ingest").onclick = async function () {
+  var out = document.getElementById("ragOut");
+  out.textContent = "…";
+  try {
+    var d = await api("/rag/ingest", {
+      method: "POST",
+      body: JSON.stringify({
+        collection: document.getElementById("coll").value,
+        text: document.getElementById("doc").value,
+        title: "pasted"
+      })
+    });
+    out.textContent = "Ingested " + d.chunks + " chunk(s) into '" + d.collection + "'.";
+  } catch (e) { out.textContent = "error: " + e.message; }
+};
+
+document.getElementById("ask").onclick = async function () {
+  var out = document.getElementById("ragOut");
+  var q = document.getElementById("chatInput").value.trim() ||
+          document.getElementById("prompt").value.trim();
+  out.textContent = "…";
+  try {
+    var d = await api("/chat", {
+      method: "POST",
+      body: JSON.stringify({
+        sessionId: sessionId,
+        message: q,
+        collection: document.getElementById("coll").value,
+        ragTopK: 3
+      })
+    });
+    out.textContent = d.text;
+  } catch (e) { out.textContent = "error: " + e.message; }
+};
+
+refresh();
+setInterval(refresh, 2500);
 </script>
 </body>
 </html>

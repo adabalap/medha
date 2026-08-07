@@ -1,0 +1,244 @@
+import kotlin.math.ln
+import kotlin.math.sqrt
+
+// ---------------------------------------------------------------------------
+// Verbatim copies of the pure-logic bodies from the patched sources, so they
+// can actually be executed. Any divergence is checked by diff afterwards.
+// ---------------------------------------------------------------------------
+
+private const val TARGET_CHARS = 600
+private const val OVERLAP_CHARS = 100
+private val TOKEN_SPLIT = Regex("[^a-z0-9]+")
+private val PARA_SPLIT = Regex("\n\\s*\n")
+private val STOPWORDS = setOf(
+    "the", "and", "for", "are", "but", "not", "you", "all", "any", "can",
+    "her", "was", "one", "our", "out", "day", "get", "has", "him", "his",
+    "how", "its", "new", "now", "old", "see", "two", "way", "who", "did",
+    "yes", "his", "from", "they", "this", "that", "with", "have", "what",
+    "were", "when", "your", "said", "there", "their", "which", "about"
+)
+
+fun tokenize(s: String): Set<String> =
+    s.lowercase().split(TOKEN_SPLIT).filter { it.length > 2 && it !in STOPWORDS }.toSet()
+
+fun chunk(text: String, target: Int = TARGET_CHARS, overlap: Int = OVERLAP_CHARS): List<String> {
+    val paras = text.split(PARA_SPLIT).map { it.trim() }.filter { it.isNotEmpty() }
+    if (paras.isEmpty()) return listOf(text.trim())
+    val out = mutableListOf<String>()
+    val sb = StringBuilder()
+    for (p in paras) {
+        if (p.length > target * 2) {
+            if (sb.isNotBlank()) { out.add(sb.toString().trim()); sb.setLength(0) }
+            var i = 0
+            while (i < p.length) {
+                val end = minOf(i + target, p.length)
+                out.add(p.substring(i, end).trim())
+                i = if (end == p.length) end else end - overlap
+            }
+            continue
+        }
+        if (sb.length + p.length > target && sb.isNotBlank()) {
+            val done = sb.toString().trim()
+            out.add(done)
+            sb.setLength(0)
+            if (done.length > overlap) sb.append(done.takeLast(overlap)).append("\n\n")
+        }
+        sb.append(p).append("\n\n")
+    }
+    if (sb.isNotBlank()) out.add(sb.toString().trim())
+    return out.filter { it.isNotBlank() }.ifEmpty { listOf(text.trim()) }
+}
+
+data class Hit(val text: String, val score: Double, val mode: String)
+
+fun lexicalRank(chunks: List<String>, queryTerms: Set<String>, topK: Int): List<Hit> {
+    val tokenised = chunks.map { it to tokenize(it) }
+    val n = tokenised.size.toDouble()
+    val docFreq = HashMap<String, Int>()
+    for (term in queryTerms) docFreq[term] = tokenised.count { it.second.contains(term) }
+    return tokenised.mapNotNull { (chunkText, terms) ->
+        if (terms.isEmpty()) return@mapNotNull null
+        var score = 0.0
+        for (term in queryTerms) {
+            if (!terms.contains(term)) continue
+            val df = docFreq[term] ?: 0
+            if (df == 0) continue
+            score += ln(1.0 + n / df)
+        }
+        if (score <= 0.0) null else Hit(chunkText, score / sqrt(terms.size.toDouble()), "lexical")
+    }.sortedByDescending { it.score }.take(topK)
+}
+
+// --- MemoryRepository.buildPrompt ---
+data class Msg(val role: String, val content: String)
+
+fun buildPrompt(
+    systemInstruction: String?,
+    history: List<Msg>,
+    userMessage: String,
+    retrievedContext: List<String> = emptyList(),
+    charBudget: Int = 6000
+): String {
+    val head = StringBuilder()
+    systemInstruction?.takeIf { it.isNotBlank() }
+        ?.let { head.append("System: ").append(it).append("\n\n") }
+    if (retrievedContext.isNotEmpty()) {
+        head.append("Relevant context:\n")
+        retrievedContext.forEachIndexed { i, c ->
+            head.append("[").append(i + 1).append("] ").append(c.trim()).append("\n")
+        }
+        head.append("\n")
+    }
+    val tail = "User: $userMessage\nAssistant:"
+    var remaining = charBudget - head.length - tail.length
+    val kept = ArrayList<String>()
+    for (m in history.asReversed()) {
+        val line = "${m.role.replaceFirstChar { it.uppercase() }}: ${m.content}\n"
+        if (line.length > remaining) break
+        kept.add(line)
+        remaining -= line.length
+    }
+    kept.reverse()
+    return buildString {
+        append(head)
+        kept.forEach { append(it) }
+        append(tail)
+    }
+}
+
+// --- LlmEngine cumulative-vs-delta detection ---
+fun collectDeltas(emissions: List<String>): List<String> {
+    var acc = ""
+    val out = mutableListOf<String>()
+    for (piece in emissions) {
+        if (piece.isEmpty()) continue
+        val delta = if (piece.startsWith(acc) && piece.length >= acc.length) piece.substring(acc.length) else piece
+        if (delta.isNotEmpty()) { acc += delta; out.add(delta) }
+    }
+    return out
+}
+
+// --- LocalServer.constantTimeEquals ---
+fun constantTimeEquals(a: String, b: String): Boolean {
+    if (a.length != b.length) return false
+    var diff = 0
+    for (i in a.indices) diff = diff or (a[i].code xor b[i].code)
+    return diff == 0
+}
+
+// --- MedhaDatabase FTS term sanitiser ---
+fun sanitizeFtsTerms(terms: List<String>): String? {
+    val safe = terms.mapNotNull { t ->
+        val cleaned = t.filter { ch -> ch.isLetterOrDigit() }
+        if (cleaned.length > 2) cleaned else null
+    }.distinct()
+    return if (safe.isEmpty()) null else safe.joinToString(" OR ")
+}
+
+// --- LocalServer path-traversal whitelist ---
+fun assetPathAllowed(name: String): Boolean {
+    val clean = name.trim('/')
+    if (clean.isEmpty()) return false
+    return clean.split('/').all { seg ->
+        seg.isNotEmpty() && seg != "." && seg != ".." && !seg.contains('\\')
+    }
+}
+
+// ===========================================================================
+
+var passed = 0
+var failed = 0
+fun check(name: String, cond: Boolean, detail: String = "") {
+    if (cond) { passed++; println("  PASS  $name") }
+    else { failed++; println("  FAIL  $name  $detail") }
+}
+
+fun main() {
+    println("== chunking ==")
+    val doc = (1..12).joinToString("\n\n") { "Paragraph $it. " + "word".repeat(30) }
+    val cs = chunk(doc)
+    check("produces multiple chunks", cs.size > 1, "got ${cs.size}")
+    check("no chunk wildly over target", cs.all { it.length <= TARGET_CHARS * 2 + 50 },
+        "max=${cs.maxOf { it.length }}")
+    check("chunks are non-blank", cs.all { it.isNotBlank() })
+    // Overlap: consecutive chunks should share a tail/head fragment.
+    val overlapSeen = cs.zipWithNext().any { (a, b) -> b.take(40).isNotEmpty() && a.takeLast(40).isNotEmpty() && b.contains(a.takeLast(30)) }
+    check("overlap present between chunks", overlapSeen)
+
+    val huge = "X".repeat(5000)
+    val hc = chunk(huge)
+    check("oversized single paragraph is hard-split", hc.size > 1, "got ${hc.size}")
+    check("hard-split pieces bounded", hc.all { it.length <= TARGET_CHARS })
+
+    check("empty-ish text survives", chunk("   ").isNotEmpty())
+    check("single short para -> one chunk", chunk("Hello world here.").size == 1)
+
+    println("\n== lexical ranking (IDF) ==")
+    val corpus = listOf(
+        "The quarterly revenue report mentions revenue revenue revenue everywhere.",
+        "Mitochondria produce adenosine triphosphate inside the cell.",
+        "Revenue grew because mitochondria research funding increased sharply."
+    )
+    val hits = lexicalRank(corpus, tokenize("mitochondria"), 3)
+    check("rare term retrieves the right docs", hits.isNotEmpty())
+    check("top hit contains the rare term", hits.first().text.lowercase().contains("mitochondria"),
+        "top='${hits.firstOrNull()?.text?.take(40)}'")
+    val revHits = lexicalRank(corpus, tokenize("revenue"), 3)
+    check("common-term query still returns hits", revHits.isNotEmpty())
+    check("no hits for absent term", lexicalRank(corpus, tokenize("zebra"), 3).isEmpty())
+    check("stopword-only query yields no terms", tokenize("the and for with that").isEmpty())
+
+    println("\n== prompt budgeting ==")
+    val longHistory = (1..200).map { Msg(if (it % 2 == 0) "assistant" else "user", "message $it " + "z".repeat(100)) }
+    val p = buildPrompt("Be terse.", longHistory, "final question")
+    check("prompt respects char budget", p.length <= 6000, "len=${p.length}")
+    check("prompt keeps the newest turns", p.contains("message 200"))
+    check("prompt drops the oldest turns", !p.contains("message 1 "))
+    check("system instruction present", p.startsWith("System: Be terse."))
+    check("ends with assistant cue", p.endsWith("User: final question\nAssistant:"))
+
+    val withCtx = buildPrompt(null, emptyList(), "q", listOf("fact one", "fact two"))
+    check("retrieved context is numbered", withCtx.contains("[1] fact one") && withCtx.contains("[2] fact two"))
+
+    // Budget so small nothing fits: must still be well-formed.
+    val tiny = buildPrompt("sys", longHistory, "q", emptyList(), charBudget = 40)
+    check("degenerate budget still well-formed", tiny.endsWith("User: q\nAssistant:"))
+
+    println("\n== stream delta detection ==")
+    val cumulative = listOf("Hel", "Hello", "Hello wo", "Hello world")
+    check("cumulative stream -> deltas", collectDeltas(cumulative) == listOf("Hel", "lo", " wo", "rld"),
+        collectDeltas(cumulative).toString())
+    val deltas = listOf("Hel", "lo", " wo", "rld")
+    check("already-delta stream passes through", collectDeltas(deltas) == deltas,
+        collectDeltas(deltas).toString())
+    check("reassembled text is correct", collectDeltas(cumulative).joinToString("") == "Hello world")
+    check("empty emissions ignored", collectDeltas(listOf("a", "", "b")) == listOf("a", "b"))
+
+    println("\n== constant-time token compare ==")
+    check("equal tokens match", constantTimeEquals("abc123", "abc123"))
+    check("different tokens reject", !constantTimeEquals("abc123", "abc124"))
+    check("length mismatch rejects", !constantTimeEquals("abc", "abcd"))
+    check("empty vs empty", constantTimeEquals("", ""))
+
+    println("\n== FTS term sanitiser ==")
+    check("injection chars stripped", sanitizeFtsTerms(listOf("foo*", "bar\"OR\"")) == "foo OR barORbar" ||
+        sanitizeFtsTerms(listOf("foo*", "bar\"OR\"")) == "foo OR barOR",
+        sanitizeFtsTerms(listOf("foo*", "bar\"OR\"")).toString())
+    check("short tokens dropped", sanitizeFtsTerms(listOf("ab", "xy")) == null)
+    check("normal terms joined with OR", sanitizeFtsTerms(listOf("alpha", "beta")) == "alpha OR beta")
+    check("no raw quotes survive", sanitizeFtsTerms(listOf("a\"b\"c", "d'e'f"))?.none { it == '"' || it == '\'' } ?: true)
+
+    println("\n== asset path whitelist ==")
+    check("normal path allowed", assetPathAllowed("index.html"))
+    check("nested path allowed", assetPathAllowed("css/app.css"))
+    check("dotdot rejected", !assetPathAllowed("../secrets"))
+    check("nested dotdot rejected", !assetPathAllowed("css/../../etc/passwd"))
+    check("classic filter bypass rejected", !assetPathAllowed("....//etc/passwd"))
+    check("backslash rejected", !assetPathAllowed("css\\..\\x"))
+    check("empty rejected", !assetPathAllowed(""))
+    check("root slash rejected", !assetPathAllowed("/"))
+
+    println("\n----------------------------------------")
+    println("passed=$passed  failed=$failed")
+    if (failed > 0) throw AssertionError("$failed check(s) failed")
+}

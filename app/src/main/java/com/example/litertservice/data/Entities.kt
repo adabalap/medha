@@ -1,6 +1,12 @@
 package com.example.litertservice.data
 
-// Plain data classes (no Room annotations). Persistence handled by MedhaDatabase.
+/**
+ * Plain data classes. Persistence is hand-written SQL in [MedhaDatabase].
+ *
+ * DELIBERATELY NO ROOM ANNOTATIONS. Room would drag in KSP, whose version is
+ * hard-pinned to the Kotlin version; that coupling is the single most common
+ * cause of CI breakage on this project. See docs/ARCHITECTURE-DB.md.
+ */
 
 data class ConversationEntity(
     val id: Long = 0,
@@ -34,4 +40,19 @@ data class ChunkEntity(
     val text: String,
     val embedding: String? = null,
     val createdAt: Long = System.currentTimeMillis()
+)
+
+/** Summary row for listing sessions in a consumer PWA. */
+data class ConversationSummary(
+    val sessionId: String,
+    val title: String?,
+    val messageCount: Int,
+    val updatedAt: Long
+)
+
+/** Summary row for listing RAG collections. */
+data class CollectionSummary(
+    val collection: String,
+    val documents: Int,
+    val chunks: Int
 )

@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Medha</string>
+    <string name="no_model_selected">No model selected</string>
+    <string name="importing_model">Importing model…</string>
+    <string name="api_access">API access</string>
+    <string name="api_access_hint">Other apps and PWAs must send this token as
+        Authorization: Bearer &lt;token&gt;. The bundled demo page gets it automatically.</string>
+    <string name="token_pending">Token is created when you first start Medha</string>
+    <string name="copy_token">Copy API token</string>
 </resources>

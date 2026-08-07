@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The imported model can be multiple GB and the API token is a credential.
+  Neither belongs in a cloud backup. Conversation memory is excluded too:
+  restoring it onto a different device would resurrect chat history the user
+  may well have deleted deliberately.
+-->
+<full-backup-content>
+    <exclude domain="file" path="models/" />
+    <exclude domain="database" path="medha.db" />
+    <exclude domain="sharedpref" path="com.example.litertservice_preferences.xml" />
+</full-backup-content>
