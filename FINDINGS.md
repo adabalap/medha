@@ -344,6 +344,86 @@ mismatches.
 
 ---
 
+## 5a. Post-review fix: `onStart` name collision (my bug)
+
+Reported after the first review pass:
+
+```
+MainActivity.kt:110:17 'onStart' hides member of supertype 'AppCompatActivity'
+and needs an 'override' modifier.
+```
+
+**This was introduced by me**, not present in your original tree. I extracted the
+Start-button click handler out of `onCreate` into its own method and named it
+`onStart()`, which collides with `Activity.onStart()`.
+
+### The fix is to rename, not to add `override`
+
+The two remedies are not interchangeable, and the compiler-suggested one is
+wrong here:
+
+- `override fun onStart()` compiles cleanly and then **misbehaves at runtime**.
+  `Activity.onStart()` fires on every transition to visible — so the service
+  would launch on returning from the SAF file picker, and again on returning
+  from the battery-optimisation settings screen. It would also have to call
+  `super.onStart()` and could not stay `private`, since the platform callback is
+  `protected`.
+- Renaming is correct because the method was never a lifecycle hook. It is now
+  `startMedha()`, called from `binding.btnStart.setOnClickListener { ... }`.
+
+### Audit of every other lifecycle method
+
+All correctly declared; nothing else was missing `override`:
+
+| Class | Methods |
+|---|---|
+| `MainActivity : AppCompatActivity` | `onCreate`, `onResume`, `onPause`, `onDestroy` |
+| `InferenceService : Service` | `onCreate`, `onStartCommand`, `onTrimMemory`, `onDestroy`, `onBind` |
+| `MedhaDatabase : SQLiteOpenHelper` | `onConfigure`, `onCreate`, `onUpgrade`, `onDowngrade` |
+| anonymous `object : Runnable` | `run` |
+
+A wider sweep for private methods shadowing inherited `Context`/`Activity`/
+`Service` members (`startService`, `getSystemService`, `finish`, ...) also came
+back clean.
+
+### Why my earlier check missed it
+
+Stated plainly: `kotlinc` in the review sandbox had no `android.jar`, so
+`AppCompatActivity` was an unresolved symbol. With no supertype to compare
+against, the compiler physically could not detect the hiding — the diagnostic
+only exists once the real Android classpath is present. My "no syntax errors"
+result was accurate and also insufficient, and I should have said so more
+sharply the first time.
+
+### Durable fix
+
+`tools/check_overrides.py` now runs in CI before the JDK step. It needs no
+Android SDK, so it catches this class of error in a source-only environment —
+exactly the gap that let this through. Its failure message spells out both
+candidate fixes and warns that `override` on a non-callback is a runtime bug.
+
+Verified against four scenarios: clean tree (pass), the reported `onStart` bug
+(caught at the right line), `onResume` stripped of `override` (caught),
+`Service.onDestroy` stripped of `override` (caught).
+
+---
+
+## 5b. The native-library stripping warning
+
+```
+Unable to strip the following native libraries; packaging them as-is:
+  libLiteRt.so, libLiteRtClGlAccelerator.so, liblitertlm_jni.so
+```
+
+**Non-blocking and unrelated to the failure.** AGP tries to run the NDK's
+`strip` on bundled `.so` files to drop debug symbols; when no compatible NDK is
+installed on the runner it emits this and packages the libraries unmodified. The
+only consequence is a larger APK. It is not worth chasing for a sideload build.
+If the size matters, install a matching NDK in CI via
+`android-actions/setup-android` and AGP will strip them.
+
+---
+
 ## 6. Suggested next steps
 
 1. **Commit the Gradle wrapper** (`gradlew`, `gradle/wrapper/gradle-wrapper.jar`).

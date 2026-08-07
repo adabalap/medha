@@ -55,6 +55,14 @@ jobs:
           fi
           echo "Room guard OK (no orphaned Room sources)."
 
+      # Catches "'onX' hides member of supertype and needs an 'override'
+      # modifier" in seconds, and — more importantly — tells you which of the
+      # two fixes you actually want. Adding `override` to a click handler that
+      # merely happens to be named onStart() compiles, then misfires on every
+      # lifecycle transition.
+      - name: Check lifecycle overrides
+        run: python3 tools/check_overrides.py app/src
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
