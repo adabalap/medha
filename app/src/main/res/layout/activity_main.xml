@@ -17,13 +17,21 @@
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
-            android:layout_height="?attr/actionBarSize"
+            android:layout_height="wrap_content"
+            android:minHeight="?attr/actionBarSize"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp"
             android:background="@color/indigo_dark"
+            app:contentInsetStartWithNavigation="8dp"
             app:navigationIcon="@drawable/ic_menu"
-            app:navigationIconTint="@color/on_indigo"
-            app:title="@string/nav_header_title"
-            app:titleTextColor="@color/on_indigo"
-            app:subtitleTextColor="#D8CCF4" />
+            app:navigationIconTint="@color/on_indigo">
+
+            <include
+                android:id="@+id/toolbarTitle"
+                layout="@layout/toolbar_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+        </com.google.android.material.appbar.MaterialToolbar>
 
         <androidx.core.widget.NestedScrollView
             android:layout_width="match_parent"
@@ -68,6 +76,55 @@
                             android:text="Tap Start to load the model"
                             android:textColor="#D8CCF4"
                             android:textSize="13sp" />
+
+                        <com.google.android.material.progressindicator.LinearProgressIndicator
+                            android:id="@+id/loadProgress"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:indeterminate="true"
+                            android:visibility="gone"
+                            app:trackCornerRadius="4dp"
+                            app:indicatorColor="@color/saffron"
+                            app:trackColor="#40FFFFFF" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:layout_marginTop="14dp"
+                            android:baselineAligned="false">
+
+                            <LinearLayout
+                                android:layout_width="0dp" android:layout_weight="1"
+                                android:layout_height="wrap_content" android:orientation="vertical">
+                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                    android:text="@string/stat_speed" android:textColor="#B9A9EC" android:textSize="10sp" />
+                                <TextView android:id="@+id/statSpeed" android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content" android:text="—"
+                                    android:textColor="@color/on_indigo" android:textSize="17sp" android:textStyle="bold" />
+                            </LinearLayout>
+
+                            <LinearLayout
+                                android:layout_width="0dp" android:layout_weight="1"
+                                android:layout_height="wrap_content" android:orientation="vertical">
+                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                    android:text="@string/stat_queue" android:textColor="#B9A9EC" android:textSize="10sp" />
+                                <TextView android:id="@+id/statQueue" android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content" android:text="0"
+                                    android:textColor="@color/on_indigo" android:textSize="17sp" android:textStyle="bold" />
+                            </LinearLayout>
+
+                            <LinearLayout
+                                android:layout_width="0dp" android:layout_weight="1"
+                                android:layout_height="wrap_content" android:orientation="vertical">
+                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                    android:text="@string/stat_thermal" android:textColor="#B9A9EC" android:textSize="10sp" />
+                                <TextView android:id="@+id/statThermal" android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content" android:text="—"
+                                    android:textColor="@color/on_indigo" android:textSize="17sp" android:textStyle="bold" />
+                            </LinearLayout>
+                        </LinearLayout>
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
@@ -230,7 +287,74 @@
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
-                <!-- ───────────────────── API access ───────────────────── -->
+                <!-- thermal + scheduling -->
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    app:cardCornerRadius="18dp"
+                    app:cardElevation="0dp"
+                    app:strokeColor="@color/indigo_container"
+                    app:strokeWidth="1dp"
+                    app:cardBackgroundColor="#FFFFFF">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:layout_width="wrap_content" android:layout_height="wrap_content"
+                            android:text="@string/sched_title" android:textColor="@color/indigo_dark"
+                            android:textStyle="bold" android:textSize="14sp" />
+
+                        <TextView
+                            android:layout_width="match_parent" android:layout_height="wrap_content"
+                            android:paddingTop="4dp" android:text="@string/sched_hint"
+                            android:textColor="@color/neutral_grey" android:textSize="12sp" />
+
+                        <TextView
+                            android:id="@+id/pauseLabel"
+                            android:layout_width="match_parent" android:layout_height="wrap_content"
+                            android:paddingTop="14dp" android:text="@string/sched_pause"
+                            android:textColor="#333333" android:textSize="13sp" />
+                        <com.google.android.material.slider.Slider
+                            android:id="@+id/pauseSlider"
+                            android:layout_width="match_parent" android:layout_height="wrap_content"
+                            android:valueFrom="0.30" android:valueTo="1.20" android:stepSize="0.05"
+                            android:value="0.85" />
+
+                        <TextView
+                            android:id="@+id/resumeLabel"
+                            android:layout_width="match_parent" android:layout_height="wrap_content"
+                            android:text="@string/sched_resume"
+                            android:textColor="#333333" android:textSize="13sp" />
+                        <com.google.android.material.slider.Slider
+                            android:id="@+id/resumeSlider"
+                            android:layout_width="match_parent" android:layout_height="wrap_content"
+                            android:valueFrom="0.20" android:valueTo="1.10" android:stepSize="0.05"
+                            android:value="0.70" />
+
+                        <com.google.android.material.materialswitch.MaterialSwitch
+                            android:id="@+id/switchCharging"
+                            android:layout_width="match_parent" android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="@string/sched_charging" android:textSize="13sp" />
+
+                        <TextView
+                            android:id="@+id/schedState"
+                            android:layout_width="match_parent" android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:background="@drawable/bg_stat"
+                            android:padding="10dp"
+                            android:text="@string/sched_idle"
+                            android:textColor="#555555" android:textSize="12sp"
+                            android:fontFamily="monospace" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- API access -->
                 <com.google.android.material.card.MaterialCardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"

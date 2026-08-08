@@ -7,7 +7,6 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.content.SharedPreferences
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -15,6 +14,10 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.preference.PreferenceManager
 import com.adabala.medha.data.MedhaDatabase
+import com.adabala.medha.auth.ClientRegistry
+import com.adabala.medha.connectors.SmsConnector
+import com.adabala.medha.notify.NotificationHub
+import com.adabala.medha.sched.InferenceScheduler
 import com.adabala.medha.rag.AiEdgeEmbedder
 import com.adabala.medha.rag.Embedder
 import com.adabala.medha.rag.NoEmbedder
@@ -24,7 +27,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import java.security.SecureRandom
 
 /**
  * Medha foreground service. Loads the model once and keeps the HTTP server + DB
@@ -36,6 +38,10 @@ class InferenceService : Service() {
     private lateinit var engine: LlmEngine
     private var server: LocalServer? = null
     private var embedder: Embedder = NoEmbedder
+    private lateinit var scheduler: InferenceScheduler
+    private lateinit var registry: ClientRegistry
+    private lateinit var sms: SmsConnector
+    private lateinit var notifier: NotificationHub
     private var wakeLock: PowerManager.WakeLock? = null
 
     private var currentPort: Int = -1
@@ -44,6 +50,10 @@ class InferenceService : Service() {
     override fun onCreate() {
         super.onCreate()
         engine = LlmEngine(applicationContext)
+        registry = ClientRegistry.get(applicationContext)
+        sms = SmsConnector(applicationContext)
+        notifier = NotificationHub(applicationContext)
+        scheduler = InferenceScheduler(applicationContext, loadSchedulerConfig())
         startForeground(NOTIF_ID, buildNotification("Starting Medha…"))
         acquireWakeLock()
     }
@@ -69,7 +79,9 @@ class InferenceService : Service() {
             return START_STICKY
         }
 
-        val token = ensureApiToken(prefs)
+        // Scheduler settings are re-read on every start so the UI sliders take
+        // effect without needing a full service restart.
+        scheduler.config = loadSchedulerConfig()
         val requireAuth = prefs.getBoolean(KEY_REQUIRE_AUTH, true)
         val db = MedhaDatabase.get(applicationContext)
 
@@ -84,7 +96,10 @@ class InferenceService : Service() {
         // hitting Start silently kept serving on the old one.
         if (server == null || currentPort != port) {
             server?.stop()
-            server = LocalServer(applicationContext, engine, port, db, token, requireAuth, embedder)
+            server = LocalServer(
+                applicationContext, engine, port, db, requireAuth, embedder,
+                registry, scheduler, sms, notifier
+            )
                 .also { runCatching { it.start() }.onFailure { e -> onServerFailed(e, port) } }
             currentPort = port
         }
@@ -151,17 +166,15 @@ class InferenceService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    // --------------------------- token ---------------------------
-
-    /**
-     * Provisions a per-install bearer token on first run. 160 bits from
-     * SecureRandom; stored in default prefs, which live inside the app sandbox.
-     */
-    private fun ensureApiToken(prefs: SharedPreferences): String {
-        prefs.getString(KEY_API_TOKEN, null)?.takeIf { it.length >= 16 }?.let { return it }
-        val token = generateToken()
-        prefs.edit().putString(KEY_API_TOKEN, token).apply()
-        return token
+    private fun loadSchedulerConfig(): InferenceScheduler.Config {
+        val p = PreferenceManager.getDefaultSharedPreferences(this)
+        return InferenceScheduler.Config(
+            maxQueueDepth = p.getInt(KEY_QUEUE_DEPTH, 8),
+            thermalPauseAt = p.getFloat(KEY_THERMAL_PAUSE, 0.85f),
+            thermalResumeAt = p.getFloat(KEY_THERMAL_RESUME, 0.70f),
+            batchRequiresCharging = p.getBoolean(KEY_BATCH_CHARGING, false),
+            batchMinBatteryPercent = p.getInt(KEY_BATCH_MIN_BATTERY, 20)
+        ).validated()
     }
 
     // ------------------------- wake lock -------------------------
@@ -229,16 +242,16 @@ class InferenceService : Service() {
         const val KEY_PORT = "server_port"
         const val KEY_BACKEND = "backend"
         const val KEY_MODEL_URI = "model_uri"
+        /** Legacy single token. Read once by ClientRegistry to seed the admin client. */
         const val KEY_API_TOKEN = "api_token"
         const val KEY_REQUIRE_AUTH = "require_auth"
+        const val KEY_THERMAL_PAUSE = "thermal_pause"
+        const val KEY_THERMAL_RESUME = "thermal_resume"
+        const val KEY_BATCH_CHARGING = "batch_charging"
+        const val KEY_BATCH_MIN_BATTERY = "batch_min_battery"
+        const val KEY_QUEUE_DEPTH = "queue_depth"
 
         const val DEFAULT_PORT = "8080"
 
-        /** 160 bits of SecureRandom, hex encoded. Shared with the settings UI. */
-        fun generateToken(): String {
-            val bytes = ByteArray(20)
-            SecureRandom().nextBytes(bytes)
-            return bytes.joinToString("") { b -> "%02x".format(b) }
-        }
     }
 }

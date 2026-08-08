@@ -22,6 +22,13 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.GravityCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import com.adabala.medha.auth.ClientRegistry
+import com.adabala.medha.connectors.SmsConnector
+import com.adabala.medha.sched.InferenceScheduler
+import android.widget.EditText
+import android.widget.LinearLayout
 import androidx.preference.PreferenceManager
 import com.adabala.medha.databinding.ActivityMainBinding
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -57,8 +64,18 @@ class MainActivity : AppCompatActivity() {
     private var startRequestedAt = 0L
     /** Last /system payload, reused by the Thermal & hardware dialog. */
     private var lastSystemJson: String? = null
+    private var lastSchedulerJson: String? = null
 
     private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(this) }
+
+    private val registry by lazy { ClientRegistry.get(this) }
+    private val sms by lazy { SmsConnector(this) }
+
+    private val smsPerm =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { res ->
+            val granted = res[Manifest.permission.READ_SMS] == true
+            toast(getString(if (granted) R.string.sms_granted else R.string.sms_denied))
+        }
 
     private val notifPerm =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -83,6 +100,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         setupDrawer()
+        setupScheduler()
 
         binding.editPort.setText(
             prefs.getString(InferenceService.KEY_PORT, InferenceService.DEFAULT_PORT)
@@ -123,6 +141,17 @@ class MainActivity : AppCompatActivity() {
     // ----------------------------- drawer -----------------------------
 
     private fun setupDrawer() {
+        // fitsSystemWindows on NavigationView REPLACES the header's padding with
+        // the window insets instead of adding to it, which drew the title under
+        // the status bar. Apply the top inset ourselves and keep the layout's
+        // own padding intact.
+        val header = binding.navView.getHeaderView(0)
+        val basePad = header.paddingTop
+        ViewCompat.setOnApplyWindowInsetsListener(header) { v, insets ->
+            val top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
+            v.setPadding(v.paddingLeft, basePad + top, v.paddingRight, v.paddingBottom)
+            insets
+        }
         binding.toolbar.contentDescription = getString(R.string.app_name)
         binding.toolbar.setNavigationContentDescription(R.string.open_drawer)
         binding.toolbar.setNavigationOnClickListener {
@@ -133,6 +162,9 @@ class MainActivity : AppCompatActivity() {
             binding.drawerLayout.closeDrawer(GravityCompat.START)
             when (item.itemId) {
                 R.id.nav_open_pwa -> openDemo()
+                R.id.nav_clients -> showClientsDialog()
+                R.id.nav_sms -> showSmsDialog()
+                R.id.nav_scheduler -> showSchedulerDialog()
                 R.id.nav_thermal -> showThermalDialog()
                 R.id.nav_copy_token -> copyToken()
                 R.id.nav_regen_token -> confirmRegenerateToken()
@@ -200,14 +232,68 @@ class MainActivity : AppCompatActivity() {
         binding.navView.menu.findItem(R.id.nav_regen_token)?.isEnabled = apiToken() != null
         binding.navView.menu.findItem(R.id.nav_thermal)?.isEnabled = lastSystemJson != null
 
-        binding.toolbar.subtitle = when (state) {
+        val sub = when (state) {
             UiState.IDLE -> getString(R.string.state_stopped)
             UiState.STARTING -> getString(R.string.state_starting)
             UiState.LOADING -> getString(R.string.state_loading)
             UiState.RUNNING -> getString(R.string.state_running, currentPort())
             UiState.ERROR -> getString(R.string.state_error)
         }
+        binding.toolbarTitle.toolbarSubtitle.text = sub
+        runCatching {
+            binding.navView.getHeaderView(0)
+                .findViewById<android.widget.TextView>(R.id.navHeaderStatus)?.text = sub
+        }
+        binding.loadProgress.visibility = if (busy) View.VISIBLE else View.GONE
         binding.configLockedHint.visibility = if (live) View.VISIBLE else View.GONE
+    }
+
+    // --------------------------- scheduler UI ---------------------------
+
+    private fun setupScheduler() {
+        val p = prefs
+        binding.pauseSlider.value =
+            p.getFloat(InferenceService.KEY_THERMAL_PAUSE, 0.85f).coerceIn(0.30f, 1.20f)
+        binding.resumeSlider.value =
+            p.getFloat(InferenceService.KEY_THERMAL_RESUME, 0.70f).coerceIn(0.20f, 1.10f)
+        binding.switchCharging.isChecked = p.getBoolean(InferenceService.KEY_BATCH_CHARGING, false)
+        renderSliderLabels()
+
+        binding.pauseSlider.addOnChangeListener { _, v, _ ->
+            // Keep resume strictly below pause in the UI too, so the user never
+            // sees a configuration the service will silently rewrite.
+            if (binding.resumeSlider.value >= v - 0.05f) {
+                binding.resumeSlider.value = (v - 0.05f).coerceAtLeast(0.20f)
+            }
+            persistScheduler(); renderSliderLabels()
+        }
+        binding.resumeSlider.addOnChangeListener { _, v, _ ->
+            if (v >= binding.pauseSlider.value - 0.05f) {
+                binding.resumeSlider.value =
+                    (binding.pauseSlider.value - 0.05f).coerceAtLeast(0.20f)
+            }
+            persistScheduler(); renderSliderLabels()
+        }
+        binding.switchCharging.setOnCheckedChangeListener { _, _ -> persistScheduler() }
+    }
+
+    private fun renderSliderLabels() {
+        binding.pauseLabel.text = getString(R.string.sched_pause) +
+            "  " + String.format(Locale.US, "%.2f", binding.pauseSlider.value)
+        binding.resumeLabel.text = getString(R.string.sched_resume) +
+            "  " + String.format(Locale.US, "%.2f", binding.resumeSlider.value)
+    }
+
+    private fun persistScheduler() {
+        prefs.edit()
+            .putFloat(InferenceService.KEY_THERMAL_PAUSE, binding.pauseSlider.value)
+            .putFloat(InferenceService.KEY_THERMAL_RESUME, binding.resumeSlider.value)
+            .putBoolean(InferenceService.KEY_BATCH_CHARGING, binding.switchCharging.isChecked)
+            .apply()
+        // The running service re-reads config on each start command.
+        if (uiState == UiState.RUNNING || uiState == UiState.LOADING) {
+            ContextCompat.startForegroundService(this, Intent(this, InferenceService::class.java))
+        }
     }
 
     // ---------------------------- actions ----------------------------
@@ -248,6 +334,118 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ---------------------------- dialogs ----------------------------
+
+    private fun showClientsDialog() {
+        val clients = registry.all()
+        val body = buildString {
+            append("Each client gets its own token and namespace. A client can only\n")
+            append("see sessions and collections under its own prefix.\n\n")
+            clients.forEach { c ->
+                append(c.id).append("  [").append(c.namespace).append(":*]\n")
+                append("  ").append(c.token.take(10)).append("…").append(c.token.takeLast(4)).append("\n")
+                append("  ").append(if (c.isAdmin) "admin (full access)" else c.capabilities.sorted().joinToString(", "))
+                append("\n\n")
+            }
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.clients_title)
+            .setIcon(R.drawable.ic_client)
+            .setMessage(body)
+            .setPositiveButton(R.string.close, null)
+            .setNeutralButton(R.string.client_add) { _, _ -> showAddClientDialog() }
+            .show()
+    }
+
+    private fun showAddClientDialog() {
+        val input = EditText(this).apply {
+            hint = getString(R.string.client_id_hint)
+            setSingleLine()
+        }
+        val wrap = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(56, 24, 56, 0)
+            addView(input)
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.client_new_title)
+            .setView(wrap)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.create) { _, _ ->
+                val id = input.text.toString().trim().lowercase()
+                runCatching {
+                    // Namespace == id keeps the mental model simple: one client,
+                    // one prefix, no separate thing to remember.
+                    registry.create(id, id, id, ClientRegistry.Cap.DEFAULT)
+                }.onSuccess { c ->
+                    val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    cm.setPrimaryClip(ClipData.newPlainText("Medha token: ${c.id}", c.token))
+                    MaterialAlertDialogBuilder(this)
+                        .setTitle(c.id)
+                        .setMessage(
+                            "Token copied to clipboard.\n\n${c.token}\n\n" +
+                                "Namespace: ${c.namespace}:*\n" +
+                                "This is the only time it is shown in full."
+                        )
+                        .setPositiveButton(R.string.close, null)
+                        .show()
+                }.onFailure { e -> toast(e.message ?: "could not create client") }
+            }
+            .show()
+    }
+
+    private fun showSmsDialog() {
+        val st = sms.status()
+        val body = buildString {
+            append("Read permission: ").append(if (st.canRead) "granted" else "NOT granted").append("\n")
+            append("Send permission: ").append(if (st.canSend) "granted" else "not granted").append("\n")
+            append("Default SMS app: ").append(if (st.isDefaultSmsApp) "yes" else "no").append("\n")
+            if (st.canRead) append("Messages visible: ").append(st.totalMessages).append("\n")
+            append("\nPWAs reach SMS through Medha at /connectors/sms/*, because a\n")
+            append("browser page cannot read SMS at all. A client needs the\n")
+            append("'sms.read' capability; sending additionally requires being the\n")
+            append("default SMS app.")
+        }
+        val b = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.sms_title)
+            .setIcon(R.drawable.ic_sms)
+            .setMessage(body)
+            .setPositiveButton(R.string.close, null)
+        if (!st.canRead) {
+            b.setNeutralButton(R.string.sms_grant) { _, _ ->
+                smsPerm.launch(SmsConnector.READ_PERMISSIONS)
+            }
+        }
+        b.show()
+    }
+
+    private fun showSchedulerDialog() {
+        val js = lastSchedulerJson
+        val body = if (js == null) getString(R.string.err_not_running) else runCatching {
+            val s = JSONObject(js)
+            buildString {
+                append("Queue: ").append(s.optInt("queueDepth")).append(" / ")
+                append(s.optInt("maxQueueDepth")).append("\n")
+                append("Interactive waiting: ").append(s.optInt("interactiveWaiting")).append("\n")
+                append("Batch paused: ").append(s.optBoolean("batchPaused")).append("\n")
+                val why = s.optString("gateReason", "")
+                if (why.isNotEmpty()) append("Reason: ").append(why).append("\n")
+                append("\nThermal headroom: ")
+                val hr = s.optDouble("thermalHeadroom", -1.0)
+                append(if (hr < 0) "not reported" else String.format(Locale.US, "%.2f", hr))
+                append("\nPause at: ").append(String.format(Locale.US, "%.2f", s.optDouble("thermalPauseAt")))
+                append("\nResume at: ").append(String.format(Locale.US, "%.2f", s.optDouble("thermalResumeAt")))
+                append("\n\nCharging: ").append(s.optBoolean("charging"))
+                append("\nBattery: ").append(s.optInt("batteryPercent")).append("%")
+            }
+        }.getOrDefault("Could not read scheduler state.")
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.nav_scheduler)
+            .setIcon(R.drawable.ic_tune)
+            .setMessage(body)
+            .setPositiveButton(R.string.close, null)
+            .show()
+    }
 
     private fun showAboutDialog() {
         val body = buildString {
@@ -371,8 +569,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun regenerateToken() {
-        val fresh = InferenceService.generateToken()
-        prefs.edit().putString(InferenceService.KEY_API_TOKEN, fresh).apply()
+        registry.rotate("admin")
         val wasLive = uiState == UiState.RUNNING || uiState == UiState.LOADING
         stopService(Intent(this, InferenceService::class.java))
         renderToken()
@@ -419,7 +616,7 @@ class MainActivity : AppCompatActivity() {
         prefs.getString(InferenceService.KEY_PORT, InferenceService.DEFAULT_PORT)
             ?.toIntOrNull() ?: 8080
 
-    private fun apiToken(): String? = prefs.getString(InferenceService.KEY_API_TOKEN, null)
+    private fun apiToken(): String? = registry.admin()?.token
 
     private fun renderToken() {
         val t = apiToken()
@@ -550,12 +747,40 @@ class MainActivity : AppCompatActivity() {
             // Skip the two authenticated calls entirely when the service is down.
             val system = if (health != null) fetch("http://127.0.0.1:$port/system", token) else null
             val metrics = if (health != null) fetch("http://127.0.0.1:$port/metrics", token) else null
+            val sched = if (health != null) fetch("http://127.0.0.1:$port/scheduler", token) else null
             withContext(Dispatchers.Main) {
                 if (!isFinishing && !isDestroyed) {
                     lastSystemJson = system
+                    lastSchedulerJson = sched
+                    renderSchedulerCard(sched)
                     render(health, system, metrics)
                     renderToken()
                 }
+            }
+        }
+    }
+
+    private fun renderSchedulerCard(sched: String?) {
+        if (sched == null) {
+            binding.schedState.text = getString(R.string.sched_idle)
+            binding.statQueue.text = "—"
+            binding.statThermal.text = "—"
+            return
+        }
+        runCatching {
+            val s = JSONObject(sched)
+            val hr = s.optDouble("thermalHeadroom", -1.0)
+            binding.statQueue.text = s.optInt("queueDepth").toString()
+            binding.statThermal.text =
+                if (hr < 0) "n/a" else String.format(Locale.US, "%.2f", hr)
+            binding.schedState.text = buildString {
+                append("queue ").append(s.optInt("queueDepth")).append("/")
+                append(s.optInt("maxQueueDepth"))
+                append("   batch ").append(if (s.optBoolean("batchPaused")) "PAUSED" else "ready")
+                append("\nbattery ").append(s.optInt("batteryPercent")).append("%")
+                append(if (s.optBoolean("charging")) " (charging)" else "")
+                val why = s.optString("gateReason", "")
+                if (why.isNotEmpty()) append("\n").append(why)
             }
         }
     }
@@ -647,6 +872,8 @@ class MainActivity : AppCompatActivity() {
                     append(String.format(Locale.US, "%.1f", m.optDouble("avgTokensPerSec", 0.0)))
                     append(" tok/s  ·  last ")
                     append(String.format(Locale.US, "%.1f", m.optDouble("lastTokensPerSec", 0.0)))
+                    binding.statSpeed.text =
+                        String.format(Locale.US, "%.0f", m.optDouble("lastTokensPerSec", 0.0))
                     append("\nStored: ").append(m.optInt("db_conversations")).append(" chats, ")
                     append(m.optInt("db_messages")).append(" msgs, ")
                     append(m.optInt("db_chunks")).append(" chunks")

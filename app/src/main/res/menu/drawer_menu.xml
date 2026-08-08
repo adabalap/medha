@@ -2,52 +2,36 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
 
     <group android:checkableBehavior="none">
-        <item
-            android:id="@+id/nav_open_pwa"
-            android:icon="@drawable/ic_open_in_new"
-            android:title="@string/nav_open_pwa" />
-        <item
-            android:id="@+id/nav_thermal"
-            android:icon="@drawable/ic_thermal"
-            android:title="@string/nav_thermal" />
+        <item android:id="@+id/nav_open_pwa" android:icon="@drawable/ic_open_in_new" android:title="@string/nav_open_pwa" />
+        <item android:id="@+id/nav_thermal" android:icon="@drawable/ic_thermal" android:title="@string/nav_thermal" />
+        <item android:id="@+id/nav_scheduler" android:icon="@drawable/ic_tune" android:title="@string/nav_scheduler" />
     </group>
 
     <item android:title="@string/nav_group_access">
         <menu>
-            <item
-                android:id="@+id/nav_copy_token"
-                android:icon="@drawable/ic_key"
-                android:title="@string/nav_copy_token" />
-            <item
-                android:id="@+id/nav_regen_token"
-                android:icon="@drawable/ic_refresh"
-                android:title="@string/nav_regen_token" />
+            <item android:id="@+id/nav_clients" android:icon="@drawable/ic_client" android:title="@string/nav_clients" />
+            <item android:id="@+id/nav_copy_token" android:icon="@drawable/ic_key" android:title="@string/nav_copy_token" />
+            <item android:id="@+id/nav_regen_token" android:icon="@drawable/ic_refresh" android:title="@string/nav_regen_token" />
+        </menu>
+    </item>
+
+    <item android:title="@string/nav_group_connectors">
+        <menu>
+            <item android:id="@+id/nav_sms" android:icon="@drawable/ic_sms" android:title="@string/nav_sms" />
         </menu>
     </item>
 
     <item android:title="@string/nav_group_system">
         <menu>
-            <item
-                android:id="@+id/nav_battery"
-                android:icon="@drawable/ic_battery"
-                android:title="@string/nav_battery" />
-            <item
-                android:id="@+id/nav_stop"
-                android:icon="@drawable/ic_stop"
-                android:title="@string/nav_stop" />
+            <item android:id="@+id/nav_battery" android:icon="@drawable/ic_battery" android:title="@string/nav_battery" />
+            <item android:id="@+id/nav_stop" android:icon="@drawable/ic_stop" android:title="@string/nav_stop" />
         </menu>
     </item>
 
     <item android:title="@string/nav_group_about">
         <menu>
-            <item
-                android:id="@+id/nav_endpoints"
-                android:icon="@drawable/ic_book"
-                android:title="@string/nav_endpoints" />
-            <item
-                android:id="@+id/nav_about"
-                android:icon="@drawable/ic_info"
-                android:title="@string/nav_about" />
+            <item android:id="@+id/nav_endpoints" android:icon="@drawable/ic_book" android:title="@string/nav_endpoints" />
+            <item android:id="@+id/nav_about" android:icon="@drawable/ic_info" android:title="@string/nav_about" />
         </menu>
     </item>
 </menu>

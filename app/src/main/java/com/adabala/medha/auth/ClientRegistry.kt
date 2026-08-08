@@ -52,6 +52,10 @@ class ClientRegistry private constructor(private val prefs: SharedPreferences) {
             if (isAdmin || key.startsWith("$namespace:")) key else "$namespace:$key"
 
         fun can(cap: String): Boolean = isAdmin || capabilities.contains(cap)
+
+        /** Strips the namespace so clients see the keys they actually sent. */
+        fun unscope(key: String): String =
+            if (!isAdmin && key.startsWith("$namespace:")) key.removePrefix("$namespace:") else key
     }
 
     /** Capability strings. Coarse on purpose — fine-grained scopes nobody sets correctly are theatre. */

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  In-app logo. Separate from ic_launcher_foreground because @mipmap/ic_launcher
+  is an ADAPTIVE icon: when an ImageView renders it directly the launcher mask
+  is applied inconsistently across OEM skins, which is why the drawer mark came
+  out as a lopsided squircle. This is a plain vector with its own rounded
+  background, so it renders identically everywhere.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="48dp" android:height="48dp"
+    android:viewportWidth="48" android:viewportHeight="48">
+
+    <path android:pathData="M12,0h24a12,12 0 0 1 12,12v24a12,12 0 0 1 -12,12h-24a12,12 0 0 1 -12,-12v-24a12,12 0 0 1 12,-12z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="4" android:startY="2" android:endX="44" android:endY="46" android:type="linear">
+                <item android:offset="0.0" android:color="#FF3B2E7E" />
+                <item android:offset="0.55" android:color="#FF5B3FA8" />
+                <item android:offset="1.0" android:color="#FF7C4DBC" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <group>
+        <path android:pathData="M19,13 V9.5" android:strokeColor="#FFC9BCF2" android:strokeWidth="1.9" android:strokeLineCap="round" />
+        <path android:pathData="M24,13 V8.5" android:strokeColor="#FFC9BCF2" android:strokeWidth="1.9" android:strokeLineCap="round" />
+        <path android:pathData="M29,13 V9.5" android:strokeColor="#FFC9BCF2" android:strokeWidth="1.9" android:strokeLineCap="round" />
+        <path android:pathData="M19,35 V38.5" android:strokeColor="#FFC9BCF2" android:strokeWidth="1.9" android:strokeLineCap="round" />
+        <path android:pathData="M24,35 V39.5" android:strokeColor="#FFC9BCF2" android:strokeWidth="1.9" android:strokeLineCap="round" />
+        <path android:pathData="M29,35 V38.5" android:strokeColor="#FFC9BCF2" android:strokeWidth="1.9" android:strokeLineCap="round" />
+        <path android:pathData="M13,19 H9.5" android:strokeColor="#FFC9BCF2" android:strokeWidth="1.9" android:strokeLineCap="round" />
+        <path android:pathData="M13,24 H8.5" android:strokeColor="#FFC9BCF2" android:strokeWidth="1.9" android:strokeLineCap="round" />
+        <path android:pathData="M13,29 H9.5" android:strokeColor="#FFC9BCF2" android:strokeWidth="1.9" android:strokeLineCap="round" />
+        <path android:pathData="M35,19 H38.5" android:strokeColor="#FFC9BCF2" android:strokeWidth="1.9" android:strokeLineCap="round" />
+        <path android:pathData="M35,24 H39.5" android:strokeColor="#FFC9BCF2" android:strokeWidth="1.9" android:strokeLineCap="round" />
+        <path android:pathData="M35,29 H38.5" android:strokeColor="#FFC9BCF2" android:strokeWidth="1.9" android:strokeLineCap="round" />
+    </group>
+
+    <path android:pathData="M19,13 h10 a6,6 0 0 1 6,6 v10 a6,6 0 0 1 -6,6 h-10 a6,6 0 0 1 -6,-6 v-10 a6,6 0 0 1 6,-6 z"
+        android:fillColor="#59241261" android:strokeColor="#FFEDE7FF" android:strokeWidth="1.8" />
+
+    <path android:pathData="M24,17 C28,21.5 29.7,24 29.7,26.8 C29.7,30 27.1,32.1 24,32.1 C20.9,32.1 18.3,30 18.3,26.8 C18.3,24 20,21.5 24,17 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="24" android:startY="17" android:endX="24" android:endY="32" android:type="linear">
+                <item android:offset="0.0" android:color="#FFFFE8A3" />
+                <item android:offset="0.45" android:color="#FFFFC24B" />
+                <item android:offset="1.0" android:color="#FFF4802E" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M24,22.4 C26,24.9 26.8,26 26.8,27.4 C26.8,29 25.6,30.2 24,30.2 C22.4,30.2 21.2,29 21.2,27.4 C21.2,26 22,24.9 24,22.4 Z"
+        android:fillColor="#EBFFF6DA" />
+</vector>

@@ -99,6 +99,21 @@ class MedhaDatabase private constructor(context: Context) :
         db.execSQL("CREATE INDEX idx_chunk_doc ON chunks(documentId)")
 
         createFts(db)
+        createStore(db)
+    }
+
+    private fun createStore(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS kv(
+                scopedKey TEXT PRIMARY KEY,
+                clientId TEXT NOT NULL,
+                value TEXT NOT NULL,
+                updatedAt INTEGER NOT NULL
+            )
+            """.trimIndent()
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_kv_client ON kv(clientId, scopedKey)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldV: Int, newV: Int) {
@@ -151,6 +166,7 @@ class MedhaDatabase private constructor(context: Context) :
                 db.endTransaction()
             }
         }
+        if (oldV < 4) createStore(db)
     }
 
     override fun onDowngrade(db: SQLiteDatabase, oldV: Int, newV: Int) {
@@ -461,6 +477,79 @@ class MedhaDatabase private constructor(context: Context) :
     fun countDocuments(): Int = simpleCount("documents")
     fun countChunks(): Int = simpleCount("chunks")
 
+    // ============================ key-value store ============================
+    //
+    // Generic per-client persistence. PWAs cannot rely on IndexedDB: browser
+    // storage is quota-limited and EVICTABLE, so Android may silently drop it
+    // under memory pressure. Derived data a PWA paid inference time to produce
+    // must survive that, so it lives here instead.
+    //
+    // Keys arrive already namespaced by the caller (client.scope(key)), so
+    // isolation is enforced before this layer ever sees them.
+
+    fun kvPut(scopedKey: String, clientId: String, value: String) {
+        val v = ContentValues().apply {
+            put("scopedKey", scopedKey)
+            put("clientId", clientId)
+            put("value", value)
+            put("updatedAt", System.currentTimeMillis())
+        }
+        writableDatabase.insertWithOnConflict("kv", null, v, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    /** Bulk upsert in one transaction — a 500-message batch is one commit. */
+    fun kvPutAll(clientId: String, entries: List<Pair<String, String>>): Int {
+        val db = writableDatabase
+        var n = 0
+        db.beginTransaction()
+        try {
+            for ((k, value) in entries) {
+                kvPut(k, clientId, value)
+                n++
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+        return n
+    }
+
+    fun kvGet(scopedKey: String): String? =
+        readableDatabase.rawQuery("SELECT value FROM kv WHERE scopedKey=? LIMIT 1", arrayOf(scopedKey))
+            .use { c -> if (c.moveToFirst()) c.getString(0) else null }
+
+    fun kvDelete(scopedKey: String): Boolean =
+        writableDatabase.delete("kv", "scopedKey=?", arrayOf(scopedKey)) > 0
+
+    fun kvDeleteByClient(clientId: String): Int =
+        writableDatabase.delete("kv", "clientId=?", arrayOf(clientId))
+
+    /** Keys under [prefix], newest first. [prefix] must already be scoped. */
+    fun kvList(prefix: String, limit: Int, offset: Int): List<Triple<String, String, Long>> {
+        val out = ArrayList<Triple<String, String, Long>>()
+        readableDatabase.rawQuery(
+            "SELECT scopedKey,value,updatedAt FROM kv WHERE scopedKey LIKE ? ESCAPE '\\' " +
+                "ORDER BY updatedAt DESC LIMIT ? OFFSET ?",
+            arrayOf(escapeLike(prefix) + "%", limit.toString(), offset.toString())
+        ).use { c ->
+            while (c.moveToNext()) out.add(Triple(c.getString(0), c.getString(1), c.getLong(2)))
+        }
+        return out
+    }
+
+    fun kvCount(prefix: String): Int =
+        readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM kv WHERE scopedKey LIKE ? ESCAPE '\\'",
+            arrayOf(escapeLike(prefix) + "%")
+        ).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
+
+    /**
+     * LIKE treats % and _ as wildcards. Without escaping, a client could pass a
+     * prefix of "%" and enumerate every other client's keys.
+     */
+    private fun escapeLike(s: String): String =
+        s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
     /** Approximate on-disk size, for the /system panel. */
     fun sizeBytes(context: Context): Long =
         runCatching { context.getDatabasePath(DB_NAME).length() }.getOrDefault(0L)
@@ -517,7 +606,7 @@ class MedhaDatabase private constructor(context: Context) :
 
     companion object {
         private const val DB_NAME = "medha.db"
-        private const val DB_VERSION = 3
+        private const val DB_VERSION = 4
 
         /** Hard cap on rows pulled into memory by any single fallback scan. */
         const val MAX_SCAN = 2000

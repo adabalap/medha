@@ -78,4 +78,43 @@ Licensed under the terms in the project repository.</string>
     <string name="toast_token_copied">Token copied</string>
     <string name="toast_token_regenerated">New token generated and copied</string>
     <string name="toast_battery_ok">Already allowed</string>
+
+    <!-- stat pills -->
+    <string name="stat_speed">SPEED</string>
+    <string name="stat_queue">QUEUE</string>
+    <string name="stat_thermal">THERMAL</string>
+
+    <!-- scheduler -->
+    <string name="sched_title">Thermal &amp; scheduling</string>
+    <string name="sched_hint">Android exposes no temperature reading to apps. These are
+        thermal HEADROOM values: 0.0 is cool, 1.0 means the chip is throttling now.
+        Background batch work pauses at the upper mark and resumes at the lower one.
+        Interactive requests are never blocked.</string>
+    <string name="sched_pause">Pause batch work at</string>
+    <string name="sched_resume">Resume batch work at</string>
+    <string name="sched_charging">Run batch work only while charging</string>
+    <string name="sched_idle">Scheduler idle</string>
+
+    <!-- drawer additions -->
+    <string name="nav_clients">API clients</string>
+    <string name="nav_sms">SMS connector</string>
+    <string name="nav_scheduler">Scheduler status</string>
+    <string name="nav_group_connectors">Connectors</string>
+
+    <!-- clients -->
+    <string name="clients_title">API clients</string>
+    <string name="client_add">Add client</string>
+    <string name="client_new_title">New API client</string>
+    <string name="client_id_hint">id (e.g. sms-organizer)</string>
+    <string name="create">Create</string>
+    <string name="revoke">Revoke</string>
+    <string name="rotate">Rotate token</string>
+
+    <!-- sms -->
+    <string name="sms_title">SMS connector</string>
+    <string name="sms_grant">Grant SMS permission</string>
+    <string name="sms_denied">SMS permission not granted. The connector endpoints will return 403.</string>
+    <string name="sms_granted">SMS read permission granted.</string>
+    <string name="widget_empty">No updates yet. Apps using Medha can post here.</string>
+    <string name="widget_description">Cards pushed by apps using Medha</string>
 </resources>

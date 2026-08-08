@@ -3,6 +3,10 @@ package com.adabala.medha
 import android.content.Context
 import android.util.Log
 import com.adabala.medha.data.MedhaDatabase
+import com.adabala.medha.auth.ClientRegistry
+import com.adabala.medha.connectors.SmsConnector
+import com.adabala.medha.notify.NotificationHub
+import com.adabala.medha.sched.InferenceScheduler
 import com.adabala.medha.rag.Embedder
 import com.adabala.medha.rag.NoEmbedder
 import com.adabala.medha.rag.Retriever
@@ -24,6 +28,7 @@ import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.request.contentLength
 import io.ktor.server.request.path
 import io.ktor.server.request.receive
+import io.ktor.server.request.receiveText
 import io.ktor.server.response.header
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytes
@@ -32,6 +37,7 @@ import io.ktor.server.response.respondTextWriter
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
+import io.ktor.server.routing.put
 import io.ktor.server.routing.routing
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -99,6 +105,35 @@ data class EmbeddingsRequest(
 data class ReindexRequest(val collection: String? = null)
 
 @Serializable
+data class StoreItem(val key: String, val value: String)
+
+@Serializable
+data class BulkStoreRequest(val items: List<StoreItem>)
+
+@Serializable
+data class MarkReadRequest(val threadId: Long? = null, val ids: List<Long> = emptyList())
+
+@Serializable
+data class SmsSendRequest(val address: String, val body: String)
+
+@Serializable
+data class NotifyRequest(
+    val id: String = "default",
+    val title: String,
+    val text: String = "",
+    val ongoing: Boolean = false,
+    val progressCurrent: Int = -1,
+    val progressMax: Int = -1,
+    val silent: Boolean = true
+)
+
+@Serializable
+data class WidgetItem(val title: String, val text: String = "")
+
+@Serializable
+data class WidgetRequest(val items: List<WidgetItem>)
+
+@Serializable
 data class ErrorResponse(val error: String, val code: String? = null)
 
 /**
@@ -128,9 +163,12 @@ class LocalServer(
     private val engine: LlmEngine,
     private val port: Int,
     private val db: MedhaDatabase,
-    private val apiToken: String,
     private val requireAuth: Boolean = true,
-    private val embedder: Embedder = NoEmbedder
+    private val embedder: Embedder = NoEmbedder,
+    private val registry: ClientRegistry,
+    private val scheduler: InferenceScheduler,
+    private val sms: SmsConnector,
+    private val notifier: NotificationHub
 ) {
     private var server: ApplicationEngine? = null
     private val memory = MemoryRepository(db)
@@ -184,7 +222,10 @@ class LocalServer(
                     return@intercept finish()
                 }
 
-                if (requireAuth && !isPublic(path) && !isAuthorized(call)) {
+                val client = resolveClient(call)
+                if (client != null) call.attributes.put(CLIENT_KEY, client)
+
+                if (requireAuth && !isPublic(path) && client == null) {
                     call.response.header(HttpHeaders.WWWAuthenticate, "Bearer realm=\"medha\"")
                     call.respond(
                         HttpStatusCode.Unauthorized,
@@ -264,9 +305,14 @@ class LocalServer(
 
                 post("/generate") {
                     if (!engine.isLoaded) return@post call.notReady()
+                    call.requireCap(ClientRegistry.Cap.GENERATE) ?: return@post
                     val req = call.receive<GenerateRequest>()
                     if (req.prompt.isBlank()) return@post call.badRequest("prompt must not be blank")
-                    val r = engine.generate(req.prompt, req.system)
+                    val r = try {
+                        scheduler.submit(priorityOf(call)) { engine.generate(req.prompt, req.system) }
+                    } catch (e: InferenceScheduler.Rejected) {
+                        return@post call.rejected(e)
+                    }
                     call.respond(
                         GenerateResponse(
                             text = r.text,
@@ -302,21 +348,28 @@ class LocalServer(
 
                 post("/chat") {
                     if (!engine.isLoaded) return@post call.notReady()
+                    val client = call.requireCap(ClientRegistry.Cap.MEMORY) ?: return@post
                     val req = call.receive<ChatTurnRequest>()
                     if (req.sessionId.isBlank()) return@post call.badRequest("sessionId is required")
                     if (req.message.isBlank()) return@post call.badRequest("message must not be blank")
 
-                    val conv = memory.getOrCreate(req.sessionId, req.system)
+                    // Namespaced from the token, so two PWAs cannot collide on
+                    // a session id or read each other's threads.
+                    val conv = memory.getOrCreate(client.scope(req.sessionId), req.system)
                     val history = memory.history(conv.id)
                     val context = req.collection
                         ?.takeIf { it.isNotBlank() }
-                        ?.let { retriever.retrieve(it, req.message, req.ragTopK).map { h -> h.text } }
+                        ?.let { retriever.retrieve(client.scope(it), req.message, req.ragTopK).map { h -> h.text } }
                         ?: emptyList()
 
                     val prompt = memory.buildPrompt(
                         conv.systemInstruction ?: req.system, history, req.message, context
                     )
-                    val r = engine.generate(prompt)
+                    val r = try {
+                        scheduler.submit(priorityOf(call)) { engine.generate(prompt) }
+                    } catch (e: InferenceScheduler.Rejected) {
+                        return@post call.rejected(e)
+                    }
                     // Atomic: the user turn is no longer written separately from
                     // the assistant turn, so a failure cannot half-persist.
                     memory.appendTurn(conv.id, req.message, r.text)
@@ -337,13 +390,16 @@ class LocalServer(
                 // ---------------------- session management ----------------------
 
                 get("/sessions") {
+                    val client = call.requireCap(ClientRegistry.Cap.MEMORY) ?: return@get
                     val limit = call.intParam("limit", 100).coerceIn(1, 500)
                     val offset = call.intParam("offset", 0).coerceAtLeast(0)
                     call.respondJson(buildJsonObject {
                         putJsonArray("sessions") {
-                            memory.listSessions(limit, offset).forEach { s ->
+                            memory.listSessions(500, 0)
+                                .filter { client.owns(it.sessionId) }
+                                .drop(offset).take(limit).forEach { s ->
                                 addJsonObject {
-                                    put("sessionId", s.sessionId)
+                                    put("sessionId", client.unscope(s.sessionId))
                                     put("title", s.title ?: "")
                                     put("messages", s.messageCount)
                                     put("updatedAt", s.updatedAt)
@@ -354,7 +410,8 @@ class LocalServer(
                 }
 
                 get("/sessions/{id}/messages") {
-                    val id = call.parameters["id"].orEmpty()
+                    val client = call.requireCap(ClientRegistry.Cap.MEMORY) ?: return@get
+                    val id = client.scope(call.parameters["id"].orEmpty())
                     if (id.isBlank()) return@get call.badRequest("session id is required")
                     val limit = call.intParam("limit", 50).coerceIn(1, 500)
                     call.respondJson(buildJsonObject {
@@ -372,7 +429,8 @@ class LocalServer(
                 }
 
                 delete("/sessions/{id}") {
-                    val id = call.parameters["id"].orEmpty()
+                    val client = call.requireCap(ClientRegistry.Cap.MEMORY) ?: return@delete
+                    val id = client.scope(call.parameters["id"].orEmpty())
                     if (id.isBlank()) return@delete call.badRequest("session id is required")
                     val deleted = memory.delete(id)
                     call.respondJson(buildJsonObject {
@@ -515,10 +573,11 @@ class LocalServer(
                 // ------------------------------ RAG ------------------------------
 
                 post("/rag/ingest") {
+                    val client = call.requireCap(ClientRegistry.Cap.RAG) ?: return@post
                     val req = call.receive<RagIngestRequest>()
                     if (req.collection.isBlank()) return@post call.badRequest("collection is required")
                     if (req.text.isBlank()) return@post call.badRequest("text must not be blank")
-                    val r = retriever.ingest(req.collection, req.title, req.source, req.text)
+                    val r = retriever.ingest(client.scope(req.collection), req.title, req.source, req.text)
                     call.respondJson(buildJsonObject {
                         put("status", "ingested")
                         put("collection", req.collection)
@@ -529,9 +588,10 @@ class LocalServer(
                 }
 
                 post("/rag/query") {
+                    val client = call.requireCap(ClientRegistry.Cap.RAG) ?: return@post
                     val req = call.receive<RagQueryRequest>()
                     if (req.collection.isBlank()) return@post call.badRequest("collection is required")
-                    val hits = retriever.retrieve(req.collection, req.query, req.topK)
+                    val hits = retriever.retrieve(client.scope(req.collection), req.query, req.topK)
                     call.respondJson(buildJsonObject {
                         put("collection", req.collection)
                         put("mode", hits.firstOrNull()?.mode ?: "none")
@@ -564,11 +624,12 @@ class LocalServer(
                 }
 
                 get("/rag/collections") {
+                    val client = call.requireCap(ClientRegistry.Cap.RAG) ?: return@get
                     call.respondJson(buildJsonObject {
                         putJsonArray("collections") {
-                            db.listCollections().forEach { c ->
+                            db.listCollections().filter { client.owns(it.collection) }.forEach { c ->
                                 addJsonObject {
-                                    put("collection", c.collection)
+                                    put("collection", client.unscope(c.collection))
                                     put("documents", c.documents)
                                     put("chunks", c.chunks)
                                     put("embedded", c.embedded)
@@ -579,7 +640,8 @@ class LocalServer(
                 }
 
                 delete("/rag/collections/{name}") {
-                    val name = call.parameters["name"].orEmpty()
+                    val client = call.requireCap(ClientRegistry.Cap.RAG) ?: return@delete
+                    val name = client.scope(call.parameters["name"].orEmpty())
                     if (name.isBlank()) return@delete call.badRequest("collection name is required")
                     val n = db.deleteCollection(name)
                     call.respondJson(buildJsonObject {
@@ -588,7 +650,252 @@ class LocalServer(
                     })
                 }
 
+
+                // ------------------------- key-value store -------------------------
+
+                put("/store/{key...}") {
+                    val client = call.requireCap(ClientRegistry.Cap.STORE) ?: return@put
+                    val key = (call.parameters.getAll("key") ?: emptyList()).joinToString("/")
+                    if (key.isBlank()) return@put call.badRequest("key is required")
+                    val body = call.receiveText()
+                    if (body.length > MAX_VALUE_BYTES) {
+                        return@put call.badRequest("value exceeds ${MAX_VALUE_BYTES / 1024} KB")
+                    }
+                    db.kvPut(client.scope(key), client.id, body)
+                    call.respondJson(buildJsonObject { put("key", key); put("ok", true) })
+                }
+
+                get("/store/{key...}") {
+                    val client = call.requireCap(ClientRegistry.Cap.STORE) ?: return@get
+                    val key = (call.parameters.getAll("key") ?: emptyList()).joinToString("/")
+                    val v = db.kvGet(client.scope(key))
+                        ?: return@get call.respond(
+                            HttpStatusCode.NotFound, ErrorResponse("no such key", "not_found")
+                        )
+                    call.respondText(v, ContentType.Application.Json)
+                }
+
+                delete("/store/{key...}") {
+                    val client = call.requireCap(ClientRegistry.Cap.STORE) ?: return@delete
+                    val key = (call.parameters.getAll("key") ?: emptyList()).joinToString("/")
+                    call.respondJson(buildJsonObject {
+                        put("deleted", db.kvDelete(client.scope(key)))
+                    })
+                }
+
+                get("/store") {
+                    val client = call.requireCap(ClientRegistry.Cap.STORE) ?: return@get
+                    val prefix = call.request.queryParameters["prefix"].orEmpty()
+                    val limit = call.intParam("limit", 100).coerceIn(1, 1000)
+                    val offset = call.intParam("offset", 0).coerceAtLeast(0)
+                    val scoped = client.scope(prefix)
+                    call.respondJson(buildJsonObject {
+                        put("prefix", prefix)
+                        put("total", db.kvCount(scoped))
+                        putJsonArray("items") {
+                            db.kvList(scoped, limit, offset).forEach { (k, v, at) ->
+                                addJsonObject {
+                                    put("key", client.unscope(k))
+                                    put("updatedAt", at)
+                                    put("value", v)
+                                }
+                            }
+                        }
+                    })
+                }
+
+                post("/store/bulk") {
+                    val client = call.requireCap(ClientRegistry.Cap.STORE) ?: return@post
+                    val req = call.receive<BulkStoreRequest>()
+                    if (req.items.isEmpty()) return@post call.badRequest("items must not be empty")
+                    if (req.items.size > MAX_BULK) {
+                        return@post call.badRequest("at most $MAX_BULK items per request")
+                    }
+                    // One transaction: a 500-message classification pass is one
+                    // commit rather than 500 fsyncs.
+                    val n = db.kvPutAll(client.id, req.items.map { client.scope(it.key) to it.value })
+                    call.respondJson(buildJsonObject { put("written", n) })
+                }
+
+                // --------------------------- SMS connector ---------------------------
+
+                get("/connectors/sms/status") {
+                    call.requireCap(ClientRegistry.Cap.SMS_READ) ?: return@get
+                    val st = sms.status()
+                    call.respondJson(buildJsonObject {
+                        put("canRead", st.canRead)
+                        put("canSend", st.canSend)
+                        put("isDefaultSmsApp", st.isDefaultSmsApp)
+                        put("totalMessages", st.totalMessages)
+                    })
+                }
+
+                get("/connectors/sms/conversations") {
+                    call.requireCap(ClientRegistry.Cap.SMS_READ) ?: return@get
+                    if (!sms.canRead()) return@get call.smsDenied()
+                    val limit = call.intParam("limit", 50).coerceIn(1, 200)
+                    val offset = call.intParam("offset", 0).coerceAtLeast(0)
+                    call.respondJson(buildJsonObject {
+                        putJsonArray("conversations") {
+                            sms.conversations(limit, offset).forEach { t ->
+                                addJsonObject {
+                                    put("threadId", t.threadId)
+                                    put("address", t.address)
+                                    put("displayName", t.displayName ?: "")
+                                    put("snippet", t.snippet)
+                                    put("messageCount", t.messageCount)
+                                    put("unreadCount", t.unreadCount)
+                                    put("lastAt", t.lastAt)
+                                }
+                            }
+                        }
+                    })
+                }
+
+                get("/connectors/sms/messages") {
+                    call.requireCap(ClientRegistry.Cap.SMS_READ) ?: return@get
+                    if (!sms.canRead()) return@get call.smsDenied()
+                    val msgs = sms.messages(
+                        threadId = call.request.queryParameters["threadId"]?.toLongOrNull(),
+                        since = call.request.queryParameters["since"]?.toLongOrNull(),
+                        before = call.request.queryParameters["before"]?.toLongOrNull(),
+                        unreadOnly = call.request.queryParameters["unreadOnly"] == "true",
+                        limit = call.intParam("limit", 100)
+                    )
+                    call.respondJson(buildJsonObject {
+                        putJsonArray("messages") { msgs.forEach { add(it.toJson()) } }
+                        // Cursor for the next page. Timestamps, not offsets:
+                        // messages arriving mid-scan shift every offset and
+                        // cause duplicates or gaps during a backlog pass.
+                        put("nextBefore", msgs.minOfOrNull { it.date } ?: 0L)
+                        put("count", msgs.size)
+                    })
+                }
+
+                get("/connectors/sms/messages/{id}") {
+                    call.requireCap(ClientRegistry.Cap.SMS_READ) ?: return@get
+                    if (!sms.canRead()) return@get call.smsDenied()
+                    val id = call.parameters["id"]?.toLongOrNull()
+                        ?: return@get call.badRequest("numeric id required")
+                    val m = sms.message(id)
+                        ?: return@get call.respond(
+                            HttpStatusCode.NotFound, ErrorResponse("no such message", "not_found")
+                        )
+                    call.respondText(m.toJson().toString(), ContentType.Application.Json)
+                }
+
+                get("/connectors/sms/contacts/{address}") {
+                    call.requireCap(ClientRegistry.Cap.SMS_READ) ?: return@get
+                    val addr = call.parameters["address"].orEmpty()
+                    call.respondJson(buildJsonObject {
+                        put("address", addr)
+                        put("displayName", sms.contactName(addr) ?: "")
+                    })
+                }
+
+                post("/connectors/sms/mark-read") {
+                    call.requireCap(ClientRegistry.Cap.SMS_READ) ?: return@post
+                    val req = call.receive<MarkReadRequest>()
+                    val n = when {
+                        req.threadId != null -> sms.markThreadRead(req.threadId)
+                        req.ids.isNotEmpty() -> sms.markRead(req.ids)
+                        else -> return@post call.badRequest("threadId or ids required")
+                    }
+                    call.respondJson(buildJsonObject { put("updated", n) })
+                }
+
+                post("/connectors/sms/send") {
+                    call.requireCap(ClientRegistry.Cap.SMS_SEND) ?: return@post
+                    val req = call.receive<SmsSendRequest>()
+                    sms.send(req.address, req.body).fold(
+                        onSuccess = {
+                            call.respondJson(buildJsonObject { put("sent", true) })
+                        },
+                        onFailure = { e ->
+                            call.respond(
+                                HttpStatusCode.Forbidden,
+                                ErrorResponse(e.message ?: "send failed", "send_failed")
+                            )
+                        }
+                    )
+                }
+
+                get("/connectors/sms/events") {
+                    call.requireCap(ClientRegistry.Cap.SMS_READ) ?: return@get
+                    if (!sms.canRead()) return@get call.smsDenied()
+                    call.prepareSse()
+                    call.respondTextWriter(ContentType.Text.EventStream) {
+                        // One held connection instead of a PWA polling a content
+                        // provider through HTTP every few seconds.
+                        write("data: {\"type\":\"connected\"}\n\n"); flush()
+                        sms.changes().collect { at ->
+                            write("data: {\"type\":\"change\",\"at\":$at}\n\n")
+                            flush()
+                        }
+                    }
+                }
+
+                // --------------------------- notifications ---------------------------
+
+                get("/notify/capabilities") {
+                    call.requireCap(ClientRegistry.Cap.NOTIFY) ?: return@get
+                    call.respondJson(buildJsonObject {
+                        notifier.capabilities().forEach { (k, v) ->
+                            when (v) {
+                                is Boolean -> put(k, v)
+                                is Int -> put(k, v)
+                                else -> put(k, v.toString())
+                            }
+                        }
+                    })
+                }
+
+                post("/notify") {
+                    val client = call.requireCap(ClientRegistry.Cap.NOTIFY) ?: return@post
+                    val req = call.receive<NotifyRequest>()
+                    if (req.title.isBlank()) return@post call.badRequest("title is required")
+                    val ok = notifier.post(
+                        NotificationHub.Request(
+                            id = req.id, title = req.title, text = req.text,
+                            ongoing = req.ongoing,
+                            progressCurrent = req.progressCurrent, progressMax = req.progressMax,
+                            silent = req.silent, clientId = client.id
+                        )
+                    )
+                    call.respondJson(buildJsonObject { put("posted", ok); put("id", req.id) })
+                }
+
+                delete("/notify/{id}") {
+                    val client = call.requireCap(ClientRegistry.Cap.NOTIFY) ?: return@delete
+                    notifier.cancel(client.id, call.parameters["id"].orEmpty())
+                    call.respondJson(buildJsonObject { put("cancelled", true) })
+                }
+
+                put("/widget/content") {
+                    val client = call.requireCap(ClientRegistry.Cap.NOTIFY) ?: return@put
+                    val req = call.receive<WidgetRequest>()
+                    notifier.setWidgetContent(client.id, req.items.map { it.title to it.text })
+                    call.respondJson(buildJsonObject { put("ok", true); put("items", req.items.size) })
+                }
+
+                // ---------------------------- scheduler ----------------------------
+
+                get("/scheduler") {
+                    call.respondJson(buildJsonObject {
+                        scheduler.status().forEach { (k, v) ->
+                            when (v) {
+                                is Boolean -> put(k, v)
+                                is Int -> put(k, v)
+                                is Float -> put(k, v)
+                                is Long -> put(k, v)
+                                else -> put(k, v.toString())
+                            }
+                        }
+                    })
+                }
+
                 // -------------------------- bundled PWA --------------------------
+
 
                 get("/") { serveAsset(call, "index.html") }
                 get("/{path...}") {
@@ -607,6 +914,18 @@ class LocalServer(
     }
 
     // ------------------------------ helpers ------------------------------
+
+    /**
+     * Batch callers set X-Medha-Priority: batch. Everything else is treated as
+     * interactive, because the safe default when a client says nothing is to
+     * assume a human is waiting.
+     */
+    private fun priorityOf(call: ApplicationCall): InferenceScheduler.Priority =
+        if (call.request.headers[HEADER_PRIORITY]?.equals("batch", true) == true) {
+            InferenceScheduler.Priority.BATCH
+        } else {
+            InferenceScheduler.Priority.INTERACTIVE
+        }
 
     private fun modelId(): String =
         engine.loadedModelPath?.substringAfterLast('/') ?: "medha"
@@ -644,12 +963,44 @@ class LocalServer(
         return STATIC_SUFFIXES.any { lower.endsWith(it) }
     }
 
-    private fun isAuthorized(call: ApplicationCall): Boolean {
+    /**
+     * Resolves the bearer token to a client. Returns null when absent or
+     * unknown. The namespace comes from THIS lookup and never from the request
+     * body, so a client cannot ask for another client's prefix.
+     */
+    private fun resolveClient(call: ApplicationCall): ClientRegistry.Client? {
         val header = call.request.headers[HttpHeaders.Authorization]
             ?: call.request.headers[HEADER_TOKEN]
-            ?: return false
+            ?: return null
         val presented = header.removePrefix("Bearer ").removePrefix("bearer ").trim()
-        return constantTimeEquals(presented, apiToken)
+        if (presented.isEmpty()) return null
+        // Constant-time compare against each known token: a plain map lookup
+        // would leak validity through timing on the hash comparison.
+        return registry.all().firstOrNull { constantTimeEquals(presented, it.token) }
+    }
+
+    private fun ApplicationCall.client(): ClientRegistry.Client? =
+        attributes.getOrNull(CLIENT_KEY)
+
+    private suspend fun ApplicationCall.requireCap(cap: String): ClientRegistry.Client? {
+        val c = client()
+        if (c == null) {
+            respond(HttpStatusCode.Unauthorized, ErrorResponse("no client", "unauthorized"))
+            return null
+        }
+        if (!c.can(cap)) {
+            respond(
+                HttpStatusCode.Forbidden,
+                ErrorResponse("client '${c.id}' lacks capability '$cap'", "forbidden")
+            )
+            return null
+        }
+        return c
+    }
+
+    private suspend fun ApplicationCall.rejected(e: InferenceScheduler.Rejected) {
+        response.header(HttpHeaders.RetryAfter, e.retryAfterSeconds.toString())
+        respond(HttpStatusCode.TooManyRequests, ErrorResponse(e.reason, "rejected"))
     }
 
     /** Avoids leaking token length/prefix through response-time differences. */
@@ -678,7 +1029,7 @@ class LocalServer(
                 // Same-origin convenience: the bundled UI gets the token baked in
                 // so it works with zero setup. Third-party PWAs supply their own.
                 val html = String(bytes, Charsets.UTF_8)
-                    .replace(TOKEN_PLACEHOLDER, if (requireAuth) apiToken else "")
+                    .replace(TOKEN_PLACEHOLDER, if (requireAuth) (registry.admin()?.token ?: "") else "")
                     .replace(PORT_PLACEHOLDER, port.toString())
                 call.respondText(html, ContentType.Text.Html)
             } else {
@@ -711,6 +1062,21 @@ class LocalServer(
         ErrorResponse("no model loaded", "model_not_loaded")
     )
 
+    private suspend fun ApplicationCall.smsDenied() = respond(
+        HttpStatusCode.Forbidden,
+        ErrorResponse("SMS permission not granted to Medha; grant it in the app", "sms_denied")
+    )
+
+    private fun SmsConnector.Message.toJson() = buildJsonObject {
+        put("id", id)
+        put("threadId", threadId)
+        put("address", address)
+        put("body", body)
+        put("date", date)
+        put("read", read)
+        put("inbound", inbound)
+    }
+
     private suspend fun ApplicationCall.badRequest(msg: String) =
         respond(HttpStatusCode.BadRequest, ErrorResponse(msg, "bad_request"))
 
@@ -729,8 +1095,12 @@ class LocalServer(
         private const val LOOPBACK = "127.0.0.1"
         private const val ASSET_ROOT = "webapp"
         private const val HEADER_TOKEN = "X-Medha-Token"
+        private const val HEADER_PRIORITY = "X-Medha-Priority"
+        private val CLIENT_KEY = io.ktor.util.AttributeKey<ClientRegistry.Client>("medhaClient")
         private const val MAX_BODY_BYTES = 16L * 1024 * 1024
         private const val MAX_EMBED_BATCH = 64
+        private const val MAX_VALUE_BYTES = 512 * 1024
+        private const val MAX_BULK = 1000
 
         const val TOKEN_PLACEHOLDER = "__MEDHA_TOKEN__"
         const val PORT_PLACEHOLDER = "__MEDHA_PORT__"
@@ -743,5 +1113,5 @@ class LocalServer(
 
 /** Single place for the version string surfaced over HTTP. */
 object BuildInfo {
-    const val VERSION = "0.2.0"
+    const val VERSION = "0.6.0"
 }

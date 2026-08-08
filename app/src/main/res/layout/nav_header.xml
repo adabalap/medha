@@ -1,54 +1,78 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Inline mark + title. The previous header stacked a 52dp icon above the text
-  with a large top pad; on shorter screens and in landscape the NavigationView
-  header clipped the icon. A single horizontal row is height-bounded by the
-  text, so it cannot be cut off regardless of drawer height.
+  Drawer header.
+
+  fitsSystemWindows on the NavigationView REPLACES this view's padding with the
+  window insets rather than adding to it, which is why the title was being drawn
+  under the status bar and clipped. MainActivity now applies the top inset
+  programmatically via setOnApplyWindowInsetsListener, and this layout carries
+  only its own visual padding. The id is required for that.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/navHeaderRoot"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="horizontal"
-    android:gravity="center_vertical"
+    android:orientation="vertical"
     android:background="@color/indigo_dark"
-    android:paddingStart="18dp"
-    android:paddingEnd="18dp"
-    android:paddingTop="24dp"
-    android:paddingBottom="18dp">
-
-    <ImageView
-        android:layout_width="40dp"
-        android:layout_height="40dp"
-        android:adjustViewBounds="true"
-        android:src="@mipmap/ic_launcher"
-        android:contentDescription="@string/app_name" />
+    android:paddingStart="20dp"
+    android:paddingEnd="20dp"
+    android:paddingTop="20dp"
+    android:paddingBottom="20dp">
 
     <LinearLayout
-        android:layout_width="0dp"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:orientation="vertical"
-        android:paddingStart="12dp">
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
 
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/nav_header_title"
-            android:textColor="@color/on_indigo"
-            android:textSize="17sp"
-            android:textStyle="bold"
-            android:maxLines="1"
-            android:ellipsize="end" />
+        <ImageView
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:src="@drawable/ic_medha_mark"
+            android:contentDescription="@string/app_name" />
 
-        <TextView
-            android:id="@+id/navHeaderSubtitle"
-            android:layout_width="match_parent"
+        <LinearLayout
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:paddingTop="1dp"
-            android:text="@string/nav_header_subtitle"
-            android:textColor="#D8CCF4"
-            android:textSize="12sp"
-            android:maxLines="2"
-            android:ellipsize="end" />
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:paddingStart="14dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/nav_header_title"
+                android:textColor="@color/on_indigo"
+                android:textSize="19sp"
+                android:textStyle="bold"
+                android:includeFontPadding="true"
+                android:maxLines="1"
+                android:ellipsize="end" />
+
+            <TextView
+                android:id="@+id/navHeaderSubtitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="2dp"
+                android:text="@string/nav_header_subtitle"
+                android:textColor="#D8CCF4"
+                android:textSize="12sp"
+                android:maxLines="2"
+                android:ellipsize="end" />
+        </LinearLayout>
     </LinearLayout>
+
+    <TextView
+        android:id="@+id/navHeaderStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:background="@drawable/bg_pill"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"
+        android:text="@string/state_stopped"
+        android:textColor="@color/on_indigo"
+        android:textSize="12sp" />
 </LinearLayout>
