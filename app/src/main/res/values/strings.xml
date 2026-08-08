@@ -117,4 +117,5 @@ Licensed under the terms in the project repository.</string>
     <string name="sms_granted">SMS read permission granted.</string>
     <string name="widget_empty">No updates yet. Apps using Medha can post here.</string>
     <string name="widget_description">Cards pushed by apps using Medha</string>
+    <string name="sms_unsupported">This is the “core” build, which ships without SMS permissions so that it installs without a Google Play Protect block.\n\nTo use the SMS connector, install the “full” build (medha-…-full-…apk). Play Protect will warn about it; that warning is caused by the SMS permission itself, not by anything the app does with it.</string>
 </resources>

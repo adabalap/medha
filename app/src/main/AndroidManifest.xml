@@ -8,15 +8,18 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!--
-      SMS connector. Read-only by default; SEND_SMS is declared so the
-      capability exists, but sending also requires being the default SMS app on
-      modern Android. All four are runtime permissions the user must grant
-      explicitly in the app; none is requested at install time.
+      NOTE: SMS and contacts permissions are NOT declared here. They live in the
+      "full" product flavour (app/src/full/AndroidManifest.xml).
+
+      Google Play Protect blocks sideloaded APKs that declare SMS permissions,
+      with "This app can request access to sensitive data." That block applies
+      to the whole APK regardless of whether the user ever enables the
+      connector, so declaring them unconditionally made the CORE service
+      un-installable for people who only wanted inference.
+
+      Build "core" for a clean install; build "full" only if you need the SMS
+      connector, and expect to bypass Play Protect deliberately.
     -->
-    <uses-permission android:name="android.permission.READ_SMS" />
-    <uses-permission android:name="android.permission.RECEIVE_SMS" />
-    <uses-permission android:name="android.permission.SEND_SMS" />
-    <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!--

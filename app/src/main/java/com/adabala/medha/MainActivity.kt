@@ -395,6 +395,15 @@ class MainActivity : AppCompatActivity() {
 
     private fun showSmsDialog() {
         val st = sms.status()
+        if (!st.supported) {
+            MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.sms_title)
+                .setIcon(R.drawable.ic_sms)
+                .setMessage(getString(R.string.sms_unsupported))
+                .setPositiveButton(R.string.close, null)
+                .show()
+            return
+        }
         val body = buildString {
             append("Read permission: ").append(if (st.canRead) "granted" else "NOT granted").append("\n")
             append("Send permission: ").append(if (st.canSend) "granted" else "not granted").append("\n")

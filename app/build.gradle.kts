@@ -42,8 +42,8 @@ android {
         applicationId = "com.adabala.medha"
         minSdk = 27
         targetSdk = 34
-        versionCode = 5
-        versionName = "0.6.0"
+        versionCode = 6
+        versionName = "0.7.0"
     }
 
     signingConfigs {
@@ -54,6 +54,30 @@ android {
                 keyAlias = keyAliasName
                 this.keyPassword = keyPassword
             }
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Flavours exist for ONE reason: Play Protect blocks sideloaded APKs that
+    // declare SMS permissions, and that block is evaluated on the manifest, not
+    // on whether the feature is ever used. Keeping SMS out of the default build
+    // means the inference service installs cleanly.
+    //
+    //   core  - inference, memory, RAG, store, notifications. No SMS.
+    //   full  - adds the SMS connector. Expect a Play Protect warning.
+    // ---------------------------------------------------------------------
+    flavorDimensions += "connectors"
+    productFlavors {
+        create("core") {
+            dimension = "connectors"
+            versionNameSuffix = "-core"
+        }
+        create("full") {
+            dimension = "connectors"
+            versionNameSuffix = "-full"
+            // Separate applicationId so both can sit side by side and so a
+            // "full" install never silently replaces a clean "core" one.
+            applicationIdSuffix = ".full"
         }
     }
 

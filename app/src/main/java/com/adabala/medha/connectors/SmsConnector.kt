@@ -1,13 +1,9 @@
 package com.adabala.medha.connectors
 
 import android.Manifest
-import android.app.PendingIntent
-import android.content.BroadcastReceiver
 import android.content.ContentResolver
 import android.content.ContentValues
 import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.database.ContentObserver
 import android.net.Uri
@@ -66,6 +62,7 @@ class SmsConnector(private val appContext: Context) {
     )
 
     data class Status(
+        val supported: Boolean,
         val canRead: Boolean,
         val canSend: Boolean,
         val isDefaultSmsApp: Boolean,
@@ -79,6 +76,7 @@ class SmsConnector(private val appContext: Context) {
     fun status(): Status {
         val canRead = has(Manifest.permission.READ_SMS)
         return Status(
+            supported = smsSupported,
             canRead = canRead,
             canSend = has(Manifest.permission.SEND_SMS),
             isDefaultSmsApp = isDefaultSmsApp(),
@@ -88,8 +86,26 @@ class SmsConnector(private val appContext: Context) {
 
     fun canRead(): Boolean = has(Manifest.permission.READ_SMS)
 
+    /**
+     * True only if the permission is BOTH declared in the manifest and granted.
+     *
+     * In the "core" flavour the SMS permissions are not declared at all, so
+     * checkSelfPermission returns DENIED permanently and a request would fail
+     * silently. [isDeclared] lets the UI say "this build has no SMS support"
+     * instead of showing a Grant button that can never succeed.
+     */
     private fun has(p: String) =
         ContextCompat.checkSelfPermission(appContext, p) == PackageManager.PERMISSION_GRANTED
+
+    fun isDeclared(permission: String): Boolean = runCatching {
+        val pi = appContext.packageManager.getPackageInfo(
+            appContext.packageName, PackageManager.GET_PERMISSIONS
+        )
+        pi.requestedPermissions?.contains(permission) == true
+    }.getOrDefault(false)
+
+    /** False on the core flavour: no SMS permissions in the manifest. */
+    val smsSupported: Boolean get() = isDeclared(Manifest.permission.READ_SMS)
 
     private fun isDefaultSmsApp(): Boolean = runCatching {
         Telephony.Sms.getDefaultSmsPackage(appContext) == appContext.packageName

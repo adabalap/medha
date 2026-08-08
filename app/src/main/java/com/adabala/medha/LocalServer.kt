@@ -723,6 +723,9 @@ class LocalServer(
                     call.requireCap(ClientRegistry.Cap.SMS_READ) ?: return@get
                     val st = sms.status()
                     call.respondJson(buildJsonObject {
+                        // False on the "core" build, which ships without SMS
+                        // permissions so it installs without a Play Protect block.
+                        put("supported", st.supported)
                         put("canRead", st.canRead)
                         put("canSend", st.canSend)
                         put("isDefaultSmsApp", st.isDefaultSmsApp)
@@ -1113,5 +1116,5 @@ class LocalServer(
 
 /** Single place for the version string surfaced over HTTP. */
 object BuildInfo {
-    const val VERSION = "0.6.0"
+    const val VERSION = "0.7.0"
 }

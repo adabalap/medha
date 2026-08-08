@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Permissions for the SMS connector. Merged into the "full" flavour only.
+
+  RECEIVE_SMS is deliberately ABSENT. The connector detects new messages with a
+  ContentObserver on the SMS provider, which needs only READ_SMS. The broadcast
+  receiver path would additionally require being the default SMS app, so
+  declaring RECEIVE_SMS bought nothing and added the single permission Play
+  Protect treats most harshly.
+
+  Both are runtime permissions the user grants explicitly inside Medha; neither
+  is requested at install time.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- Sending also requires being the default SMS app on modern Android. -->
+    <uses-permission android:name="android.permission.SEND_SMS" />
+</manifest>

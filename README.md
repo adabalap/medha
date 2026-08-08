@@ -206,6 +206,20 @@ across spaces. See `docs/EMBEDDINGS.md`.
 
 ---
 
+## Two builds: core and full
+
+CI produces **two APKs per build type**:
+
+| APK | SMS connector | Play Protect |
+|---|---|---|
+| `medha-<v>-core-<type>-<sha>.apk` | no | installs cleanly |
+| `medha-<v>-full-<type>-<sha>.apk` | yes | will warn |
+
+Install **core** unless you need SMS. Everything else is identical. Play Protect
+blocks sideloaded APKs that merely *declare* SMS permissions, so keeping them out
+of the default build is what makes a clean install possible. See
+`docs/PLAY-PROTECT.md`.
+
 ## Debug vs release builds
 
 The workflow produced `app-debug.apk` because it ran `assembleDebug`, and AGP
