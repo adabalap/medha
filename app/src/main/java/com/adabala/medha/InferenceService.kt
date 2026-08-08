@@ -15,6 +15,9 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.preference.PreferenceManager
 import com.adabala.medha.data.MedhaDatabase
+import com.adabala.medha.rag.AiEdgeEmbedder
+import com.adabala.medha.rag.Embedder
+import com.adabala.medha.rag.NoEmbedder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -32,6 +35,7 @@ class InferenceService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private lateinit var engine: LlmEngine
     private var server: LocalServer? = null
+    private var embedder: Embedder = NoEmbedder
     private var wakeLock: PowerManager.WakeLock? = null
 
     private var currentPort: Int = -1
@@ -69,12 +73,18 @@ class InferenceService : Service() {
         val requireAuth = prefs.getBoolean(KEY_REQUIRE_AUTH, true)
         val db = MedhaDatabase.get(applicationContext)
 
+        // Optional and non-fatal: with no model files or no SDK on the
+        // classpath this returns NoEmbedder and RAG stays lexical.
+        if (!embedder.isReady) {
+            embedder = AiEdgeEmbedder.createOrNull(applicationContext)
+        }
+
         // Restart the server if the port changed. Previously the server was
         // created once and never rebound, so editing the port in the UI and
         // hitting Start silently kept serving on the old one.
         if (server == null || currentPort != port) {
             server?.stop()
-            server = LocalServer(applicationContext, engine, port, db, token, requireAuth)
+            server = LocalServer(applicationContext, engine, port, db, token, requireAuth, embedder)
                 .also { runCatching { it.start() }.onFailure { e -> onServerFailed(e, port) } }
             currentPort = port
         }
@@ -116,8 +126,12 @@ class InferenceService : Service() {
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         if (level >= TRIM_MEMORY_COMPLETE) {
-            Log.w(TAG, "onTrimMemory($level): releasing engine")
+            Log.w(TAG, "onTrimMemory($level): releasing engine and embedder")
             engine.close()
+            // The embedding model is a second resident model; release it too or
+            // the trim accomplishes much less than it appears to.
+            runCatching { embedder.close() }
+            embedder = NoEmbedder
             engine.recordError("engine released under memory pressure; restart to reload")
             updateNotification("Released under memory pressure")
         }
@@ -128,6 +142,8 @@ class InferenceService : Service() {
         server?.stop()
         server = null
         engine.close()
+        runCatching { embedder.close() }
+        embedder = NoEmbedder
         releaseWakeLock()
         scope.cancel()
         super.onDestroy()

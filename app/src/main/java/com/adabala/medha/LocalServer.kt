@@ -3,6 +3,8 @@ package com.adabala.medha
 import android.content.Context
 import android.util.Log
 import com.adabala.medha.data.MedhaDatabase
+import com.adabala.medha.rag.Embedder
+import com.adabala.medha.rag.NoEmbedder
 import com.adabala.medha.rag.Retriever
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
@@ -33,6 +35,7 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -85,6 +88,17 @@ data class RagIngestRequest(
 data class RagQueryRequest(val collection: String, val query: String, val topK: Int = 3)
 
 @Serializable
+data class EmbeddingsRequest(
+    val input: List<String>,
+    val model: String? = null,
+    /** Medha extension: "query" or "document" (default). */
+    @kotlinx.serialization.SerialName("input_type") val inputType: String = "document"
+)
+
+@Serializable
+data class ReindexRequest(val collection: String? = null)
+
+@Serializable
 data class ErrorResponse(val error: String, val code: String? = null)
 
 /**
@@ -115,11 +129,12 @@ class LocalServer(
     private val port: Int,
     private val db: MedhaDatabase,
     private val apiToken: String,
-    private val requireAuth: Boolean = true
+    private val requireAuth: Boolean = true,
+    private val embedder: Embedder = NoEmbedder
 ) {
     private var server: ApplicationEngine? = null
     private val memory = MemoryRepository(db)
-    private val retriever = Retriever(db) // keyword mode until an embedder is wired
+    private val retriever = Retriever(db, embedder)
     private val jsonFormat = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
     fun start() {
@@ -216,6 +231,9 @@ class LocalServer(
                         put("freeStorageMb", SystemInfo.freeStorageMb(appContext))
                         put("dbSizeBytes", db.sizeBytes(appContext))
                         put("fullTextIndex", db.hasFullTextIndex)
+                        put("embeddingModel", retriever.embeddingId)
+                        put("vectorSearch", retriever.vectorEnabled)
+                        put("embeddedChunks", db.countEmbedded(retriever.embeddingId))
                         SystemInfo.deviceInfo().forEach { (k, v) -> put(k, v) }
                         put("memTotalMb", mem.totalMb)
                         put("memAvailMb", mem.availMb)
@@ -442,16 +460,56 @@ class LocalServer(
                 }
 
                 post("/v1/embeddings") {
-                    // Honest 501 rather than a fake vector. Wire an embedder into
-                    // Retriever and implement here; the storage side already
-                    // supports embeddings end to end.
-                    call.respond(
-                        HttpStatusCode.NotImplemented,
-                        ErrorResponse(
-                            "no embedding model is loaded; RAG is running in lexical mode",
-                            "not_implemented"
+                    if (!embedder.isReady) {
+                        return@post call.respond(
+                            HttpStatusCode.NotImplemented,
+                            ErrorResponse(
+                                "no embedding model is loaded; RAG is running in lexical mode",
+                                "not_implemented"
+                            )
                         )
-                    )
+                    }
+                    val req = call.receive<EmbeddingsRequest>()
+                    val inputs = req.input
+                    if (inputs.isEmpty()) return@post call.badRequest("input must not be empty")
+                    if (inputs.size > MAX_EMBED_BATCH) {
+                        return@post call.badRequest("at most $MAX_EMBED_BATCH inputs per request")
+                    }
+
+                    // Asymmetric by design: a caller embedding a search query
+                    // needs the query prefix, one indexing a passage needs the
+                    // document prefix. OpenAI's schema has no field for this,
+                    // so Medha adds "input_type" and defaults to "document",
+                    // which is the safe choice for an indexing pipeline.
+                    val asQuery = req.inputType.equals("query", ignoreCase = true)
+                    val vectors = inputs.map { t ->
+                        if (asQuery) embedder.embedQuery(t) else embedder.embedDocument(t, null)
+                    }
+                    if (vectors.any { it == null }) {
+                        return@post call.respond(
+                            HttpStatusCode.InternalServerError,
+                            ErrorResponse("embedding failed for one or more inputs", "embed_failed")
+                        )
+                    }
+
+                    call.respondJson(buildJsonObject {
+                        put("object", "list")
+                        put("model", embedder.id)
+                        putJsonArray("data") {
+                            vectors.forEachIndexed { i, v ->
+                                addJsonObject {
+                                    put("object", "embedding")
+                                    put("index", i)
+                                    putJsonArray("embedding") { v!!.forEach { add(it) } }
+                                }
+                            }
+                        }
+                        put("usage", buildJsonObject {
+                            val toks = inputs.sumOf { SystemInfo.estimateTokens(it) }
+                            put("prompt_tokens", toks)
+                            put("total_tokens", toks)
+                        })
+                    })
                 }
 
                 // ------------------------------ RAG ------------------------------
@@ -460,11 +518,13 @@ class LocalServer(
                     val req = call.receive<RagIngestRequest>()
                     if (req.collection.isBlank()) return@post call.badRequest("collection is required")
                     if (req.text.isBlank()) return@post call.badRequest("text must not be blank")
-                    val chunks = retriever.ingest(req.collection, req.title, req.source, req.text)
+                    val r = retriever.ingest(req.collection, req.title, req.source, req.text)
                     call.respondJson(buildJsonObject {
                         put("status", "ingested")
                         put("collection", req.collection)
-                        put("chunks", chunks)
+                        put("chunks", r.chunks)
+                        put("embedded", r.embedded)
+                        put("mode", if (retriever.vectorEnabled) "hybrid" else "lexical")
                     })
                 }
 
@@ -486,6 +546,23 @@ class LocalServer(
                     })
                 }
 
+                post("/rag/reindex") {
+                    if (!embedder.isReady) {
+                        return@post call.respond(
+                            HttpStatusCode.NotImplemented,
+                            ErrorResponse("no embedding model is loaded", "not_implemented")
+                        )
+                    }
+                    val req = call.receive<ReindexRequest>()
+                    val r = retriever.reindex(req.collection?.takeIf { it.isNotBlank() })
+                    call.respondJson(buildJsonObject {
+                        put("embedded", r.embedded)
+                        put("remaining", r.remaining)
+                        put("status", r.status)
+                        put("model", embedder.id)
+                    })
+                }
+
                 get("/rag/collections") {
                     call.respondJson(buildJsonObject {
                         putJsonArray("collections") {
@@ -494,6 +571,7 @@ class LocalServer(
                                     put("collection", c.collection)
                                     put("documents", c.documents)
                                     put("chunks", c.chunks)
+                                    put("embedded", c.embedded)
                                 }
                             }
                         }
@@ -652,6 +730,7 @@ class LocalServer(
         private const val ASSET_ROOT = "webapp"
         private const val HEADER_TOKEN = "X-Medha-Token"
         private const val MAX_BODY_BYTES = 16L * 1024 * 1024
+        private const val MAX_EMBED_BATCH = 64
 
         const val TOKEN_PLACEHOLDER = "__MEDHA_TOKEN__"
         const val PORT_PLACEHOLDER = "__MEDHA_PORT__"

@@ -87,12 +87,15 @@ class MedhaDatabase private constructor(context: Context) :
                     REFERENCES documents(id) ON DELETE CASCADE,
                 collection TEXT NOT NULL,
                 text TEXT NOT NULL,
-                embedding TEXT,
+                embedding BLOB,
+                embeddingModel TEXT,
+                embeddingDim INTEGER NOT NULL DEFAULT 0,
                 createdAt INTEGER NOT NULL
             )
             """.trimIndent()
         )
         db.execSQL("CREATE INDEX idx_chunk_coll ON chunks(collection)")
+        db.execSQL("CREATE INDEX idx_chunk_emb ON chunks(collection, embeddingModel)")
         db.execSQL("CREATE INDEX idx_chunk_doc ON chunks(documentId)")
 
         createFts(db)
@@ -106,6 +109,46 @@ class MedhaDatabase private constructor(context: Context) :
                 runCatching {
                     db.execSQL("INSERT INTO chunks_fts(docid, text) SELECT id, text FROM chunks")
                 }
+            }
+        }
+        if (oldV < 3) {
+            // v2 stored embeddings as a comma-separated TEXT column and had no
+            // record of which model produced them. Rather than guess at the
+            // provenance of existing vectors, the column is rebuilt empty and
+            // the chunks are left for POST /rag/reindex to re-embed. Chunk TEXT
+            // is preserved, so nothing the user ingested is lost -- only the
+            // vectors, which were unusable without a known embedding space.
+            db.beginTransaction()
+            try {
+                db.execSQL("ALTER TABLE chunks RENAME TO chunks_v2")
+                db.execSQL(
+                    """
+                    CREATE TABLE chunks(
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        documentId INTEGER NOT NULL
+                            REFERENCES documents(id) ON DELETE CASCADE,
+                        collection TEXT NOT NULL,
+                        text TEXT NOT NULL,
+                        embedding BLOB,
+                        embeddingModel TEXT,
+                        embeddingDim INTEGER NOT NULL DEFAULT 0,
+                        createdAt INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO chunks(id, documentId, collection, text, createdAt)
+                    SELECT id, documentId, collection, text, createdAt FROM chunks_v2
+                    """.trimIndent()
+                )
+                db.execSQL("DROP TABLE chunks_v2")
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_chunk_coll ON chunks(collection)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_chunk_doc ON chunks(documentId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_chunk_emb ON chunks(collection, embeddingModel)")
+                db.setTransactionSuccessful()
+            } finally {
+                db.endTransaction()
             }
         }
     }
@@ -246,20 +289,21 @@ class MedhaDatabase private constructor(context: Context) :
     fun insertChunks(
         documentId: Long,
         collection: String,
-        chunks: List<Pair<String, String?>>
+        chunks: List<ChunkInsert>
     ): Int {
         val db = writableDatabase
         var n = 0
         db.beginTransaction()
         try {
-            for (pair in chunks) {
-                val text = pair.first
-                val embedding = pair.second
+            for (row in chunks) {
+                val text = row.text
                 val v = ContentValues().apply {
                     put("documentId", documentId)
                     put("collection", collection)
                     put("text", text)
-                    put("embedding", embedding)
+                    put("embedding", row.embedding)
+                    put("embeddingModel", row.embeddingModel)
+                    put("embeddingDim", row.embeddingDim)
                     put("createdAt", System.currentTimeMillis())
                 }
                 val id = db.insert("chunks", null, v)
@@ -317,24 +361,77 @@ class MedhaDatabase private constructor(context: Context) :
             arrayOf(collection, limit.toString())
         )
 
-    fun embeddedChunks(collection: String, limit: Int = MAX_SCAN): List<ChunkEntity> =
-        queryChunks(
-            "$CHUNK_COLS WHERE collection=? AND embedding IS NOT NULL ORDER BY id DESC LIMIT ?",
-            arrayOf(collection, limit.toString())
+    /**
+     * Chunks carrying a vector from *this exact* embedding space.
+     *
+     * The `embeddingModel = ?` predicate is the important part. Without it, a
+     * model swap or a Matryoshka dimension change would leave old vectors in
+     * the table that still decode fine and still produce a similarity score --
+     * a plausible-looking number computed in the wrong space. Scoping the query
+     * to the active model means stale vectors are simply invisible until
+     * reindexed.
+     */
+    fun vectorCandidates(
+        collection: String,
+        embeddingModel: String,
+        limit: Int = MAX_SCAN
+    ): List<ChunkEntity> = queryChunks(
+        "$CHUNK_COLS WHERE collection=? AND embeddingModel=? AND embedding IS NOT NULL " +
+            "ORDER BY id DESC LIMIT ?",
+        arrayOf(collection, embeddingModel, limit.toString())
+    )
+
+    /** Chunks in [collection] that still need a vector for [embeddingModel]. */
+    fun chunksNeedingEmbedding(
+        collection: String?,
+        embeddingModel: String,
+        limit: Int
+    ): List<ChunkEntity> {
+        val where = if (collection == null) "" else "collection=? AND "
+        val args = if (collection == null) {
+            arrayOf(embeddingModel, limit.toString())
+        } else {
+            arrayOf(collection, embeddingModel, limit.toString())
+        }
+        return queryChunks(
+            "$CHUNK_COLS WHERE $where(embeddingModel IS NULL OR embeddingModel<>?) ORDER BY id LIMIT ?",
+            args
         )
+    }
+
+    /** Attaches a freshly computed vector to an existing chunk. */
+    fun updateChunkEmbedding(
+        chunkId: Long,
+        embedding: ByteArray,
+        embeddingModel: String,
+        embeddingDim: Int
+    ) {
+        val v = ContentValues().apply {
+            put("embedding", embedding)
+            put("embeddingModel", embeddingModel)
+            put("embeddingDim", embeddingDim)
+        }
+        writableDatabase.update("chunks", v, "id=?", arrayOf(chunkId.toString()))
+    }
+
+    fun countEmbedded(embeddingModel: String): Int =
+        readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM chunks WHERE embeddingModel=?", arrayOf(embeddingModel)
+        ).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
 
     fun listCollections(): List<CollectionSummary> {
         val out = ArrayList<CollectionSummary>()
         readableDatabase.rawQuery(
             """
-            SELECT d.collection, COUNT(DISTINCT d.id), COUNT(c.id)
+            SELECT d.collection, COUNT(DISTINCT d.id), COUNT(c.id),
+                   SUM(CASE WHEN c.embedding IS NOT NULL THEN 1 ELSE 0 END)
             FROM documents d LEFT JOIN chunks c ON c.documentId = d.id
             GROUP BY d.collection ORDER BY d.collection
             """.trimIndent(),
             null
         ).use { c ->
             while (c.moveToNext()) {
-                out.add(CollectionSummary(c.getString(0), c.getInt(1), c.getInt(2)))
+                out.add(CollectionSummary(c.getString(0), c.getInt(1), c.getInt(2), c.getInt(3)))
             }
         }
         return out
@@ -404,13 +501,23 @@ class MedhaDatabase private constructor(context: Context) :
         documentId = getLong(1),
         collection = getString(2),
         text = getString(3),
-        embedding = getStringOrNull(4),
-        createdAt = getLong(5)
+        embedding = if (isNull(4)) null else getBlob(4),
+        embeddingModel = getStringOrNull(5),
+        embeddingDim = getInt(6),
+        createdAt = getLong(7)
+    )
+
+    /** One row to insert, with an optional pre-computed vector. */
+    data class ChunkInsert(
+        val text: String,
+        val embedding: ByteArray? = null,
+        val embeddingModel: String? = null,
+        val embeddingDim: Int = 0
     )
 
     companion object {
         private const val DB_NAME = "medha.db"
-        private const val DB_VERSION = 2
+        private const val DB_VERSION = 3
 
         /** Hard cap on rows pulled into memory by any single fallback scan. */
         const val MAX_SCAN = 2000
@@ -420,7 +527,7 @@ class MedhaDatabase private constructor(context: Context) :
         private const val MSG_COLS =
             "SELECT id,conversationId,role,content,createdAt FROM messages"
         private const val CHUNK_COLS =
-            "SELECT id,documentId,collection,text,embedding,createdAt FROM chunks"
+            "SELECT id,documentId,collection,text,embedding,embeddingModel,embeddingDim,createdAt FROM chunks"
 
         @Volatile private var INSTANCE: MedhaDatabase? = null
 

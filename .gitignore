@@ -8,3 +8,8 @@
 /captures/
 .externalNativeBuild/
 .cxx/
+
+# The Gradle wrapper is intentionally committed: it pins the build tool version
+# so CI and every developer use the same Gradle. Do not let a broad *.jar rule
+# swallow it.
+!gradle/wrapper/gradle-wrapper.jar

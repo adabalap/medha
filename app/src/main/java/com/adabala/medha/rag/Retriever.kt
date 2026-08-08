@@ -1,85 +1,197 @@
 package com.adabala.medha.rag
 
+import android.util.Log
 import com.adabala.medha.data.ChunkEntity
 import com.adabala.medha.data.MedhaDatabase
 import kotlin.math.ln
 import kotlin.math.sqrt
 
 /**
- * Retrieval layer for RAG.
+ * Retrieval for RAG.
  *
- *  - VECTOR mode when chunks carry embeddings (cosine similarity).
- *  - LEXICAL mode otherwise, so RAG is useful before an embedding model exists.
+ * Three modes, chosen automatically:
  *
- * Lexical mode is now a two-stage pipeline: SQLite FTS4 shortlists candidates
- * inside the database, then we re-rank that bounded set in Kotlin with IDF
- * weighting. The previous implementation pulled every chunk in the collection
- * into a List and scored it in memory, which is fine for a demo corpus and an
- * OOM on a real one.
+ *  - **hybrid**  — dense vectors AND lexical FTS, fused. The default whenever an
+ *                  embedder is loaded and the collection has vectors.
+ *  - **vector**  — dense only, when lexical finds nothing.
+ *  - **lexical** — FTS4 shortlist re-ranked by IDF. The fallback when no
+ *                  embedder is configured, which is exactly how Medha behaved
+ *                  before embeddings existed.
  *
- * [embedder] is pluggable: supply text -> FloatArray to enable vector mode
- * (e.g. EmbeddingGemma via LiteRT). Nothing else has to change.
+ * ## Why hybrid rather than "upgrade to vector"
+ *
+ * Dense retrieval is strong on paraphrase and weak on *exact tokens*. An
+ * embedding of "order AX-99213" and one of "order AX-99871" sit almost on top
+ * of each other, because the model encodes "an order reference" and not the
+ * digits. For an SMS organizer — OTP codes, tracking numbers, account digits,
+ * short names — that is the common case, not an edge case. Lexical search is
+ * exact but brittle to phrasing; dense is robust to phrasing but blurry on
+ * identifiers. Fusing them recovers both.
+ *
+ * Fusion is Reciprocal Rank Fusion: each list contributes 1/(K + rank). RRF is
+ * used rather than a weighted score blend because cosine similarities and IDF
+ * scores live on incomparable scales, and any fixed weighting between them is a
+ * magic number that silently stops being right when the corpus changes. RRF
+ * only reads *ranks*, so it needs no calibration.
  */
 class Retriever(
     private val db: MedhaDatabase,
-    private val embedder: (suspend (String) -> FloatArray?)? = null
+    private val embedder: Embedder = NoEmbedder
 ) {
 
-    data class Hit(val text: String, val score: Double, val mode: String)
+    data class Hit(
+        val text: String,
+        val score: Double,
+        val mode: String,
+        val chunkId: Long = 0
+    )
+
+    val embeddingId: String get() = embedder.id
+    val vectorEnabled: Boolean get() = embedder.isReady
+
+    // ------------------------------ ingest ------------------------------
 
     suspend fun ingest(
         collection: String,
         title: String?,
         source: String?,
         text: String
-    ): Int {
+    ): IngestResult {
         require(collection.isNotBlank()) { "collection must not be blank" }
         require(text.isNotBlank()) { "text must not be blank" }
 
         val docId = db.insertDocument(collection, title, source)
         val pieces = chunk(text)
+        var embedded = 0
+
         val rows = pieces.map { piece ->
-            val emb = runCatching { embedder?.invoke(piece) }.getOrNull()
-            piece to emb?.let { encode(it) }
+            // Document side gets the "title: ... | text: ..." prefix. Applying
+            // the query prefix here instead would cost recall silently.
+            val vec = if (embedder.isReady) {
+                runCatching { embedder.embedDocument(piece, title) }
+                    .onFailure { Log.w(TAG, "embedDocument failed; storing chunk without a vector", it) }
+                    .getOrNull()
+            } else null
+
+            if (vec != null && vec.size == embedder.dimensions) {
+                embedded++
+                MedhaDatabase.ChunkInsert(
+                    text = piece,
+                    embedding = Embedder.encode(vec),
+                    embeddingModel = embedder.id,
+                    embeddingDim = embedder.dimensions
+                )
+            } else {
+                // A failed embedding must not lose the chunk. It stays
+                // lexically searchable and POST /rag/reindex can fill it later.
+                MedhaDatabase.ChunkInsert(text = piece)
+            }
         }
-        // One transaction for the whole document: a 200-chunk ingest was
-        // previously 200 separate commits, each with its own fsync.
-        return db.insertChunks(docId, collection, rows)
+
+        val n = db.insertChunks(docId, collection, rows)
+        return IngestResult(chunks = n, embedded = embedded)
     }
+
+    data class IngestResult(val chunks: Int, val embedded: Int)
+
+    /**
+     * Embeds chunks that have no vector for the active model. Returns how many
+     * were filled. Bounded per call so a huge collection can be worked through
+     * incrementally without holding the engine hostage.
+     */
+    suspend fun reindex(collection: String?, batch: Int = REINDEX_BATCH): ReindexResult {
+        if (!embedder.isReady) return ReindexResult(0, 0, "no embedder loaded")
+        val pending = db.chunksNeedingEmbedding(collection, embedder.id, batch)
+        var done = 0
+        for (c in pending) {
+            val vec = runCatching { embedder.embedDocument(c.text, null) }.getOrNull()
+            if (vec != null && vec.size == embedder.dimensions) {
+                db.updateChunkEmbedding(
+                    c.id, Embedder.encode(vec), embedder.id, embedder.dimensions
+                )
+                done++
+            }
+        }
+        val remaining = db.chunksNeedingEmbedding(collection, embedder.id, batch + 1).size
+        return ReindexResult(done, remaining, if (remaining > 0) "more remaining" else "complete")
+    }
+
+    data class ReindexResult(val embedded: Int, val remaining: Int, val status: String)
+
+    // ----------------------------- retrieve -----------------------------
 
     suspend fun retrieve(collection: String, query: String, topK: Int): List<Hit> {
         if (query.isBlank() || topK <= 0) return emptyList()
         val k = topK.coerceAtMost(MAX_TOP_K)
 
-        val queryEmb = runCatching { embedder?.invoke(query) }.getOrNull()
-        if (queryEmb != null) {
-            val embedded = db.embeddedChunks(collection)
-            if (embedded.isNotEmpty()) return vectorSearch(embedded, queryEmb, k)
+        val dense = denseSearch(collection, query, k * OVERFETCH)
+        val lexical = lexicalSearch(collection, query, k * OVERFETCH)
+
+        return when {
+            dense.isNotEmpty() && lexical.isNotEmpty() -> fuse(dense, lexical, k)
+            dense.isNotEmpty() -> dense.take(k)
+            else -> lexical.take(k)
         }
-
-        val terms = tokenize(query).toList()
-        if (terms.isEmpty()) return emptyList()
-
-        // Stage 1: bounded candidate set from the FTS index.
-        var candidates = db.searchChunks(collection, terms, SHORTLIST)
-        // Stage 2 fallback: no FTS on this device, or nothing matched.
-        if (candidates.isEmpty()) candidates = db.chunksInCollection(collection)
-        if (candidates.isEmpty()) return emptyList()
-
-        return lexicalRank(candidates, terms.toSet(), k)
     }
 
-    private fun vectorSearch(chunks: List<ChunkEntity>, q: FloatArray, topK: Int): List<Hit> =
-        chunks.mapNotNull { c ->
-            val decoded = runCatching { decode(c.embedding!!) }.getOrNull() ?: return@mapNotNull null
-            Hit(c.text, cosine(q, decoded), "vector")
-        }.sortedByDescending { it.score }.take(topK)
+    private suspend fun denseSearch(collection: String, query: String, limit: Int): List<Hit> {
+        if (!embedder.isReady) return emptyList()
+        val q = runCatching { embedder.embedQuery(query) }
+            .onFailure { Log.w(TAG, "embedQuery failed; falling back to lexical", it) }
+            .getOrNull() ?: return emptyList()
+
+        // Scoped to this embedding space; stale vectors are invisible.
+        val candidates = db.vectorCandidates(collection, embedder.id)
+        if (candidates.isEmpty()) return emptyList()
+
+        return candidates.mapNotNull { c ->
+            val blob = c.embedding ?: return@mapNotNull null
+            if (c.embeddingDim != q.size) return@mapNotNull null
+            val v = runCatching { Embedder.decode(blob) }.getOrNull() ?: return@mapNotNull null
+            // Both sides are L2-normalised, so a dot product IS the cosine.
+            Hit(c.text, Embedder.dot(q, v), "vector", c.id)
+        }.sortedByDescending { it.score }.take(limit)
+    }
+
+    private fun lexicalSearch(collection: String, query: String, limit: Int): List<Hit> {
+        val terms = tokenize(query).toList()
+        if (terms.isEmpty()) return emptyList()
+        var candidates = db.searchChunks(collection, terms, SHORTLIST)
+        if (candidates.isEmpty()) candidates = db.chunksInCollection(collection)
+        if (candidates.isEmpty()) return emptyList()
+        return lexicalRank(candidates, terms.toSet(), limit)
+    }
 
     /**
-     * IDF-weighted overlap with length normalisation. Rare query terms count for
-     * more than common ones, which plain term-count overlap got wrong: a chunk
-     * repeating a stopword-ish token outranked one containing the actual
-     * distinctive keyword.
+     * Reciprocal Rank Fusion. Rank-only, so the two incomparable score scales
+     * never have to be reconciled.
+     */
+    private fun fuse(dense: List<Hit>, lexical: List<Hit>, topK: Int): List<Hit> {
+        val scores = HashMap<String, Double>()
+        val best = HashMap<String, Hit>()
+
+        fun add(list: List<Hit>) {
+            list.forEachIndexed { i, h ->
+                val key = h.text
+                scores[key] = (scores[key] ?: 0.0) + 1.0 / (RRF_K + i + 1)
+                best.putIfAbsent(key, h)
+            }
+        }
+        add(dense)
+        add(lexical)
+
+        return scores.entries
+            .sortedByDescending { it.value }
+            .take(topK)
+            .mapNotNull { e ->
+                best[e.key]?.let { Hit(it.text, e.value, "hybrid", it.chunkId) }
+            }
+    }
+
+    /**
+     * IDF-weighted overlap with length normalisation. Rare query terms count
+     * for more than common ones, so a chunk repeating a near-stopword cannot
+     * outrank one holding the actual distinctive keyword.
      */
     private fun lexicalRank(
         chunks: List<ChunkEntity>,
@@ -90,11 +202,9 @@ class Retriever(
         val n = tokenised.size.toDouble()
 
         val docFreq = HashMap<String, Int>()
-        for (term in queryTerms) {
-            docFreq[term] = tokenised.count { it.second.contains(term) }
-        }
+        for (term in queryTerms) docFreq[term] = tokenised.count { it.second.contains(term) }
 
-        return tokenised.mapNotNull { (chunkEntity, terms) ->
+        return tokenised.mapNotNull { (c, terms) ->
             if (terms.isEmpty()) return@mapNotNull null
             var score = 0.0
             for (term in queryTerms) {
@@ -104,7 +214,7 @@ class Retriever(
                 score += ln(1.0 + n / df)
             }
             if (score <= 0.0) null
-            else Hit(chunkEntity.text, score / sqrt(terms.size.toDouble()), "lexical")
+            else Hit(c.text, score / sqrt(terms.size.toDouble()), "lexical", c.id)
         }.sortedByDescending { it.score }.take(topK)
     }
 
@@ -115,9 +225,15 @@ class Retriever(
             .toSet()
 
     /**
-     * Paragraph-aware chunking with overlap. The overlap is the important part:
-     * without it, a fact that straddles a chunk boundary becomes unretrievable
-     * because neither chunk contains the whole statement.
+     * Paragraph-aware chunking with overlap. Overlap is the important part:
+     * without it a fact straddling a boundary lands whole in neither chunk and
+     * becomes unretrievable by either mode.
+     *
+     * [TARGET_CHARS] is deliberately ~600 characters, roughly 150 tokens. That
+     * keeps a chunk comfortably inside a 256-token embedder sequence length,
+     * which is the smallest commonly shipped variant. Raising it without also
+     * raising the embedder's sequence length means the model silently truncates
+     * and embeds only the head of each chunk.
      */
     private fun chunk(
         text: String,
@@ -130,7 +246,6 @@ class Retriever(
         val out = mutableListOf<String>()
         val sb = StringBuilder()
         for (p in paras) {
-            // A single oversized paragraph gets hard-split rather than emitted whole.
             if (p.length > target * 2) {
                 if (sb.isNotBlank()) {
                     out.add(sb.toString().trim()); sb.setLength(0)
@@ -155,29 +270,23 @@ class Retriever(
         return out.filter { it.isNotBlank() }.ifEmpty { listOf(text.trim()) }
     }
 
-    private fun cosine(a: FloatArray, b: FloatArray): Double {
-        if (a.size != b.size || a.isEmpty()) return 0.0
-        var dot = 0.0
-        var na = 0.0
-        var nb = 0.0
-        for (i in a.indices) {
-            dot += a[i] * b[i]
-            na += a[i] * a[i]
-            nb += b[i] * b[i]
-        }
-        val d = sqrt(na) * sqrt(nb)
-        return if (d == 0.0) 0.0 else dot / d
-    }
-
-    private fun encode(v: FloatArray) = v.joinToString(",")
-
-    private fun decode(s: String) = s.split(",").map { it.trim().toFloat() }.toFloatArray()
-
     companion object {
+        private const val TAG = "Retriever"
         private const val TARGET_CHARS = 600
         private const val OVERLAP_CHARS = 100
         private const val SHORTLIST = 200
         private const val MAX_TOP_K = 20
+        private const val REINDEX_BATCH = 64
+
+        /** Pull this many times topK from each mode before fusing. */
+        private const val OVERFETCH = 4
+
+        /**
+         * RRF damping. 60 is the value from the original Cormack et al. paper
+         * and is not sensitive enough to be worth tuning here: it mainly sets
+         * how sharply rank 1 outweighs rank 10.
+         */
+        private const val RRF_K = 60.0
 
         private val TOKEN_SPLIT = Regex("[^a-z0-9]+")
         private val PARA_SPLIT = Regex("\n\\s*\n")
@@ -186,7 +295,7 @@ class Retriever(
             "the", "and", "for", "are", "but", "not", "you", "all", "any", "can",
             "her", "was", "one", "our", "out", "day", "get", "has", "him", "his",
             "how", "its", "new", "now", "old", "see", "two", "way", "who", "did",
-            "yes", "his", "from", "they", "this", "that", "with", "have", "what",
+            "yes", "from", "they", "this", "that", "with", "have", "what",
             "were", "when", "your", "said", "there", "their", "which", "about"
         )
     }

@@ -92,14 +92,15 @@ To disable auth entirely (not recommended), set the `require_auth` preference to
 |---|---|:--:|---|
 | GET | `/v1/models` | yes | model list |
 | POST | `/v1/chat/completions` | yes | streaming and non-streaming, spec-shaped chunks |
-| POST | `/v1/embeddings` | yes | `501` until an embedder is wired (honest, not a fake vector) |
+| POST | `/v1/embeddings` | yes | `{input[], input_type}` — `501` when no embedder is loaded |
 
 ### RAG
 | Method | Path | Auth | Purpose |
 |---|---|:--:|---|
 | POST | `/rag/ingest` | yes | `{collection, text, title?, source?}` → chunk + store |
 | POST | `/rag/query` | yes | `{collection, query, topK}` → ranked chunks + retrieval mode |
-| GET | `/rag/collections` | yes | list collections with doc/chunk counts |
+| POST | `/rag/reindex` | yes | backfill vectors for chunks lacking them |
+| GET | `/rag/collections` | yes | list collections with doc/chunk/embedded counts |
 | DELETE | `/rag/collections/{name}` | yes | drop a collection |
 
 ### UI
@@ -174,10 +175,13 @@ version is pinned to the Kotlin compiler version; that coupling is a standing CI
 hazard for a project this small. Migrations are additive — a schema bump no
 longer wipes stored conversations. See `docs/FINDINGS.md`.
 
-**Retrieval.** Lexical mode uses an FTS4 index to shortlist candidates inside
-SQLite, then re-ranks that bounded set with IDF weighting in Kotlin. Supply an
-`embedder` to `Retriever` (e.g. EmbeddingGemma) and it switches to cosine
-similarity automatically; chunk storage already round-trips embeddings.
+**Retrieval.** Hybrid. Lexical mode uses an FTS4 index to shortlist candidates
+inside SQLite, then re-ranks with IDF weighting. With an embedder loaded, dense
+vector search runs alongside it and the two are fused by Reciprocal Rank Fusion
+— dense is strong on paraphrase but blurry on exact identifiers (order numbers,
+OTP codes), which lexical catches. Vectors are float32 BLOBs tagged with the
+embedding space that produced them, so a model swap can never silently compare
+across spaces. See `docs/EMBEDDINGS.md`.
 
 ---
 
@@ -187,8 +191,9 @@ similarity automatically; chunk storage already round-trips embeddings.
   restarts. Pass a stable `sessionId` per consumer app.
 - **Bounded context** — history is trimmed by character budget, not message
   count, so twenty pasted emails do not overflow a 2B model's window.
-- **RAG** — ingest/query with overlapping chunks; overlap keeps facts that
-  straddle a boundary retrievable.
+- **RAG** — hybrid dense + lexical retrieval with overlapping chunks; overlap
+  keeps facts that straddle a boundary retrievable. Embeddings are optional and
+  off by default (`docs/EMBEDDINGS.md`).
 - **Metrics** — per-request timing, tokens/sec, failures, in-flight depth.
   Streaming requests are counted (they previously were not).
 - **Backend selection** — GPU / CPU / NPU. LiteRT-LM has no "which backend am I

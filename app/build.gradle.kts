@@ -110,6 +110,17 @@ android {
                 "META-INF/versions/9/**"
             )
         }
+        // Only relevant once the optional embedding dependencies below are
+        // enabled: two AARs both ship LiteRT native libraries, and without a
+        // pickFirst the merge fails with a duplicate-file error.
+        jniLibs {
+            pickFirsts += setOf(
+                "**/libLiteRt.so",
+                "**/libLiteRtClGlAccelerator.so",
+                "**/liblitertlm_jni.so",
+                "**/libllm_inference_engine_jni.so"
+            )
+        }
     }
 
     lint {
@@ -147,4 +158,20 @@ dependencies {
 
     // LiteRT-LM
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.13.1")
+
+    // ---------------------------------------------------------------------
+    // OPTIONAL: on-device embeddings (vector RAG).
+    //
+    // Uncomment BOTH lines to enable. AiEdgeEmbedder reaches the SDK by
+    // reflection, so the app builds and runs identically without them --
+    // retrieval simply stays in lexical mode.
+    //
+    // Why it is opt-in: localagents-rag pulls in mediapipe tasks-genai, which
+    // ships its own copies of the LiteRT native libraries. litertlm-android
+    // ships them too. Two AARs contributing libLiteRt.so is a packaging
+    // conflict, so enabling this ALSO needs the pickFirst rules in the
+    // packaging block above. Verify on a device before relying on it.
+    //
+    // implementation("com.google.ai.edge.localagents:localagents-rag:0.3.0")
+    // implementation("com.google.mediapipe:tasks-genai:0.10.27")
 }
