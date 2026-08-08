@@ -1,7 +1,7 @@
-package com.example.litertservice.rag
+package com.adabala.medha.rag
 
-import com.example.litertservice.data.ChunkEntity
-import com.example.litertservice.data.MedhaDatabase
+import com.adabala.medha.data.ChunkEntity
+import com.adabala.medha.data.MedhaDatabase
 import kotlin.math.ln
 import kotlin.math.sqrt
 

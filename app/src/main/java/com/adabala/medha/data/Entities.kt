@@ -1,4 +1,4 @@
-package com.example.litertservice.data
+package com.adabala.medha.data
 
 /**
  * Plain data classes. Persistence is hand-written SQL in [MedhaDatabase].

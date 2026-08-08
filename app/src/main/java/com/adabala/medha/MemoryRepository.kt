@@ -1,9 +1,9 @@
-package com.example.litertservice
+package com.adabala.medha
 
-import com.example.litertservice.data.ConversationEntity
-import com.example.litertservice.data.ConversationSummary
-import com.example.litertservice.data.MedhaDatabase
-import com.example.litertservice.data.MessageEntity
+import com.adabala.medha.data.ConversationEntity
+import com.adabala.medha.data.ConversationSummary
+import com.adabala.medha.data.MedhaDatabase
+import com.adabala.medha.data.MessageEntity
 
 /**
  * Multi-turn memory on top of SQLite. A consumer PWA passes a stable sessionId;

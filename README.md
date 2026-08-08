@@ -201,6 +201,47 @@ similarity automatically; chunk storage already round-trips embeddings.
 
 ---
 
+## Debug vs release builds
+
+The workflow produced `app-debug.apk` because it ran `assembleDebug`, and AGP
+names outputs `app-<buildType>.apk` regardless of the app.
+
+A debug APK is not just "the same thing with a different name":
+
+| | debug | release |
+|---|---|---|
+| Signing key | shared public Android debug key | your keystore |
+| `debuggable` | true — any app with USB debugging can attach and read memory | false |
+| Upgradeable over the other | no (different key) | no (different key) |
+| `applicationId` | `com.adabala.medha.debug` | `com.adabala.medha` |
+
+For a service that holds an API token and your conversation history,
+`debuggable=true` is the part that matters. Use release for anything you
+actually rely on.
+
+CI now builds **both**, and names them
+`medha-<version>-<buildType>-<shortsha>.apk`. The release build only happens
+when signing secrets are present:
+
+```
+MEDHA_KEYSTORE_BASE64      base64 of your .jks
+MEDHA_KEYSTORE_PASSWORD
+MEDHA_KEY_ALIAS
+MEDHA_KEY_PASSWORD
+```
+
+Generate a keystore once, and **back it up** — losing it means you can never
+upgrade an existing install:
+
+```bash
+keytool -genkeypair -v -keystore medha.jks -keyalg RSA -keysize 4096 \
+        -validity 10000 -alias medha
+base64 -w0 medha.jks    # paste into the MEDHA_KEYSTORE_BASE64 secret
+```
+
+The debug build carries a `.debug` applicationId suffix, so debug and release
+can sit side by side on the same phone.
+
 ## Build
 
 Push to GitHub → the **Build Medha APK** workflow produces a debug APK in the
@@ -211,11 +252,37 @@ annotations while the Room dependency or KSP plugin is absent, it fails
 immediately with an actionable message instead of a wall of
 `Unresolved reference 'room'`. That is the exact failure that broke v0.1.1.
 
-> Commit `gradlew` and `gradle/wrapper/gradle-wrapper.jar`. The workflow
-> regenerates them if missing, but an uncommitted wrapper means CI is not
-> building with a pinned tool version.
+The Gradle wrapper (`gradlew`, `gradlew.bat`,
+`gradle/wrapper/gradle-wrapper.jar`) is **committed on purpose**. It pins the
+build tool, so CI and every machine use the same Gradle.
+
+Without it, CI has to fall back to `gradle wrapper` using whatever Gradle the
+runner ships — and that task still has to *configure* the project before it can
+run, so a runner-Gradle/AGP mismatch surfaces as:
+
+```
+Plugin [id: 'com.android.application'] was not found in any of the following sources
+```
+
+which looks like a broken build file but is nothing of the sort. The fallback
+now generates the wrapper in an empty temp directory, where there is no build
+script to configure, and copies the files in.
+
+After cloning, if `./gradlew` is not executable:
+
+```bash
+chmod +x gradlew
+git update-index --chmod=+x gradlew   # persist the bit in git
+```
 
 ---
+
+## Is it production ready?
+
+Short answer: it is a good personal daily driver, not yet something to hand to
+other people. See `docs/PRODUCTION-READINESS.md` for the blocker list — the
+top items are instrumented tests for the DB migration, a request timeout, and
+crash diagnostics.
 
 ## Notes / limits
 

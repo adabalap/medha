@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="432" height="432" viewBox="0 0 108 108">
+  <defs>
+    <linearGradient id="bg" x1="14" y1="10" x2="94" y2="98" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3B2E7E"/><stop offset="0.55" stop-color="#5B3FA8"/><stop offset="1" stop-color="#7C4DBC"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="54" cy="48" r="46" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.22"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="flame" x1="54" y1="41" x2="54" y2="68" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFE8A3"/><stop offset="0.45" stop-color="#FFC24B"/><stop offset="1" stop-color="#F4802E"/>
+    </linearGradient>
+    <clipPath id="mask"><circle cx="54" cy="54" r="49"/></clipPath>
+  </defs>
+  <g clip-path="url(#mask)">
+    <rect width="108" height="108" fill="url(#bg)"/>
+    <circle cx="54" cy="48" r="46" fill="url(#glow)"/>
+    <!-- chip pins -->
+    <g stroke="#C9BCF2" stroke-width="3.4" stroke-linecap="round">
+      <path d="M44,34 V27 M54,34 V25 M64,34 V27"/>
+      <path d="M44,74 V81 M54,74 V83 M64,74 V81"/>
+      <path d="M34,44 H27 M34,54 H25 M34,64 H27"/>
+      <path d="M74,44 H81 M74,54 H83 M74,64 H81"/>
+    </g>
+    <!-- chip body -->
+    <path d="M44,34 h20 a10,10 0 0 1 10,10 v20 a10,10 0 0 1 -10,10 h-20 a10,10 0 0 1 -10,-10 v-20 a10,10 0 0 1 10,-10 z"
+          fill="#241261" fill-opacity="0.35" stroke="#EDE7FF" stroke-width="3"/>
+    <!-- flame -->
+    <path d="M54,41 C61,49 64,53.5 64,58.5 C64,64.3 59.5,68 54,68 C48.5,68 44,64.3 44,58.5 C44,53.5 47,49 54,41 Z" fill="url(#flame)"/>
+    <path d="M54,50.5 C57.6,55 59,57 59,59.4 C59,62.3 56.8,64.4 54,64.4 C51.2,64.4 49,62.3 49,59.4 C49,57 50.4,55 54,50.5 Z" fill="#FFF6DA" fill-opacity="0.92"/>
+  </g>
+</svg>

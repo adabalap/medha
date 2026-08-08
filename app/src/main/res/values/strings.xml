@@ -1,11 +1,81 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Medha</string>
+
+    <!-- model / status -->
     <string name="no_model_selected">No model selected</string>
     <string name="importing_model">Importing model…</string>
+
+    <!-- API access card -->
     <string name="api_access">API access</string>
     <string name="api_access_hint">Other apps and PWAs must send this token as
         Authorization: Bearer &lt;token&gt;. The bundled demo page gets it automatically.</string>
     <string name="token_pending">Token is created when you first start Medha</string>
     <string name="copy_token">Copy API token</string>
+
+    <!-- drawer -->
+    <string name="nav_header_title">Medha · మేధా</string>
+    <string name="nav_header_subtitle">On-device intelligence, with memory</string>
+    <string name="nav_open_pwa">Open demo in browser</string>
+    <string name="nav_thermal">Thermal &amp; hardware</string>
+    <string name="nav_group_access">API access</string>
+    <string name="nav_copy_token">Copy API token</string>
+    <string name="nav_regen_token">Regenerate token</string>
+    <string name="nav_group_system">Service</string>
+    <string name="nav_battery">Battery optimisation</string>
+    <string name="nav_stop">Stop Medha</string>
+    <string name="nav_group_about">About</string>
+    <string name="nav_endpoints">API endpoints</string>
+    <string name="nav_about">About Medha</string>
+    <string name="open_drawer">Open navigation menu</string>
+
+    <!-- dialogs -->
+    <string name="regen_title">Regenerate API token?</string>
+    <string name="regen_body">Every app and PWA using the current token will stop
+        working until you give it the new one. Medha will restart to apply the change.</string>
+    <string name="regenerate">Regenerate</string>
+    <string name="cancel">Cancel</string>
+    <string name="close">Close</string>
+
+    <string name="about_title">About Medha</string>
+    <string name="about_body">Medha (medhā · मेधा · మేధా) is an on-device LLM
+inference service. It loads a .litertlm model once through the LiteRT-LM runtime
+and serves it over a loopback HTTP API, so any app or PWA on this device can use
+it without a network round trip.
+
+Nothing you type leaves the device. There is no cloud component and no telemetry.
+
+The server binds to 127.0.0.1 only, and every endpoint except /health requires
+your API token.
+
+Licensed under the terms in the project repository.</string>
+
+    <string name="endpoints_title">API endpoints</string>
+
+    <!-- button labels driven by the state machine -->
+    <string name="btn_start">Start Medha</string>
+    <string name="btn_starting">Starting…</string>
+    <string name="btn_loading">Loading model…</string>
+    <string name="btn_running">Running</string>
+    <string name="btn_retry">Retry start</string>
+    <string name="config_locked">Stop Medha to change the model, backend or port.</string>
+
+    <!-- toolbar subtitle -->
+    <string name="state_stopped">stopped</string>
+    <string name="state_starting">starting…</string>
+    <string name="state_loading">loading model…</string>
+    <string name="state_running">running on 127.0.0.1:%1$d</string>
+    <string name="state_error">load failed</string>
+
+    <!-- errors and toasts -->
+    <string name="err_port">Port must be a number between 1024 and 65535</string>
+    <string name="err_no_model">Pick a model first</string>
+    <string name="err_wrong_type">Pick a .litertlm or .task file</string>
+    <string name="err_no_browser">No browser app found</string>
+    <string name="err_not_running">Start Medha first to read hardware status</string>
+    <string name="err_no_token">No token yet — start Medha once</string>
+    <string name="toast_stopped">Stopped</string>
+    <string name="toast_token_copied">Token copied</string>
+    <string name="toast_token_regenerated">New token generated and copied</string>
+    <string name="toast_battery_ok">Already allowed</string>
 </resources>

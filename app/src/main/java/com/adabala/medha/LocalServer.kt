@@ -1,9 +1,9 @@
-package com.example.litertservice
+package com.adabala.medha
 
 import android.content.Context
 import android.util.Log
-import com.example.litertservice.data.MedhaDatabase
-import com.example.litertservice.rag.Retriever
+import com.adabala.medha.data.MedhaDatabase
+import com.adabala.medha.rag.Retriever
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
@@ -211,6 +211,8 @@ class LocalServer(
                         put("loadMs", engine.loadMs)
                         put("uptimeMs", SystemInfo.uptimeMs())
                         put("thermal", SystemInfo.thermalStatus(appContext))
+                        put("thermalHeadroom", SystemInfo.thermalHeadroom(appContext))
+                        SystemInfo.cpuInfo().forEach { (k, v) -> put(k, v) }
                         put("freeStorageMb", SystemInfo.freeStorageMb(appContext))
                         put("dbSizeBytes", db.sizeBytes(appContext))
                         put("fullTextIndex", db.hasFullTextIndex)

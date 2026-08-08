@@ -428,7 +428,7 @@ If the size matters, install a matching NDK in CI via
 
 1. **Commit the Gradle wrapper** (`gradlew`, `gradle/wrapper/gradle-wrapper.jar`).
    Regenerating it in CI means the build tool version is not pinned.
-2. **Change the `applicationId`.** `com.example.litertservice` is a placeholder;
+2. **Change the `applicationId`.** `com.adabala.medha` is a placeholder;
    moving off it later is disruptive because it changes app identity and loses
    installed state. Do it now.
 3. **Wire an embedder.** `Retriever` takes a `suspend (String) -> FloatArray?`

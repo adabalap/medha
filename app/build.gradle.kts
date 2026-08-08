@@ -24,21 +24,61 @@ plugins {
 // this project chose to avoid. Do not add Room piecemeal.
 // ---------------------------------------------------------------------------
 
+// Release signing is driven by environment variables so no keystore or password
+// ever lands in the repo. Set these as GitHub Actions secrets; when they are
+// absent (any local checkout) the release build simply stays unsigned and the
+// debug build is unaffected.
+val keystorePath: String? = System.getenv("MEDHA_KEYSTORE_PATH")
+val keystorePassword: String? = System.getenv("MEDHA_KEYSTORE_PASSWORD")
+val keyAliasName: String? = System.getenv("MEDHA_KEY_ALIAS")
+val keyPassword: String? = System.getenv("MEDHA_KEY_PASSWORD")
+val hasReleaseSigning = !keystorePath.isNullOrBlank() && file(keystorePath).exists()
+
 android {
-    namespace = "com.example.litertservice"
+    namespace = "com.adabala.medha"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.litertservice"
+        applicationId = "com.adabala.medha"
         minSdk = 27
         targetSdk = 34
         versionCode = 3
         versionName = "0.2.0"
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(keystorePath!!)
+                storePassword = keystorePassword
+                keyAlias = keyAliasName
+                this.keyPassword = keyPassword
+            }
+        }
+    }
+
     buildTypes {
-        debug { isDebuggable = true }
-        release { isMinifyEnabled = false }
+        debug {
+            isDebuggable = true
+            // Lets a debug and a release build coexist on the same device, so
+            // you can compare them without uninstalling.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
+        release {
+            isDebuggable = false
+            // Minification is deliberately OFF. Ktor resolves plugins and
+            // kotlinx.serialization resolves serializers reflectively, and
+            // LlmEngine probes the LiteRT AAR by reflection for
+            // sendMessageAsync. R8 would strip all three without a carefully
+            // written keep-rule set, and the failures are runtime-only.
+            // Turn this on only alongside a tested proguard-rules.pro.
+            isMinifyEnabled = false
+            isShrinkResources = false
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
     }
 
     compileOptions {
@@ -91,6 +131,9 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.preference:preference-ktx:1.2.1")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
+    // Pulled in transitively by material, but declared explicitly because the
+    // navigation drawer is now load-bearing UI.
+    implementation("androidx.drawerlayout:drawerlayout:1.2.0")
     implementation("androidx.lifecycle:lifecycle-service:2.8.4")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 

@@ -1,4 +1,4 @@
-package com.example.litertservice.data
+package com.adabala.medha.data
 
 import android.content.ContentValues
 import android.content.Context

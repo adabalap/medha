@@ -1,4 +1,4 @@
-package com.example.litertservice
+package com.adabala.medha
 
 import android.app.ActivityManager
 import android.content.Context
@@ -86,6 +86,39 @@ object SystemInfo {
         }.getOrDefault("unknown")
     }
 
+    /**
+     * Forecast of how close the device is to throttling, 0.0 (cool) to 1.0+
+     * (throttling now). API 30+ only.
+     *
+     * This is the number that actually explains a tokens/sec collapse.
+     * [thermalStatus] is coarse and lags; headroom moves first. Returns -1 when
+     * unavailable — the API also rejects calls made less than ~1s apart, and
+     * needs a warm-up period after boot, so treat -1 as "no reading", not "cool".
+     */
+    fun thermalHeadroom(context: Context): Float {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return -1f
+        return runCatching {
+            val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+            val v = pm.getThermalHeadroom(FORECAST_SECONDS)
+            if (v.isNaN() || v.isInfinite()) -1f else v
+        }.getOrDefault(-1f)
+    }
+
+    /** Per-core CPU count and max clock, where the kernel exposes it. */
+    fun cpuInfo(): Map<String, String> = runCatching {
+        val cores = Runtime.getRuntime().availableProcessors()
+        val maxKhz = (0 until cores).mapNotNull { i ->
+            runCatching {
+                java.io.File("/sys/devices/system/cpu/cpu$i/cpufreq/cpuinfo_max_freq")
+                    .takeIf { it.canRead() }?.readText()?.trim()?.toLongOrNull()
+            }.getOrNull()
+        }
+        mapOf(
+            "cpuCores" to cores.toString(),
+            "cpuMaxMhz" to (maxKhz.maxOrNull()?.let { (it / 1000).toString() } ?: "unknown")
+        )
+    }.getOrDefault(mapOf("cpuCores" to "unknown", "cpuMaxMhz" to "unknown"))
+
     fun uptimeMs(): Long = System.currentTimeMillis() - processStart
 
     // ---- Aggregate inference metrics (thread-safe, cheap) ----
@@ -136,4 +169,7 @@ object SystemInfo {
     fun estimateTokens(text: String): Int = if (text.isEmpty()) 0 else max(1, text.length / 4)
 
     private const val MB = 1024L * 1024L
+
+    /** Headroom forecast window. 10s is a reasonable near-term signal. */
+    private const val FORECAST_SECONDS = 10
 }

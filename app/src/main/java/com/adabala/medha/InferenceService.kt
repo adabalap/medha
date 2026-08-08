@@ -1,4 +1,4 @@
-package com.example.litertservice
+package com.adabala.medha
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -14,7 +14,7 @@ import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.preference.PreferenceManager
-import com.example.litertservice.data.MedhaDatabase
+import com.adabala.medha.data.MedhaDatabase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -143,9 +143,7 @@ class InferenceService : Service() {
      */
     private fun ensureApiToken(prefs: SharedPreferences): String {
         prefs.getString(KEY_API_TOKEN, null)?.takeIf { it.length >= 16 }?.let { return it }
-        val bytes = ByteArray(20)
-        SecureRandom().nextBytes(bytes)
-        val token = bytes.joinToString("") { b -> "%02x".format(b) }
+        val token = generateToken()
         prefs.edit().putString(KEY_API_TOKEN, token).apply()
         return token
     }
@@ -209,7 +207,7 @@ class InferenceService : Service() {
         private const val NOTIF_ID = 1
         private const val WAKELOCK_TIMEOUT_MS = 12L * 60 * 60 * 1000 // safety cap: 12h
 
-        const val ACTION_STOP = "com.example.litertservice.STOP"
+        const val ACTION_STOP = "com.adabala.medha.STOP"
 
         const val KEY_MODEL_PATH = "model_path"
         const val KEY_PORT = "server_port"
@@ -219,5 +217,12 @@ class InferenceService : Service() {
         const val KEY_REQUIRE_AUTH = "require_auth"
 
         const val DEFAULT_PORT = "8080"
+
+        /** 160 bits of SecureRandom, hex encoded. Shared with the settings UI. */
+        fun generateToken(): String {
+            val bytes = ByteArray(20)
+            SecureRandom().nextBytes(bytes)
+            return bytes.joinToString("") { b -> "%02x".format(b) }
+        }
     }
 }
