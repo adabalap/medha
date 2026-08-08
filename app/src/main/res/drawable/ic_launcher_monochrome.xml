@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Themed-icon (Android 13+) variant: a solid silhouette with no gradients,
+  because the launcher retints this drawable with the user's wallpaper colours.
+  Reusing the gradient foreground here produces a muddy, low-contrast result.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <group>
+        <path android:pathData="M44,34 V27" android:strokeColor="#FFFFFFFF" android:strokeWidth="3.4" android:strokeLineCap="round" />
+        <path android:pathData="M54,34 V25" android:strokeColor="#FFFFFFFF" android:strokeWidth="3.4" android:strokeLineCap="round" />
+        <path android:pathData="M64,34 V27" android:strokeColor="#FFFFFFFF" android:strokeWidth="3.4" android:strokeLineCap="round" />
+        <path android:pathData="M44,74 V81" android:strokeColor="#FFFFFFFF" android:strokeWidth="3.4" android:strokeLineCap="round" />
+        <path android:pathData="M54,74 V83" android:strokeColor="#FFFFFFFF" android:strokeWidth="3.4" android:strokeLineCap="round" />
+        <path android:pathData="M64,74 V81" android:strokeColor="#FFFFFFFF" android:strokeWidth="3.4" android:strokeLineCap="round" />
+        <path android:pathData="M34,44 H27" android:strokeColor="#FFFFFFFF" android:strokeWidth="3.4" android:strokeLineCap="round" />
+        <path android:pathData="M34,54 H25" android:strokeColor="#FFFFFFFF" android:strokeWidth="3.4" android:strokeLineCap="round" />
+        <path android:pathData="M34,64 H27" android:strokeColor="#FFFFFFFF" android:strokeWidth="3.4" android:strokeLineCap="round" />
+        <path android:pathData="M74,44 H81" android:strokeColor="#FFFFFFFF" android:strokeWidth="3.4" android:strokeLineCap="round" />
+        <path android:pathData="M74,54 H83" android:strokeColor="#FFFFFFFF" android:strokeWidth="3.4" android:strokeLineCap="round" />
+        <path android:pathData="M74,64 H81" android:strokeColor="#FFFFFFFF" android:strokeWidth="3.4" android:strokeLineCap="round" />
+    </group>
+
+    <path
+        android:pathData="M44,34 h20 a10,10 0 0 1 10,10 v20 a10,10 0 0 1 -10,10 h-20 a10,10 0 0 1 -10,-10 v-20 a10,10 0 0 1 10,-10 z"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="3.4"
+        android:fillColor="#00000000" />
+
+    <path
+        android:pathData="M54,41 C61,49 64,53.5 64,58.5 C64,64.3 59.5,68 54,68 C48.5,68 44,64.3 44,58.5 C44,53.5 47,49 54,41 Z"
+        android:fillColor="#FFFFFFFF" />
+</vector>

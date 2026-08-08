@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Medha mark: a diya flame inside an SoC package.
+  Flame = medhā (intelligence). Chip = it runs on *this device*, not a server.
+
+  All content sits within x,y ∈ [25,83] of the 108 viewport, i.e. inside the
+  66dp adaptive-icon keyline, so no launcher mask clips it.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- chip pins -->
+    <group>
+        <path android:pathData="M44,34 V27" android:strokeColor="#FFC9BCF2" android:strokeWidth="3.4" android:strokeLineCap="round" />
+        <path android:pathData="M54,34 V25" android:strokeColor="#FFC9BCF2" android:strokeWidth="3.4" android:strokeLineCap="round" />
+        <path android:pathData="M64,34 V27" android:strokeColor="#FFC9BCF2" android:strokeWidth="3.4" android:strokeLineCap="round" />
+        <path android:pathData="M44,74 V81" android:strokeColor="#FFC9BCF2" android:strokeWidth="3.4" android:strokeLineCap="round" />
+        <path android:pathData="M54,74 V83" android:strokeColor="#FFC9BCF2" android:strokeWidth="3.4" android:strokeLineCap="round" />
+        <path android:pathData="M64,74 V81" android:strokeColor="#FFC9BCF2" android:strokeWidth="3.4" android:strokeLineCap="round" />
+        <path android:pathData="M34,44 H27" android:strokeColor="#FFC9BCF2" android:strokeWidth="3.4" android:strokeLineCap="round" />
+        <path android:pathData="M34,54 H25" android:strokeColor="#FFC9BCF2" android:strokeWidth="3.4" android:strokeLineCap="round" />
+        <path android:pathData="M34,64 H27" android:strokeColor="#FFC9BCF2" android:strokeWidth="3.4" android:strokeLineCap="round" />
+        <path android:pathData="M74,44 H81" android:strokeColor="#FFC9BCF2" android:strokeWidth="3.4" android:strokeLineCap="round" />
+        <path android:pathData="M74,54 H83" android:strokeColor="#FFC9BCF2" android:strokeWidth="3.4" android:strokeLineCap="round" />
+        <path android:pathData="M74,64 H81" android:strokeColor="#FFC9BCF2" android:strokeWidth="3.4" android:strokeLineCap="round" />
+    </group>
+
+    <!-- chip body -->
+    <path
+        android:pathData="M44,34 h20 a10,10 0 0 1 10,10 v20 a10,10 0 0 1 -10,10 h-20 a10,10 0 0 1 -10,-10 v-20 a10,10 0 0 1 10,-10 z"
+        android:fillColor="#59241261"
+        android:strokeColor="#FFEDE7FF"
+        android:strokeWidth="3" />
+
+    <!-- flame -->
+    <path android:pathData="M54,41 C61,49 64,53.5 64,58.5 C64,64.3 59.5,68 54,68 C48.5,68 44,64.3 44,58.5 C44,53.5 47,49 54,41 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="54" android:startY="41"
+                android:endX="54" android:endY="68"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#FFFFE8A3" />
+                <item android:offset="0.45" android:color="#FFFFC24B" />
+                <item android:offset="1.0" android:color="#FFF4802E" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- inner highlight -->
+    <path
+        android:pathData="M54,50.5 C57.6,55 59,57 59,59.4 C59,62.3 56.8,64.4 54,64.4 C51.2,64.4 49,62.3 49,59.4 C49,57 50.4,55 54,50.5 Z"
+        android:fillColor="#EBFFF6DA" />
+</vector>

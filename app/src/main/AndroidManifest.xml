@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
+      NOTE: SMS and contacts permissions are NOT declared here. They live in the
+      "full" product flavour (app/src/full/AndroidManifest.xml).
+
+      Google Play Protect blocks sideloaded APKs that declare SMS permissions,
+      with "This app can request access to sensitive data." That block applies
+      to the whole APK regardless of whether the user ever enables the
+      connector, so declaring them unconditionally made the CORE service
+      un-installable for people who only wanted inference.
+
+      Build "core" for a clean install; build "full" only if you need the SMS
+      connector, and expect to bypass Play Protect deliberately.
+    -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <!--
+      Declared so a device without a GPU/NPU still installs; the runtime falls
+      back to CPU. Without this, some stores/installers filter the APK.
+    -->
+    <uses-feature android:name="android.hardware.opengles.aep" android:required="false" />
+
+    <application
+        android:allowBackup="false"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Medha"
+        android:largeHeap="true"
+        android:usesCleartextTraffic="true">
+
+        <!-- Required for LiteRT-LM GPU (OpenCL) backend -->
+        <uses-native-library android:name="libvndksupport.so" android:required="false" />
+        <uses-native-library android:name="libOpenCL.so" android:required="false" />
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <receiver
+            android:name=".notify.MedhaWidgetProvider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_medha_info" />
+        </receiver>
+
+        <service
+            android:name=".InferenceService"
+            android:exported="false"
+            android:stopWithTask="false"
+            android:foregroundServiceType="dataSync" />
+    </application>
+</manifest>

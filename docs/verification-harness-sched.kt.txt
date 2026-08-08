@@ -1,0 +1,75 @@
+// Pure-logic copies: hysteresis, config clamping, namespace scoping.
+data class Config(
+    val maxQueueDepth: Int = 8, val thermalPauseAt: Float = 0.85f,
+    val thermalResumeAt: Float = 0.70f, val batchRequiresCharging: Boolean = false,
+    val batchMinBatteryPercent: Int = 20
+) {
+    fun validated(): Config {
+        val pause = thermalPauseAt.coerceIn(0.30f,1.50f)
+        val resume = thermalResumeAt.coerceIn(0.20f, pause-0.05f)
+        return copy(maxQueueDepth=maxQueueDepth.coerceIn(1,64), thermalPauseAt=pause,
+            thermalResumeAt=resume, batchMinBatteryPercent=batchMinBatteryPercent.coerceIn(0,95))
+    }
+}
+fun blockedByThermal(hr: Float, paused: Boolean, c: Config): Boolean {
+    if (hr < 0f) return false
+    val limit = if (paused) c.thermalResumeAt else c.thermalPauseAt
+    return hr >= limit
+}
+data class Client(val id:String,val namespace:String,val caps:Set<String>){
+    val isAdmin get() = caps.contains("admin")
+    fun owns(k:String) = isAdmin || k==namespace || k.startsWith("$namespace:")
+    fun scope(k:String) = if (isAdmin || k.startsWith("$namespace:")) k else "$namespace:$k"
+    fun can(c:String) = isAdmin || caps.contains(c)
+}
+var p=0; var f=0
+fun ck(n:String,c:Boolean,d:String=""){if(c){p++;println("  PASS $n")}else{f++;println("  FAIL $n $d")}}
+
+fun main(){
+    println("== thermal hysteresis ==")
+    val c = Config().validated()
+    ck("cool device runs", !blockedByThermal(0.40f,false,c))
+    ck("hot device pauses at 0.85", blockedByThermal(0.90f,false,c))
+    // The band between the two watermarks is where oscillation would happen.
+    ck("in-band while RUNNING keeps running", !blockedByThermal(0.75f,false,c))
+    ck("in-band while PAUSED stays paused", blockedByThermal(0.75f,true,c))
+    ck("below resume watermark resumes", !blockedByThermal(0.65f,true,c))
+    ck("no reading does not block", !blockedByThermal(-1f,false,c))
+    ck("no reading does not block when paused", !blockedByThermal(-1f,true,c))
+
+    println("\n== config clamping ==")
+    ck("resume forced below pause", Config(thermalPauseAt=0.5f,thermalResumeAt=0.9f).validated().thermalResumeAt < 0.5f,
+        Config(thermalPauseAt=0.5f,thermalResumeAt=0.9f).validated().thermalResumeAt.toString())
+    ck("equal watermarks separated", Config(thermalPauseAt=0.8f,thermalResumeAt=0.8f).validated().let{it.thermalResumeAt < it.thermalPauseAt})
+    ck("queue depth floor", Config(maxQueueDepth=0).validated().maxQueueDepth == 1)
+    ck("queue depth ceiling", Config(maxQueueDepth=9999).validated().maxQueueDepth == 64)
+    ck("battery pct clamped", Config(batchMinBatteryPercent=200).validated().batchMinBatteryPercent == 95)
+    ck("absurd pause clamped", Config(thermalPauseAt=99f).validated().thermalPauseAt <= 1.5f)
+    // hysteresis must hold for EVERY clamped config
+    var bad = 0
+    for (a in -5..30) for (b in -5..30) {
+        val v = Config(thermalPauseAt=a/10f, thermalResumeAt=b/10f).validated()
+        if (v.thermalResumeAt >= v.thermalPauseAt) bad++
+    }
+    ck("hysteresis holds across 1296 configs incl. negatives", bad==0, "$bad violations")
+
+    println("\n== namespace isolation ==")
+    val sms = Client("sms-organizer","sms",setOf("generate","memory","rag"))
+    val cmp = Client("compose","compose",setOf("generate"))
+    val adm = Client("admin","admin",setOf("admin"))
+    ck("client scopes own key", sms.scope("inbox")=="sms:inbox")
+    ck("no double prefix", sms.scope("sms:inbox")=="sms:inbox")
+    ck("owns own namespace", sms.owns("sms:inbox"))
+    ck("cannot read other namespace", !sms.owns("compose:drafts"))
+    ck("prefix confusion blocked", !sms.owns("smsX:inbox"), "smsX must not match sms")
+    ck("compose isolated from sms", !cmp.owns("sms:inbox"))
+    ck("admin sees everything", adm.owns("sms:inbox") && adm.owns("compose:drafts"))
+    ck("admin scope is passthrough", adm.scope("anything")=="anything")
+    ck("capability enforced", !sms.can("sms.send") && sms.can("rag"))
+    ck("admin has all capabilities", adm.can("sms.send") && adm.can("notify"))
+    ck("bare namespace owned", sms.owns("sms"))
+
+    println("\n----------------------------------------")
+    println("passed=$p failed=$f")
+    if(f>0) throw AssertionError("$f failed")
+}
