@@ -347,14 +347,70 @@ class MainActivity : AppCompatActivity() {
                 append("\n\n")
             }
         }
-        MaterialAlertDialogBuilder(this)
+        val editable = clients.filter { !it.isAdmin }
+        val b = MaterialAlertDialogBuilder(this)
             .setTitle(R.string.clients_title)
             .setIcon(R.drawable.ic_client)
-            .setMessage(body)
             .setPositiveButton(R.string.close, null)
             .setNeutralButton(R.string.client_add) { _, _ -> showAddClientDialog() }
+
+        if (editable.isEmpty()) {
+            b.setMessage(body)
+        } else {
+            // Tapping a client opens its permissions. Creating one with the
+            // wrong grant used to be unrecoverable without deleting it.
+            b.setMessage(body)
+                .setNegativeButton(R.string.client_edit) { _, _ ->
+                    MaterialAlertDialogBuilder(this)
+                        .setTitle(R.string.client_edit)
+                        .setItems(editable.map { it.id }.toTypedArray()) { _, i ->
+                            showCapabilitiesDialog(editable[i])
+                        }
+                        .show()
+                }
+        }
+        b.show()
+    }
+
+    private fun showCapabilitiesDialog(client: ClientRegistry.Client) {
+        val checked = grantable.map { it.first in client.capabilities }.toBooleanArray()
+        MaterialAlertDialogBuilder(this)
+            .setTitle(client.id)
+            .setMultiChoiceItems(
+                grantable.map { it.second }.toTypedArray(), checked
+            ) { _, which, isChecked -> checked[which] = isChecked }
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.save) { _, _ ->
+                val caps = grantable.filterIndexed { i, _ -> checked[i] }.map { it.first }.toSet()
+                val updated = registry.setCapabilities(client.id, caps)
+                if (updated != null) {
+                    // The server captured the client list at construction, so it
+                    // has to be rebuilt for the change to take effect.
+                    restartServiceIfLive()
+                    toast(getString(R.string.caps_saved, updated.id))
+                } else {
+                    toast(getString(R.string.caps_failed))
+                }
+            }
             .show()
     }
+
+    private fun restartServiceIfLive() {
+        if (uiState == UiState.RUNNING || uiState == UiState.LOADING) {
+            ContextCompat.startForegroundService(this, Intent(this, InferenceService::class.java))
+        }
+    }
+
+    /** Capabilities offered in the UI, in the order they are shown. */
+    private val grantable = listOf(
+        ClientRegistry.Cap.GENERATE to "Run the model",
+        ClientRegistry.Cap.MEMORY to "Chat memory / sessions",
+        ClientRegistry.Cap.RAG to "Knowledge (RAG)",
+        ClientRegistry.Cap.STORE to "Store its own data",
+        ClientRegistry.Cap.SMS_READ to "Read SMS",
+        ClientRegistry.Cap.SMS_SEND to "Send SMS",
+        ClientRegistry.Cap.NOTIFY to "Post notifications"
+    )
 
     private fun showAddClientDialog() {
         val input = EditText(this).apply {
@@ -366,16 +422,24 @@ class MainActivity : AppCompatActivity() {
             setPadding(56, 24, 56, 0)
             addView(input)
         }
+        // Defaults on: everything a normal consumer needs. SMS and notify are
+        // off, because they are the ones worth an explicit decision.
+        val checked = grantable.map { it.first in ClientRegistry.Cap.DEFAULT }.toBooleanArray()
+
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.client_new_title)
             .setView(wrap)
+            .setMultiChoiceItems(
+                grantable.map { it.second }.toTypedArray(), checked
+            ) { _, which, isChecked -> checked[which] = isChecked }
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.create) { _, _ ->
                 val id = input.text.toString().trim().lowercase()
+                val caps = grantable.filterIndexed { i, _ -> checked[i] }.map { it.first }.toSet()
                 runCatching {
                     // Namespace == id keeps the mental model simple: one client,
                     // one prefix, no separate thing to remember.
-                    registry.create(id, id, id, ClientRegistry.Cap.DEFAULT)
+                    registry.create(id, id, id, caps)
                 }.onSuccess { c ->
                     val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     cm.setPrimaryClip(ClipData.newPlainText("Medha token: ${c.id}", c.token))
@@ -384,6 +448,7 @@ class MainActivity : AppCompatActivity() {
                         .setMessage(
                             "Token copied to clipboard.\n\n${c.token}\n\n" +
                                 "Namespace: ${c.namespace}:*\n" +
+                                "Capabilities: ${c.capabilities.sorted().joinToString(", ")}\n\n" +
                                 "This is the only time it is shown in full."
                         )
                         .setPositiveButton(R.string.close, null)

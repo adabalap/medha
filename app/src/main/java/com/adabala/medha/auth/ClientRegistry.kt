@@ -121,6 +121,26 @@ class ClientRegistry private constructor(private val prefs: SharedPreferences) {
         return true
     }
 
+    /**
+     * Replaces a client's capability set, keeping its id, namespace and token.
+     *
+     * Needed because SMS access cannot be part of the default grant -- most
+     * consumers should not have it -- but there has to be some way to give it
+     * to the one that does. Without this, a client created from the UI could
+     * never reach /connectors/sms/∗ and every call returned 403 with no
+     * remedy anywhere in the app.
+     */
+    fun setCapabilities(id: String, capabilities: Set<String>): Client? {
+        val target = cache.values.firstOrNull { it.id == id } ?: return null
+        // The last admin keeps admin: dropping it locks the owner out of their
+        // own service with no recovery short of clearing app data.
+        val caps = capabilities.filter { it in Cap.ALL }.toMutableSet()
+        if (target.isAdmin && cache.values.count { it.isAdmin } <= 1) caps.add(Cap.ADMIN)
+        val updated = target.copy(capabilities = caps)
+        persist(cache.values.filter { it.id != id } + updated)
+        return updated
+    }
+
     /** Rotates one client's token, leaving every other client working. */
     fun rotate(id: String): Client? {
         val target = cache.values.firstOrNull { it.id == id } ?: return null
