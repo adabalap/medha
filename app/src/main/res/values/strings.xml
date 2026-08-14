@@ -122,4 +122,10 @@ Licensed under the terms in the project repository.</string>
     <string name="save">Save</string>
     <string name="caps_saved">Permissions updated for %1$s</string>
     <string name="caps_failed">Could not update permissions</string>
+    <string name="rotate_title">Rotate token for %1$s?</string>
+    <string name="rotate_body">The current token stops working immediately. Any app using it must be given the new one.</string>
+    <string name="revoke_title">Delete client %1$s?</string>
+    <string name="revoke_body">Its token stops working immediately. Data stored under its namespace is left untouched and becomes unreachable until a client with the same namespace is recreated.</string>
+    <string name="revoked">Deleted %1$s</string>
+    <string name="revoke_refused">Cannot delete the last admin client</string>
 </resources>

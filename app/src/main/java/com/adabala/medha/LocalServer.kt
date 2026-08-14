@@ -1116,5 +1116,5 @@ class LocalServer(
 
 /** Single place for the version string surfaced over HTTP. */
 object BuildInfo {
-    const val VERSION = "0.7.0"
+    const val VERSION = "0.8.0"
 }

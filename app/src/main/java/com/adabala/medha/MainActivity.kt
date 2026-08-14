@@ -335,82 +335,114 @@ class MainActivity : AppCompatActivity() {
 
     // ---------------------------- dialogs ----------------------------
 
+    /**
+     * Client manager.
+     *
+     * The previous version was a read-only wall of text: no way to copy a
+     * token, rotate one, or delete a client created by mistake. A token is
+     * shown in full exactly once at creation, so "no copy" meant a typo in the
+     * client id was unrecoverable and the token was gone for good.
+     */
     private fun showClientsDialog() {
         val clients = registry.all()
-        val body = buildString {
-            append("Each client gets its own token and namespace. A client can only\n")
-            append("see sessions and collections under its own prefix.\n\n")
-            clients.forEach { c ->
-                append(c.id).append("  [").append(c.namespace).append(":*]\n")
-                append("  ").append(c.token.take(10)).append("…").append(c.token.takeLast(4)).append("\n")
-                append("  ").append(if (c.isAdmin) "admin (full access)" else c.capabilities.sorted().joinToString(", "))
-                append("\n\n")
-            }
+        if (clients.isEmpty()) {
+            showAddClientDialog()
+            return
         }
-        val editable = clients.filter { !it.isAdmin }
-        val b = MaterialAlertDialogBuilder(this)
+        val labels = clients.map { c ->
+            val caps = if (c.isAdmin) "full access" else c.capabilities.sorted().joinToString(", ")
+            "${c.id}   [${c.namespace}:*]\n${c.token.take(10)}…${c.token.takeLast(4)}\n$caps"
+        }.toTypedArray()
+
+        MaterialAlertDialogBuilder(this)
             .setTitle(R.string.clients_title)
             .setIcon(R.drawable.ic_client)
+            .setItems(labels) { _, i -> showClientActions(clients[i]) }
             .setPositiveButton(R.string.close, null)
             .setNeutralButton(R.string.client_add) { _, _ -> showAddClientDialog() }
-
-        if (editable.isEmpty()) {
-            b.setMessage(body)
-        } else {
-            // Tapping a client opens its permissions. Creating one with the
-            // wrong grant used to be unrecoverable without deleting it.
-            b.setMessage(body)
-                .setNegativeButton(R.string.client_edit) { _, _ ->
-                    MaterialAlertDialogBuilder(this)
-                        .setTitle(R.string.client_edit)
-                        .setItems(editable.map { it.id }.toTypedArray()) { _, i ->
-                            showCapabilitiesDialog(editable[i])
-                        }
-                        .show()
-                }
-        }
-        b.show()
+            .show()
     }
 
-    private fun showCapabilitiesDialog(client: ClientRegistry.Client) {
-        val checked = grantable.map { it.first in client.capabilities }.toBooleanArray()
+    private fun showClientActions(client: ClientRegistry.Client) {
+        val actions = mutableListOf(
+            getString(R.string.copy_token),
+            getString(R.string.rotate),
+            getString(R.string.client_edit)
+        )
+        // The last admin must keep existing, or the owner is locked out of
+        // their own service with no recovery short of clearing app data.
+        val deletable = !client.isAdmin || registry.all().count { it.isAdmin } > 1
+        if (deletable) actions.add(getString(R.string.revoke))
+
         MaterialAlertDialogBuilder(this)
             .setTitle(client.id)
-            .setMultiChoiceItems(
-                grantable.map { it.second }.toTypedArray(), checked
-            ) { _, which, isChecked -> checked[which] = isChecked }
+            .setItems(actions.toTypedArray()) { _, i ->
+                when (actions[i]) {
+                    getString(R.string.copy_token) -> {
+                        copyText("Medha token: ${client.id}", client.token)
+                        showTokenDialog(client)
+                    }
+                    getString(R.string.rotate) -> confirmRotate(client)
+                    getString(R.string.client_edit) -> showCapabilitiesDialog(client)
+                    getString(R.string.revoke) -> confirmRevoke(client)
+                }
+            }
+            .setNegativeButton(R.string.close, null)
+            .show()
+    }
+
+    /** Shows the token in full and selectable, since clipboards can fail. */
+    private fun showTokenDialog(client: ClientRegistry.Client) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(client.id)
+            .setMessage(
+                "${client.token}\n\nCopied to the clipboard.\n" +
+                    "Namespace: ${client.namespace}:*\n" +
+                    "Capabilities: ${if (client.isAdmin) "full access"
+                        else client.capabilities.sorted().joinToString(", ")}"
+            )
+            .setPositiveButton(R.string.close, null)
+            .show()
+    }
+
+    private fun confirmRotate(client: ClientRegistry.Client) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.rotate_title, client.id))
+            .setMessage(R.string.rotate_body)
             .setNegativeButton(R.string.cancel, null)
-            .setPositiveButton(R.string.save) { _, _ ->
-                val caps = grantable.filterIndexed { i, _ -> checked[i] }.map { it.first }.toSet()
-                val updated = registry.setCapabilities(client.id, caps)
-                if (updated != null) {
-                    // The server captured the client list at construction, so it
-                    // has to be rebuilt for the change to take effect.
-                    restartServiceIfLive()
-                    toast(getString(R.string.caps_saved, updated.id))
-                } else {
+            .setPositiveButton(R.string.rotate) { _, _ ->
+                val fresh = registry.rotate(client.id)
+                if (fresh == null) {
                     toast(getString(R.string.caps_failed))
+                } else {
+                    copyText("Medha token: ${fresh.id}", fresh.token)
+                    restartServiceIfLive()
+                    showTokenDialog(fresh)
                 }
             }
             .show()
     }
 
-    private fun restartServiceIfLive() {
-        if (uiState == UiState.RUNNING || uiState == UiState.LOADING) {
-            ContextCompat.startForegroundService(this, Intent(this, InferenceService::class.java))
-        }
+    private fun confirmRevoke(client: ClientRegistry.Client) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.revoke_title, client.id))
+            .setMessage(R.string.revoke_body)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.revoke) { _, _ ->
+                if (registry.revoke(client.id)) {
+                    restartServiceIfLive()
+                    toast(getString(R.string.revoked, client.id))
+                } else {
+                    toast(getString(R.string.revoke_refused))
+                }
+            }
+            .show()
     }
 
-    /** Capabilities offered in the UI, in the order they are shown. */
-    private val grantable = listOf(
-        ClientRegistry.Cap.GENERATE to "Run the model",
-        ClientRegistry.Cap.MEMORY to "Chat memory / sessions",
-        ClientRegistry.Cap.RAG to "Knowledge (RAG)",
-        ClientRegistry.Cap.STORE to "Store its own data",
-        ClientRegistry.Cap.SMS_READ to "Read SMS",
-        ClientRegistry.Cap.SMS_SEND to "Send SMS",
-        ClientRegistry.Cap.NOTIFY to "Post notifications"
-    )
+    private fun copyText(label: String, value: String) {
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        cm.setPrimaryClip(ClipData.newPlainText(label, value))
+    }
 
     private fun showAddClientDialog() {
         val input = EditText(this).apply {
@@ -441,18 +473,9 @@ class MainActivity : AppCompatActivity() {
                     // one prefix, no separate thing to remember.
                     registry.create(id, id, id, caps)
                 }.onSuccess { c ->
-                    val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    cm.setPrimaryClip(ClipData.newPlainText("Medha token: ${c.id}", c.token))
-                    MaterialAlertDialogBuilder(this)
-                        .setTitle(c.id)
-                        .setMessage(
-                            "Token copied to clipboard.\n\n${c.token}\n\n" +
-                                "Namespace: ${c.namespace}:*\n" +
-                                "Capabilities: ${c.capabilities.sorted().joinToString(", ")}\n\n" +
-                                "This is the only time it is shown in full."
-                        )
-                        .setPositiveButton(R.string.close, null)
-                        .show()
+                    copyText("Medha token: ${c.id}", c.token)
+                    restartServiceIfLive()
+                    showTokenDialog(c)
                 }.onFailure { e -> toast(e.message ?: "could not create client") }
             }
             .show()
