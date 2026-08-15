@@ -444,6 +444,53 @@ class MainActivity : AppCompatActivity() {
         cm.setPrimaryClip(ClipData.newPlainText(label, value))
     }
 
+    /**
+     * Capabilities offered in the UI, in the order they are shown.
+     *
+     * SMS and notify are deliberately absent from the default set: most
+     * consumers should not have them, and a grant that broad should be a
+     * decision rather than a default.
+     */
+    private val grantable = listOf(
+        ClientRegistry.Cap.GENERATE to "Run the model",
+        ClientRegistry.Cap.MEMORY to "Chat memory / sessions",
+        ClientRegistry.Cap.RAG to "Knowledge (RAG)",
+        ClientRegistry.Cap.STORE to "Store its own data",
+        ClientRegistry.Cap.SMS_READ to "Read SMS",
+        ClientRegistry.Cap.SMS_SEND to "Send SMS",
+        ClientRegistry.Cap.NOTIFY to "Post notifications"
+    )
+
+    private fun showCapabilitiesDialog(client: ClientRegistry.Client) {
+        val checked = grantable.map { it.first in client.capabilities }.toBooleanArray()
+        MaterialAlertDialogBuilder(this)
+            .setTitle(client.id)
+            .setMultiChoiceItems(
+                grantable.map { it.second }.toTypedArray(), checked
+            ) { _, which, isChecked -> checked[which] = isChecked }
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.save) { _, _ ->
+                val caps = grantable.filterIndexed { i, _ -> checked[i] }.map { it.first }.toSet()
+                val updated = registry.setCapabilities(client.id, caps)
+                if (updated != null) {
+                    // The server captured the client list at construction, so it
+                    // has to be rebuilt for the change to take effect.
+                    restartServiceIfLive()
+                    toast(getString(R.string.caps_saved, updated.id))
+                } else {
+                    toast(getString(R.string.caps_failed))
+                }
+            }
+            .show()
+    }
+
+    /** Rebuilds the server so a credential or capability change takes effect. */
+    private fun restartServiceIfLive() {
+        if (uiState == UiState.RUNNING || uiState == UiState.LOADING) {
+            ContextCompat.startForegroundService(this, Intent(this, InferenceService::class.java))
+        }
+    }
+
     private fun showAddClientDialog() {
         val input = EditText(this).apply {
             hint = getString(R.string.client_id_hint)

@@ -65,6 +65,13 @@ jobs:
       # two fixes you actually want. Adding `override` to a click handler that
       # merely happens to be named onStart() compiles, then misfires on every
       # lifecycle transition.
+      # kotlinc without android.jar reports thousands of unresolved references,
+      # so a genuinely deleted declaration hides in the noise and only breaks on
+      # a machine with the real classpath. This finds project symbols that are
+      # called but declared nowhere.
+      - name: Check for missing declarations
+        run: python3 tools/check_symbols.py app/src/main/java
+
       - name: Check lifecycle overrides
         run: python3 tools/check_overrides.py app/src
 
