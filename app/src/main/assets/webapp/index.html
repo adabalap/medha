@@ -60,6 +60,11 @@
 
   <div class="card">
     <h3>One-shot generation</h3>
+    <p class="hint">
+      <b>Generate</b> waits for the whole answer. <b>Stream</b> shows tokens as
+      they arrive — if it appears all at once, your LiteRT build has no async
+      surface and Medha fell back to a single emission. Both are real inference.
+    </p>
     <textarea id="prompt" rows="3">Give me three tips to save money on daily spending.</textarea>
     <div class="row" style="margin-top:10px">
       <button id="send">Generate</button>
@@ -70,6 +75,11 @@
 
   <div class="card">
     <h3>Chat with memory</h3>
+    <p class="hint">
+      Stored in SQLite on this device and keyed by the session id below, so the
+      thread survives restarts. Tell it something, restart Medha, then ask about
+      it.
+    </p>
     <div id="thread"></div>
     <textarea id="chatInput" rows="2" placeholder="Medha remembers this thread across restarts…"></textarea>
     <div class="row" style="margin-top:10px">
@@ -81,11 +91,17 @@
 
   <div class="card">
     <h3>Knowledge (RAG)</h3>
+    <p class="hint">
+      Ingest text, then <b>Ask with context</b> retrieves the relevant chunks and
+      answers from them. Retrieval is keyword-based unless an embedding model is
+      installed; <code>/system</code> reports which mode is active.
+    </p>
     <input id="coll" value="demo" placeholder="collection name" />
     <textarea id="doc" rows="3" style="margin-top:8px"
       placeholder="Paste text to ingest, then ask a question about it."></textarea>
     <div class="row" style="margin-top:10px">
       <button id="ingest">Ingest</button>
+      <button id="retrieve" class="ghost">Show retrieved</button>
       <button id="ask" class="ghost">Ask with context</button>
     </div>
     <pre id="ragOut"></pre>
@@ -252,6 +268,28 @@ document.getElementById("ingest").onclick = async function () {
       })
     });
     out.textContent = "Ingested " + d.chunks + " chunk(s) into '" + d.collection + "'.";
+  } catch (e) { out.textContent = "error: " + e.message; }
+};
+
+// Retrieval on its own, so a bad answer can be traced to bad retrieval rather
+// than guessed at.
+document.getElementById("retrieve").onclick = async function () {
+  var out = document.getElementById("ragOut");
+  var q = document.getElementById("chatInput").value.trim() ||
+          document.getElementById("prompt").value.trim();
+  out.textContent = "…";
+  try {
+    var d = await api("/rag/query", {
+      method: "POST",
+      body: JSON.stringify({
+        collection: document.getElementById("coll").value,
+        query: q, topK: 3
+      })
+    });
+    if (!d.hits.length) { out.textContent = "No matching chunks in '" + d.collection + "'."; return; }
+    out.textContent = "mode: " + d.mode + "\n\n" + d.hits.map(function (h, i) {
+      return "[" + (i + 1) + "] score " + h.score.toFixed(3) + "\n" + h.text;
+    }).join("\n\n");
   } catch (e) { out.textContent = "error: " + e.message; }
 };
 

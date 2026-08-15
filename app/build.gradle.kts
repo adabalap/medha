@@ -42,8 +42,8 @@ android {
         applicationId = "com.adabala.medha"
         minSdk = 27
         targetSdk = 34
-        versionCode = 8
-        versionName = "0.8.1"
+        versionCode = 9
+        versionName = "0.8.2"
     }
 
     signingConfigs {

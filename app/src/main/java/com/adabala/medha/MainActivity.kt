@@ -136,6 +136,19 @@ class MainActivity : AppCompatActivity() {
         binding.btnCopyToken.setOnClickListener { copyToken() }
 
         applyState(UiState.IDLE)
+
+        // Start at the top.
+        //
+        // Android focuses the first focusable descendant during layout, which
+        // here is the Port field near the bottom of the card stack, and the
+        // NestedScrollView then scrolls to reveal it. The result is the app
+        // opening halfway down its own settings. The root LinearLayout is
+        // focusableInTouchMode so it wins that race, and this puts the scroll
+        // position back to zero after the first pass for good measure.
+        binding.contentScroll.post {
+            binding.contentScroll.scrollTo(0, 0)
+            binding.contentScroll.smoothScrollTo(0, 0)
+        }
     }
 
     // ----------------------------- drawer -----------------------------
@@ -349,9 +362,16 @@ class MainActivity : AppCompatActivity() {
             showAddClientDialog()
             return
         }
+        // Deliberately no token preview here.
+        //
+        // The previous list showed "ac0328c9d6…e4b4", which is selectable text.
+        // People copied that, pasted it into a consumer app, and got a generic
+        // 401 — the ellipsis was invisible in a password field. Showing no
+        // token at all forces the one path that yields a working value: tap the
+        // client, then Copy token.
         val labels = clients.map { c ->
             val caps = if (c.isAdmin) "full access" else c.capabilities.sorted().joinToString(", ")
-            "${c.id}   [${c.namespace}:*]\n${c.token.take(10)}…${c.token.takeLast(4)}\n$caps"
+            "${c.id}   [${c.namespace}:*]\n$caps\ntap to copy the token or edit"
         }.toTypedArray()
 
         MaterialAlertDialogBuilder(this)
