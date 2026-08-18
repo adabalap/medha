@@ -111,7 +111,15 @@ Models: `litert-community/embeddinggemma-300m` on Hugging Face. Gecko variants
 also work — smaller and ~2.6× faster, less accurate.
 
 **3. Restart Medha.** `/system` will report `vectorSearch: true` and
-`embeddingModel: "<name>@768"`.
+`embeddingModel: "<name>@<dims>"`, where `<dims>` is *measured*, not assumed —
+Medha runs one real embed call against the loaded model at startup and records
+the length of what comes back. This matters because EmbeddingGemma and Gecko
+both ship Matryoshka-truncated variants (768/512/256/128 dims) with no
+filename convention every checkpoint follows; a static guess would be a coin
+flip on anything but the default export, and guessing wrong doesn't throw — it
+silently fails every future embed call and pins RAG in lexical mode with no
+clear signal why. If the probe embed produces nothing, `createOrNull` logs why
+and returns `NoEmbedder` right there rather than shipping a broken dimension.
 
 **4. Backfill existing chunks:**
 

@@ -312,6 +312,8 @@ class LocalServer(
                         scheduler.submit(priorityOf(call)) { engine.generate(req.prompt, req.system) }
                     } catch (e: InferenceScheduler.Rejected) {
                         return@post call.rejected(e)
+                    } catch (e: InferenceScheduler.TimedOut) {
+                        return@post call.timedOut(e)
                     }
                     call.respond(
                         GenerateResponse(
@@ -329,18 +331,32 @@ class LocalServer(
                     if (!engine.isLoaded) return@post call.notReady()
                     val req = call.receive<GenerateRequest>()
                     if (req.prompt.isBlank()) return@post call.badRequest("prompt must not be blank")
-                    call.prepareSse()
-                    call.respondTextWriter(ContentType.Text.EventStream) {
-                        engine.generateStream(req.prompt, req.system).collect { delta ->
-                            // Payload is JSON-encoded so newlines survive SSE
-                            // framing. The old code emitted a raw string with
-                            // "\n" escaped by hand, which broke any consumer
-                            // that took the spec literally.
-                            write("data: ${jsonStr(delta)}\n\n")
+                    // Admission happens BEFORE the SSE response starts, via
+                    // acquire() rather than submit(): once respondTextWriter
+                    // sends headers, a Rejected/TimedOut caught afterwards
+                    // could no longer send a clean 429/504 on top of it. See
+                    // InferenceScheduler.acquire for the full reasoning.
+                    val permit = try {
+                        scheduler.acquire(priorityOf(call))
+                    } catch (e: InferenceScheduler.Rejected) {
+                        return@post call.rejected(e)
+                    } catch (e: InferenceScheduler.TimedOut) {
+                        return@post call.timedOut(e)
+                    }
+                    permit.use {
+                        call.prepareSse()
+                        call.respondTextWriter(ContentType.Text.EventStream) {
+                            engine.generateStream(req.prompt, req.system).collect { delta ->
+                                // Payload is JSON-encoded so newlines survive SSE
+                                // framing. The old code emitted a raw string with
+                                // "\n" escaped by hand, which broke any consumer
+                                // that took the spec literally.
+                                write("data: ${jsonStr(delta)}\n\n")
+                                flush()
+                            }
+                            write("data: [DONE]\n\n")
                             flush()
                         }
-                        write("data: [DONE]\n\n")
-                        flush()
                     }
                 }
 
@@ -369,6 +385,8 @@ class LocalServer(
                         scheduler.submit(priorityOf(call)) { engine.generate(prompt) }
                     } catch (e: InferenceScheduler.Rejected) {
                         return@post call.rejected(e)
+                    } catch (e: InferenceScheduler.TimedOut) {
+                        return@post call.timedOut(e)
                     }
                     // Atomic: the user turn is no longer written separately from
                     // the assistant turn, so a failure cannot half-persist.
@@ -473,26 +491,46 @@ class LocalServer(
                     val created = nowSeconds()
 
                     if (req.stream) {
-                        call.prepareSse()
-                        call.respondTextWriter(ContentType.Text.EventStream) {
-                            // Spec-shaped chunks. v0.1 emitted only
-                            // {"choices":[{"delta":...}]} with no id/object/
-                            // created/model, which strict OpenAI clients reject
-                            // outright — exactly the interop you need for
-                            // pointing hf_agent at this.
-                            write("data: ${chunk(id, created, roleDelta = true)}\n\n")
-                            flush()
-                            engine.generateStream(prompt, system).collect { delta ->
-                                write("data: ${chunk(id, created, content = delta)}\n\n")
+                        // Same admission control as /generate/stream: the OpenAI
+                        // -compat surface is the one most third-party clients
+                        // actually hit, so it cannot be the endpoint that skips
+                        // queue/thermal gating. acquire(), not submit() — see
+                        // InferenceScheduler.acquire for why.
+                        val permit = try {
+                            scheduler.acquire(priorityOf(call))
+                        } catch (e: InferenceScheduler.Rejected) {
+                            return@post call.rejected(e)
+                        } catch (e: InferenceScheduler.TimedOut) {
+                            return@post call.timedOut(e)
+                        }
+                        permit.use {
+                            call.prepareSse()
+                            call.respondTextWriter(ContentType.Text.EventStream) {
+                                // Spec-shaped chunks. v0.1 emitted only
+                                // {"choices":[{"delta":...}]} with no id/object/
+                                // created/model, which strict OpenAI clients reject
+                                // outright — exactly the interop you need for
+                                // pointing hf_agent at this.
+                                write("data: ${chunk(id, created, roleDelta = true)}\n\n")
+                                flush()
+                                engine.generateStream(prompt, system).collect { delta ->
+                                    write("data: ${chunk(id, created, content = delta)}\n\n")
+                                    flush()
+                                }
+                                write("data: ${chunk(id, created, finish = "stop")}\n\n")
+                                flush()
+                                write("data: [DONE]\n\n")
                                 flush()
                             }
-                            write("data: ${chunk(id, created, finish = "stop")}\n\n")
-                            flush()
-                            write("data: [DONE]\n\n")
-                            flush()
                         }
                     } else {
-                        val r = engine.generate(prompt, system)
+                        val r = try {
+                            scheduler.submit(priorityOf(call)) { engine.generate(prompt, system) }
+                        } catch (e: InferenceScheduler.Rejected) {
+                            return@post call.rejected(e)
+                        } catch (e: InferenceScheduler.TimedOut) {
+                            return@post call.timedOut(e)
+                        }
                         call.respondJson(buildJsonObject {
                             put("id", id)
                             put("object", "chat.completion")
@@ -1004,6 +1042,16 @@ class LocalServer(
     private suspend fun ApplicationCall.rejected(e: InferenceScheduler.Rejected) {
         response.header(HttpHeaders.RetryAfter, e.retryAfterSeconds.toString())
         respond(HttpStatusCode.TooManyRequests, ErrorResponse(e.reason, "rejected"))
+    }
+
+    /**
+     * 504, not 429: this request was admitted and genuinely waited too long,
+     * as opposed to being turned away at the door. See
+     * [InferenceScheduler.TimedOut] for what this guarantees and what it does
+     * not.
+     */
+    private suspend fun ApplicationCall.timedOut(e: InferenceScheduler.TimedOut) {
+        respond(HttpStatusCode.GatewayTimeout, ErrorResponse(e.message ?: "timed out", "timeout"))
     }
 
     /** Avoids leaking token length/prefix through response-time differences. */

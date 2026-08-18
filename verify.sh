@@ -16,7 +16,8 @@ for f in app/build.gradle.kts app/src/main/AndroidManifest.xml \
 echo; echo "Sources"
 for f in MainActivity InferenceService LlmEngine LocalServer SystemInfo MemoryRepository; do
   need "app/src/main/java/com/adabala/medha/$f.kt"; done
-for f in auth/ClientRegistry sched/InferenceScheduler connectors/SmsConnector \
+for f in auth/ClientRegistry sched/InferenceScheduler sched/SchedulerConfig \
+         connectors/SmsConnector \
          notify/NotificationHub notify/MedhaWidgetProvider data/MedhaDatabase \
          data/Entities rag/Retriever rag/Embedder rag/AiEdgeEmbedder; do
   need "app/src/main/java/com/adabala/medha/$f.kt"; done
@@ -35,3 +36,7 @@ if [ "$fail" -eq 0 ]; then
 else
   echo "Fix the items above first."; exit 1
 fi
+
+echo
+echo "Pure-logic tests (SchedulerConfig, Embedder — no Android SDK needed)"
+./tools/tests/run.sh || { echo "Pure-logic tests failed."; exit 1; }

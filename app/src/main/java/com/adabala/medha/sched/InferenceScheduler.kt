@@ -7,9 +7,11 @@ import android.os.BatteryManager
 import android.util.Log
 import com.adabala.medha.SystemInfo
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeout
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -46,54 +48,28 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 class InferenceScheduler(
     private val appContext: Context,
-    @Volatile var config: Config = Config()
+    @Volatile var config: SchedulerConfig = SchedulerConfig()
 ) {
 
     enum class Priority { INTERACTIVE, BATCH }
 
-    data class Config(
-        /** Reject new work beyond this many queued+running requests. */
-        val maxQueueDepth: Int = 8,
-        /** BATCH pauses at or above this headroom. */
-        val thermalPauseAt: Float = 0.85f,
-        /** BATCH resumes at or below this headroom. Must be < [thermalPauseAt]. */
-        val thermalResumeAt: Float = 0.70f,
-        /** BATCH only runs while charging. */
-        val batchRequiresCharging: Boolean = false,
-        /** BATCH only runs at or above this battery percent (0 disables). */
-        val batchMinBatteryPercent: Int = 20,
-        /** Give up waiting for a thermal window after this long. */
-        val maxGateWaitMs: Long = 5 * 60 * 1000,
-        /** Hard ceiling on a single generation. */
-        val requestTimeoutMs: Long = 120_000
-    ) {
-        fun validated(): Config {
-            // Clamp the pause watermark FIRST, then derive the resume bound
-            // from the clamped value. Doing both inside one copy() reads the
-            // raw receiver for the second expression, so a pause value of 0.0
-            // produced an empty coercion range and threw.
-            val pause = thermalPauseAt.coerceIn(MIN_PAUSE, MAX_PAUSE)
-            // Enforce the hysteresis gap rather than trusting the caller: equal
-            // watermarks reintroduce exactly the oscillation they prevent.
-            val resume = thermalResumeAt.coerceIn(MIN_RESUME, pause - HYSTERESIS)
-            return copy(
-                maxQueueDepth = maxQueueDepth.coerceIn(1, 64),
-                thermalPauseAt = pause,
-                thermalResumeAt = resume,
-                batchMinBatteryPercent = batchMinBatteryPercent.coerceIn(0, 95)
-            )
-        }
-
-        companion object {
-            const val MIN_PAUSE = 0.30f
-            const val MAX_PAUSE = 1.50f
-            const val MIN_RESUME = 0.20f
-            /** MIN_PAUSE - HYSTERESIS must stay >= MIN_RESUME or the range empties. */
-            const val HYSTERESIS = 0.05f
-        }
-    }
-
     class Rejected(val reason: String, val retryAfterSeconds: Int) : Exception(reason)
+
+    /**
+     * [SchedulerConfig.requestTimeoutMs] elapsed before [block] returned.
+     *
+     * Honest scope: [withTimeout] cancels cooperatively. A block whose actual
+     * work is a blocking native call (the LiteRT decode) does not observe
+     * cancellation mid-call — the underlying call keeps running and the mutex
+     * stays held until it naturally returns. What this DOES guarantee: no
+     * caller waits longer than [SchedulerConfig.requestTimeoutMs] for the engine to
+     * become available, or for its own turn to finish once native execution is
+     * genuinely responsive. A caller stacked behind a hung request now gets a
+     * clear, bounded error instead of hanging forever — the queue no longer
+     * fails silently and indefinitely, even though a truly wedged native call
+     * is not itself force-killed. That still requires a process restart.
+     */
+    class TimedOut(val ms: Long) : Exception("generation exceeded ${ms}ms")
 
     /** Serialises the engine. Interactive callers queue ahead by admission order. */
     private val engineGate = Mutex()
@@ -109,28 +85,86 @@ class InferenceScheduler(
 
     /**
      * Admits, gates, then runs [block] with the engine held exclusively.
-     * Throws [Rejected] if the request cannot be admitted.
+     * Throws [Rejected] if the request cannot be admitted, [TimedOut] if it
+     * cannot be admitted within [SchedulerConfig.requestTimeoutMs].
+     *
+     * For callers that respond in one shot (`/generate`, `/chat`, the
+     * non-streaming half of `/v1/chat/completions`). Streaming callers use
+     * [acquire] instead — see its doc for why.
      */
     suspend fun <T> submit(priority: Priority, block: suspend () -> T): T {
+        val permit = acquire(priority)
+        return try {
+            withTimeout(permit.remainingMs()) { block() }
+        } catch (t: TimeoutCancellationException) {
+            throw TimedOut(config.validated().requestTimeoutMs)
+        } finally {
+            permit.close()
+        }
+    }
+
+    /**
+     * Admits and gates like [submit], but returns control to the caller
+     * holding the engine instead of running a block internally.
+     *
+     * Why streaming needs this and [submit] cannot be reused as-is: an SSE
+     * response commits its headers the moment writing begins, and after that
+     * a caller cannot cleanly turn a mid-stream failure into a 429/504 — the
+     * status line is already on the wire. So the timeout here is scoped to
+     * *admission* only (the queue wait and the thermal/battery gate wait,
+     * both fully cancellable) and stops at the moment the engine is actually
+     * handed over. A hang during the streamed native call itself is the same
+     * known, documented limitation as [TimedOut]: not interruptible from
+     * here. Callers must always call [Permit.close] (`use { }`), or the
+     * engine and the admitted-request count leak.
+     */
+    suspend fun acquire(priority: Priority): Permit {
         val cfg = config.validated()
+        val deadline = System.currentTimeMillis() + cfg.requestTimeoutMs
 
         if (depth.get() >= cfg.maxQueueDepth) {
             throw Rejected("queue full (${cfg.maxQueueDepth} in flight)", 5)
         }
         depth.incrementAndGet()
         if (priority == Priority.INTERACTIVE) interactiveWaiting.incrementAndGet()
+        var admitted = false
         try {
             if (priority == Priority.BATCH) awaitBatchWindow(cfg)
-            return engineGate.withLock {
-                if (priority == Priority.INTERACTIVE) interactiveWaiting.decrementAndGet()
-                block()
+            val remaining = deadline - System.currentTimeMillis()
+            if (remaining <= 0) throw TimedOut(cfg.requestTimeoutMs)
+            try {
+                withTimeout(remaining) { engineGate.lock() }
+            } catch (t: TimeoutCancellationException) {
+                throw TimedOut(cfg.requestTimeoutMs)
             }
+            admitted = true
+            if (priority == Priority.INTERACTIVE) interactiveWaiting.decrementAndGet()
+            return Permit(priority, deadline)
         } finally {
-            if (priority == Priority.INTERACTIVE) {
-                // Guard against double-decrement on the throw paths above.
-                interactiveWaiting.updateAndGet { if (it > 0) it else 0 }
+            if (!admitted) {
+                if (priority == Priority.INTERACTIVE) {
+                    interactiveWaiting.updateAndGet { if (it > 0) it else 0 }
+                }
+                depth.decrementAndGet()
             }
+        }
+    }
+
+    /** Held while the caller drives the engine. Release exactly once. */
+    inner class Permit internal constructor(
+        private val priority: Priority,
+        private val deadline: Long
+    ) : AutoCloseable {
+        @Volatile private var released = false
+
+        /** Time left of [SchedulerConfig.requestTimeoutMs] at the moment of admission. */
+        fun remainingMs(): Long = (deadline - System.currentTimeMillis()).coerceAtLeast(1)
+
+        override fun close() {
+            if (released) return
+            released = true
             depth.decrementAndGet()
+            engineGate.unlock()
         }
     }
 
@@ -139,7 +173,7 @@ class InferenceScheduler(
      * interactive request is waiting. Polls rather than subscribing because
      * `getThermalHeadroom` itself rejects calls made less than ~1s apart.
      */
-    private suspend fun awaitBatchWindow(cfg: Config) {
+    private suspend fun awaitBatchWindow(cfg: SchedulerConfig) {
         val deadline = System.currentTimeMillis() + cfg.maxGateWaitMs
         while (true) {
             val block = batchBlockReason(cfg)
@@ -166,7 +200,7 @@ class InferenceScheduler(
     }
 
     /** Null when batch may run; otherwise a human-readable reason. */
-    private fun batchBlockReason(cfg: Config): String? {
+    private fun batchBlockReason(cfg: SchedulerConfig): String? {
         val hr = SystemInfo.thermalHeadroom(appContext)
         if (hr >= 0f) {
             // Hysteresis: once paused, require the lower watermark to resume.

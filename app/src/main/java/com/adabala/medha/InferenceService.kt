@@ -18,6 +18,7 @@ import com.adabala.medha.auth.ClientRegistry
 import com.adabala.medha.connectors.SmsConnector
 import com.adabala.medha.notify.NotificationHub
 import com.adabala.medha.sched.InferenceScheduler
+import com.adabala.medha.sched.SchedulerConfig
 import com.adabala.medha.rag.AiEdgeEmbedder
 import com.adabala.medha.rag.Embedder
 import com.adabala.medha.rag.NoEmbedder
@@ -166,9 +167,9 @@ class InferenceService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun loadSchedulerConfig(): InferenceScheduler.Config {
+    private fun loadSchedulerConfig(): SchedulerConfig {
         val p = PreferenceManager.getDefaultSharedPreferences(this)
-        return InferenceScheduler.Config(
+        return SchedulerConfig(
             maxQueueDepth = p.getInt(KEY_QUEUE_DEPTH, 8),
             thermalPauseAt = p.getFloat(KEY_THERMAL_PAUSE, 0.85f),
             thermalResumeAt = p.getFloat(KEY_THERMAL_RESUME, 0.70f),

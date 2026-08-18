@@ -44,14 +44,30 @@ answer once the app leaves your desk.
 Fix: a bounded in-memory ring buffer written to a file on crash, plus a "share
 diagnostics" action in the drawer. Deliberately local-only — no telemetry.
 
-### 3. The engine is a single-request bottleneck with no timeout
-Every request serialises on one mutex, which is correct for native safety, but
-there is **no cap on how long one generation may run and no queue limit**. A
-runaway prompt blocks every other consumer indefinitely, and a PWA that fires
-requests in a loop builds an unbounded backlog.
+### 3. ~~The engine is a single-request bottleneck with no timeout~~ — RESOLVED
+`InferenceScheduler` already provided admission control (bounded queue → 429)
+and thermal/battery gating. What it didn't do: enforce `requestTimeoutMs` (the
+field existed and was silently dead), and cover every endpoint — `/generate/
+stream` and both branches of `/v1/chat/completions` called the engine directly,
+bypassing the scheduler entirely. That last gap mattered most in practice:
+`/v1/chat/completions` is the endpoint a standard OpenAI client actually hits,
+so the one interface most third-party callers use had zero protection against
+the "PWA loops requests, backlog grows without bound" failure this scheduler
+exists to prevent.
 
-Fix: a per-request timeout (`withTimeout`), a max queue depth returning `429`,
-and cancellation wired to client disconnect.
+Fixed: `requestTimeoutMs` is enforced via `withTimeout`, and all three
+endpoints now go through the scheduler — the streaming ones via a new
+`acquire()`/`Permit` API rather than reusing `submit()`, because a timeout
+firing after SSE headers are already on the wire cannot cleanly turn into a
+429/504 response.
+
+Honest scope, stated plainly: cancellation is cooperative. A timeout cannot
+force-interrupt a blocking native decode call already in progress — the
+mutex stays held until that call naturally returns. What is guaranteed: no
+caller waits longer than `requestTimeoutMs` for the engine to become
+available or for its own admission to complete, so a caller stacked behind a
+hung request gets a clear, bounded error instead of hanging forever. A truly
+wedged native call still needs a process restart to clear.
 
 ### 4. ~~`applicationId` is a placeholder~~ — RESOLVED
 Now `com.adabala.medha`, matching the adabala.com domain. applicationId,
@@ -132,7 +148,7 @@ Worth stating, because the list above is long and one-sided:
 
 1. ~~Change `applicationId`.~~ Done — `com.adabala.medha`.
 2. Generate and back up a release keystore; add the CI secrets. *(30 min)*
-3. Add request timeout + queue cap. *(an hour)*
+3. ~~Add request timeout + queue cap.~~ Done — see item 3 above.
 4. Write instrumented tests for the DB migration and FTS sync. *(half a day)*
 5. Add the local diagnostics buffer. *(half a day)*
 6. Then reassess — after those five, "other people can sideload it" is a fair

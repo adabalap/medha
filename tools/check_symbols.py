@@ -61,7 +61,7 @@ takeIf takeUnless require requireNotNull check checkNotNull error TODO
 listOf mutableListOf arrayListOf setOf mutableSetOf mapOf mutableMapOf hashMapOf
 emptyList emptySet emptyMap arrayOf intArrayOf booleanArrayOf floatArrayOf
 byteArrayOf longArrayOf doubleArrayOf charArrayOf buildString buildList buildMap
-lazy synchronized runCatching runBlocking launch async await withContext delay
+lazy synchronized runCatching runBlocking launch async await withContext withTimeout delay
 println print readLine repeat maxOf minOf abs max min sqrt ln exp pow round
 floor ceil String Int Long Float Double Boolean Char Byte Short Any Unit Nothing
 super this it super setOf to arrayOfNulls Regex Pair Triple Result

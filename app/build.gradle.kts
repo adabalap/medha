@@ -42,8 +42,8 @@ android {
         applicationId = "com.adabala.medha"
         minSdk = 27
         targetSdk = 34
-        versionCode = 9
-        versionName = "0.8.2"
+        versionCode = 10
+        versionName = "0.8.3"
     }
 
     signingConfigs {
@@ -198,4 +198,18 @@ dependencies {
     //
     // implementation("com.google.ai.edge.localagents:localagents-rag:0.3.0")
     // implementation("com.google.mediapipe:tasks-genai:0.10.27")
+
+    // ---------------------------------------------------------------------
+    // Unit tests (app/src/test — plain JVM, no device/emulator needed).
+    //
+    // InferenceScheduler's admission-control and timeout behavior is
+    // concurrency-dependent and needs a real kotlinx.coroutines dispatcher to
+    // mean anything, so it lives here rather than in tools/tests (which only
+    // covers the two files with zero framework dependencies). mockk supplies
+    // a relaxed Context — the tests only exercise Priority.INTERACTIVE, which
+    // never touches BatteryManager/thermal APIs, so nothing Android-specific
+    // actually needs to be real.
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+    testImplementation("io.mockk:mockk:1.13.11")
 }

@@ -3,6 +3,7 @@ package com.adabala.medha.rag
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -86,44 +87,6 @@ class AiEdgeEmbedder private constructor(
         }
     }
 
-    /**
-     * Calls the SDK's embedding entry point. The RAG SDK has revised this
-     * surface between releases, so several known shapes are tried and the first
-     * that yields a float array wins. If none match, embeddings stay disabled
-     * rather than the app crashing.
-     */
-    private fun invokeEmbed(target: Any, text: String): FloatArray? {
-        for (name in EMBED_METHODS) {
-            val m = runCatching { target.javaClass.getMethod(name, String::class.java) }
-                .getOrNull() ?: continue
-            val result = runCatching { m.invoke(target, text) }.getOrNull() ?: continue
-            toFloatArray(result)?.let { return it }
-        }
-        return null
-    }
-
-    private fun toFloatArray(v: Any?): FloatArray? = when (v) {
-        null -> null
-        is FloatArray -> v
-        is DoubleArray -> FloatArray(v.size) { v[it].toFloat() }
-        is List<*> -> {
-            val nums = v.filterIsInstance<Number>()
-            if (nums.size == v.size && nums.isNotEmpty()) {
-                FloatArray(nums.size) { nums[it].toFloat() }
-            } else {
-                // Some versions wrap the vector in a result object.
-                v.firstOrNull()?.let { toFloatArray(it) }
-            }
-        }
-        else -> runCatching {
-            for (g in listOf("getEmbedding", "getValues", "getVector", "embedding")) {
-                val m = runCatching { v.javaClass.getMethod(g) }.getOrNull() ?: continue
-                toFloatArray(m.invoke(v))?.let { return@runCatching it }
-            }
-            null
-        }.getOrNull()
-    }
-
     override fun close() {
         closed = true
         runCatching {
@@ -142,6 +105,48 @@ class AiEdgeEmbedder private constructor(
 
         private const val SDK_CLASS =
             "com.google.ai.edge.localagents.rag.models.GeckoEmbeddingModel"
+
+        /**
+         * Calls the SDK's embedding entry point. The RAG SDK has revised this
+         * surface between releases, so several known shapes are tried and the
+         * first that yields a float array wins. If none match, embeddings
+         * stay disabled rather than the app crashing.
+         *
+         * Static (not an instance method) so [createOrNull] can use it for a
+         * startup probe before an [AiEdgeEmbedder] — and therefore its
+         * [dimensions] — exists yet.
+         */
+        private fun invokeEmbed(target: Any, text: String): FloatArray? {
+            for (name in EMBED_METHODS) {
+                val m = runCatching { target.javaClass.getMethod(name, String::class.java) }
+                    .getOrNull() ?: continue
+                val result = runCatching { m.invoke(target, text) }.getOrNull() ?: continue
+                toFloatArray(result)?.let { return it }
+            }
+            return null
+        }
+
+        private fun toFloatArray(v: Any?): FloatArray? = when (v) {
+            null -> null
+            is FloatArray -> v
+            is DoubleArray -> FloatArray(v.size) { v[it].toFloat() }
+            is List<*> -> {
+                val nums = v.filterIsInstance<Number>()
+                if (nums.size == v.size && nums.isNotEmpty()) {
+                    FloatArray(nums.size) { nums[it].toFloat() }
+                } else {
+                    // Some versions wrap the vector in a result object.
+                    v.firstOrNull()?.let { toFloatArray(it) }
+                }
+            }
+            else -> runCatching {
+                for (g in listOf("getEmbedding", "getValues", "getVector", "embedding")) {
+                    val m = runCatching { v.javaClass.getMethod(g) }.getOrNull() ?: continue
+                    toFloatArray(m.invoke(v))?.let { return@runCatching it }
+                }
+                null
+            }.getOrNull()
+        }
 
         /**
          * Attempts to construct the embedder. Returns [NoEmbedder] on any
@@ -169,7 +174,6 @@ class AiEdgeEmbedder private constructor(
                 return NoEmbedder
             }
 
-            val dims = if (model.name.contains("gemma", true)) 768 else 768
             val seq = SEQ_RE.find(model.name)?.groupValues?.get(1)?.toIntOrNull() ?: 256
 
             val delegate = runCatching {
@@ -184,8 +188,34 @@ class AiEdgeEmbedder private constructor(
                 Log.w(TAG, "Could not construct ${cls.name}; RAG stays lexical", it)
             }.getOrNull() ?: return NoEmbedder
 
+            // Dimensionality is measured, not guessed from the filename.
+            //
+            // Both EmbeddingGemma and Gecko ship Matryoshka-truncated variants
+            // (768/512/256/128 dims) with no filename convention every
+            // checkpoint follows, so a static guess is a coin flip on anything
+            // but the default export. Guessing wrong does not throw — every
+            // future embed() call would fail the dimension check in [embed],
+            // return null, and silently pin RAG in lexical mode forever. One
+            // real probe at startup turns that into ground truth: either the
+            // model actually produces vectors and we record their true length,
+            // or it doesn't and embeddings stay off, loudly, right here.
+            val probe = runCatching {
+                runBlocking { invokeEmbed(delegate, Embedder.QUERY_PREFIX + "medha") }
+            }.getOrNull()
+
+            if (probe == null || probe.isEmpty()) {
+                Log.w(
+                    TAG,
+                    "Constructed ${cls.name} but a startup probe embed produced no output; " +
+                        "RAG stays lexical"
+                )
+                runCatching { delegate.javaClass.getMethod("close").invoke(delegate) }
+                return NoEmbedder
+            }
+
+            val dims = probe.size
             val id = "${model.nameWithoutExtension}@$dims"
-            Log.i(TAG, "Embedder ready: $id (seq=$seq)")
+            Log.i(TAG, "Embedder ready: $id (seq=$seq, measured via startup probe)")
             return AiEdgeEmbedder(delegate, id, dims, seq)
         }
 
