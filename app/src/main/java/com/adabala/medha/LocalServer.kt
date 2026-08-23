@@ -79,7 +79,16 @@ data class OAChatMessage(val role: String, val content: String)
 data class OAChatRequest(
     val model: String? = null,
     val messages: List<OAChatMessage>,
-    val stream: Boolean = false
+    val stream: Boolean = false,
+    // Non-standard Medha extension, absent from the OpenAI spec: when set,
+    // retrieval-augments the prompt from this RAG collection before
+    // generating, the same as POST /chat's collection/ragTopK fields. Any
+    // standard OpenAI client that never sets this sees no difference from
+    // before it existed — ignoreUnknownKeys means an unrelated client's own
+    // extra fields are similarly harmless here. Requires the RAG capability
+    // in addition to GENERATE; see the /v1/chat/completions handler.
+    val collection: String? = null,
+    val ragTopK: Int = 3
 )
 
 @Serializable
@@ -329,6 +338,12 @@ class LocalServer(
 
                 post("/generate/stream") {
                     if (!engine.isLoaded) return@post call.notReady()
+                    // Was missing entirely: any authenticated client, even one
+                    // granted zero capabilities, could still generate text
+                    // through this endpoint while /generate correctly required
+                    // GENERATE. Streaming and non-streaming must enforce the
+                    // same authorization, not just the same admission control.
+                    call.requireCap(ClientRegistry.Cap.GENERATE) ?: return@post
                     val req = call.receive<GenerateRequest>()
                     if (req.prompt.isBlank()) return@post call.badRequest("prompt must not be blank")
                     // Admission happens BEFORE the SSE response starts, via
@@ -373,10 +388,20 @@ class LocalServer(
                     // a session id or read each other's threads.
                     val conv = memory.getOrCreate(client.scope(req.sessionId), req.system)
                     val history = memory.history(conv.id)
-                    val context = req.collection
-                        ?.takeIf { it.isNotBlank() }
-                        ?.let { retriever.retrieve(client.scope(it), req.message, req.ragTopK).map { h -> h.text } }
-                        ?: emptyList()
+                    val collection = req.collection?.takeIf { it.isNotBlank() }
+                    val context = if (collection != null) {
+                        // Separate from the MEMORY capability this endpoint
+                        // already requires: MEMORY lets a client hold a
+                        // conversation, RAG lets it read back a collection's
+                        // contents. /rag/query and /v1/chat/completions both
+                        // draw this same distinction; this closes the one
+                        // place that didn't.
+                        val ragClient = call.requireCap(ClientRegistry.Cap.RAG) ?: return@post
+                        retriever.retrieve(ragClient.scope(collection), req.message, req.ragTopK)
+                            .map { it.text }
+                    } else {
+                        emptyList()
+                    }
 
                     val prompt = memory.buildPrompt(
                         conv.systemInstruction ?: req.system, history, req.message, context
@@ -475,11 +500,41 @@ class LocalServer(
 
                 post("/v1/chat/completions") {
                     if (!engine.isLoaded) return@post call.notReady()
+                    // Same gap as /generate/stream: this is the endpoint most
+                    // third-party OpenAI clients actually hit, so it cannot be
+                    // the one that skips authorization.
+                    call.requireCap(ClientRegistry.Cap.GENERATE) ?: return@post
                     val req = call.receive<OAChatRequest>()
                     if (req.messages.isEmpty()) return@post call.badRequest("messages must not be empty")
 
                     val system = req.messages.firstOrNull { it.role == "system" }?.content
+
+                    // Non-standard RAG extension (see OAChatRequest). A second,
+                    // separate capability check: GENERATE lets a client run the
+                    // model, RAG lets it read back a collection's contents —
+                    // the same distinction /rag/query and /chat already draw.
+                    val collection = req.collection?.takeIf { it.isNotBlank() }
+                    val ragContext: List<String> = if (collection != null) {
+                        val ragClient = call.requireCap(ClientRegistry.Cap.RAG) ?: return@post
+                        val lastUser = req.messages.lastOrNull { it.role == "user" }?.content.orEmpty()
+                        retriever.retrieve(ragClient.scope(collection), lastUser, req.ragTopK)
+                            .map { it.text }
+                    } else {
+                        emptyList()
+                    }
+
                     val prompt = buildString {
+                        // Same "Relevant context:\n[1] ...\n[2] ..." shape as
+                        // MemoryRepository.buildPrompt, so a caller who has
+                        // learned this format from /chat sees the same thing
+                        // here rather than a second format to account for.
+                        if (ragContext.isNotEmpty()) {
+                            append("Relevant context:\n")
+                            ragContext.forEachIndexed { i, c ->
+                                append("[").append(i + 1).append("] ").append(c.trim()).append("\n")
+                            }
+                            append("\n")
+                        }
                         req.messages.filter { it.role != "system" }.forEach { m ->
                             append(m.role.replaceFirstChar { c -> c.uppercase() })
                             append(": ").append(m.content).append("\n")

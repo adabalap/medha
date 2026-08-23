@@ -82,6 +82,8 @@ hung request gets a clear, bounded error instead of hanging forever. A truly
 wedged native call still needs a process restart to clear.
 
 ### 4. ~~`applicationId` is a placeholder~~ — RESOLVED
+
+Not from Gradle, but the literal package name; done at project creation.
 Now `com.adabala.medha`, matching the adabala.com domain. applicationId,
 namespace and the Kotlin package were moved together via
 `tools/rename_package.py`.
@@ -90,34 +92,55 @@ If you already installed an earlier build, the old id is a **separate app**.
 Uninstall it: it will not be upgraded in place, and its settings, API token and
 conversation database stay stranded under the old identity.
 
+### 5. ~~Two endpoints skipped authorization entirely~~ — RESOLVED
+
+Found while investigating a separate streaming bug report: `/generate/stream`
+and `/v1/chat/completions` never called `requireCap(GENERATE)`, unlike every
+sibling endpoint (`/generate`, `/chat`, `/rag/*`, `/store/*`). A client
+created with zero capabilities — or narrowly scoped to something unrelated,
+like `NOTIFY` only — could still generate model output through either of
+these two, because nothing was actually checking. `/v1/chat/completions` is
+also the endpoint any standard OpenAI-compatible third-party client hits, so
+this was the more exposed of the two, not a corner case.
+
+Fixed: both now require `GENERATE`, matching `/generate`. While in the same
+code, also closed a related gap — `/chat`'s `collection` parameter let any
+`MEMORY`-capable client read back RAG collections without the separate `RAG`
+capability `/rag/query` itself requires; that inconsistency is gone too, and
+the new `collection`/`ragTopK` fields added to `/v1/chat/completions` (see
+`docs/TESTING.md` tier 3i) enforce the same `RAG` check from the start.
+
+Not yet verified on a device — see `docs/TESTING.md` tier 3j for the exact
+check (create a capability-limited client, confirm both endpoints 403 it).
+
 ---
 
 ## P1 — blockers before other people install it
 
-### 5. The token is scrapeable by another app on the device
+### 6. The token is scrapeable by another app on the device
 Documented in the README and worth restating: the bundled UI is served
 unauthenticated with the token injected, so a malicious *native* app could
 `GET /` and read it. A hostile *web page* cannot. Acceptable for you; not
 something to ship to strangers without at least an opt-in strict mode.
 
-### 6. No release signing key exists yet
+### 7. No release signing key exists yet
 The build now supports it (`MEDHA_KEYSTORE_*`), but until you generate a
 keystore and add the secrets, CI produces only debug artefacts. **Back that
 keystore up somewhere you will not lose it** — losing it means you can never
 ship an upgrade to an existing install, only a fresh app.
 
-### 7. No ProGuard/R8 rules
+### 8. No ProGuard/R8 rules
 Minification is deliberately off. Ktor, kotlinx.serialization, and the
 reflective LiteRT probe would all break under R8 without keep rules — and they
 break at *runtime*, not build time. Shipping unminified is the honest choice
 today, at the cost of APK size.
 
-### 8. `dataSync` foreground service type
+### 9. `dataSync` foreground service type
 On Android 15+ that type carries a cumulative daily runtime cap. An always-on
 inference host may hit it. Needs either a justification for `specialUse` or an
 accepted, documented limit.
 
-### 9. No storage ceiling
+### 10. No storage ceiling
 `/rag/ingest` will happily fill the disk. `/chat` history grows without bound.
 There is no retention policy and no quota.
 

@@ -27,6 +27,11 @@ for f in auth/ClientRegistry sched/InferenceScheduler sched/SchedulerConfig \
 echo; echo "Tests"
 need "app/src/test/java/com/adabala/medha/sched/InferenceSchedulerConcurrencyTest.kt"
 need "app/src/androidTest/java/com/adabala/medha/data/MedhaDatabaseMigrationTest.kt"
+need "tools/tests/webapp_markdown_test.js"
+need "tools/tests/webapp_sse_test.js"
+
+echo; echo "Bundled demo webapp"
+need "app/src/main/assets/webapp/index.html"
 
 echo; echo "Hygiene"
 [ -x gradlew ] && say OK "gradlew is executable" || { say FIX "chmod +x gradlew"; }

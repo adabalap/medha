@@ -37,6 +37,18 @@ https://github.com/JetBrains/kotlin/releases if you don't have it.
 **What this tier does NOT cover:** anything that touches a real coroutine
 dispatcher, a real Context, or native code. That's tiers 2 and 3.
 
+### Also tier 1: the bundled demo webapp's JS
+
+`tools/tests/webapp_markdown_test.js` and `tools/tests/webapp_sse_test.js`
+extract the real `escapeHtml`/`renderMarkdown` and SSE-framing functions from
+`app/src/main/assets/webapp/index.html` and run them under Node — no browser,
+no Android, no mocking. `tools/tests/run.sh` runs these automatically if
+`node` is on PATH (skipped with a note otherwise). 21 checks total, covering
+the two things most worth getting right in a page that renders streamed
+model output as HTML: that a raw `<script>`/`onerror` payload from the model
+is neutralized rather than executed, and that an SSE event split across a
+network chunk boundary reassembles instead of corrupting.
+
 ---
 
 ## Tier 2 — scheduler concurrency. Written, not yet run — run it via Gradle.
@@ -219,6 +231,34 @@ jump straight to "Add client" (unchanged behavior) rather than showing the
 list's own empty state — the empty state view exists as a defensive
 fallback and is not expected to be reachable through the current UI.
 
+### 3h. Streaming actually streams, and reads correctly
+
+This is the fix for the reported "stream doesn't work" bug. Open the demo
+(drawer → "Open demo in browser"), send a message with "Stream response"
+checked, and confirm the reply grows token-by-token rather than arriving as
+one block or as a garbled Kotlin object dump (`Message(role=...)` or
+similar). Uncheck streaming and resend the same question — the non-streaming
+path uses the same `extractText()` fix, so its output should read as clean
+prose too, not something that merely *used to look* acceptable.
+
+### 3i. RAG through the OpenAI-compatible endpoint
+
+In the demo's "Knowledge base" card, ingest a paragraph into a collection.
+In "Chat", tick "Use knowledge base" (defaults to the same collection name)
+and ask a question the pasted text actually answers. Confirm the reply
+reflects the ingested text, and that the response's meta line shows
+"· from <collection>". Then confirm authorization is enforced correctly: from
+`curl`, hit `/v1/chat/completions` with a `collection` field using a token
+that has `GENERATE` but not `RAG` — expect `403 forbidden`, not silent
+ignoring of the field.
+
+### 3j. Authorization on the two previously-open endpoints
+
+Create a client with an empty capability set (or just `MEMORY`, no
+`GENERATE`). Confirm `POST /generate/stream` and `POST /v1/chat/completions`
+both now return `403` for that token — before this session's fix, both
+endpoints would happily generate text for a client with zero capabilities.
+
 ---
 
 ## Summary table
@@ -227,9 +267,14 @@ fallback and is not expected to be reachable through the current UI.
 |---|---|---|
 | `SchedulerConfig.validated()` clamping | Executed in sandbox, real source | High |
 | `Embedder` codec/normalize/dot/prefixes | Executed in sandbox, real source | High |
+| Demo webapp markdown rendering (XSS safety) | Executed in sandbox (Node), real source, 13 checks | High |
+| Demo webapp SSE frame parsing | Executed in sandbox (Node), real source, 8 checks | High |
 | Scheduler admission/queue-cap/timeout concurrency | Written, reasoned by hand, **not executed anywhere yet** | Run tier 2 first |
 | `MedhaDatabase` v1->v4 migration + FTS sync | Written, reasoned by hand against real `onUpgrade`, **not executed anywhere yet** | Run tier 3a-pre first |
 | `/generate/stream`, `/v1/chat/completions` now admission-controlled | Code review + `check_symbols`/`check_overrides` clean | Needs tier 3a |
+| `LlmEngine.extractText()` fix (the streaming bug) | Researched against official LiteRT-LM docs/samples across all language bindings; code review only, no real AAR available to test against | Needs tier 3h, on a real device |
+| `/generate/stream`, `/v1/chat/completions` now require GENERATE | Code review + `check_symbols`/`check_overrides` clean | Needs tier 3j |
+| RAG wired into `/v1/chat/completions` | Code review + `check_symbols`/`check_overrides` clean | Needs tier 3i |
 | Embedder dimension probe correctness | Code review only | Needs tier 3c, on real SDK |
 | Diagnostics ring buffer + crash handler + share flow | Code review + `check_overrides` clean (correctly sees `override fun onCreate`) | Needs tier 3e |
 | Dark theme colors | WCAG contrast computed on hex values, not seen rendered | Needs tier 3f |

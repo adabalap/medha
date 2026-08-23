@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Compiles and runs the pure-logic test harness in this directory against the
-# REAL source files under app/src/main/java — not copies. This covers exactly
-# the two files with zero Android/kotlinx.coroutines dependencies:
-# SchedulerConfig.kt and Embedder.kt.
+# REAL source files under app/src/main/java — not copies — plus the demo
+# webapp's own pure JS functions, extracted from the real
+# app/src/main/assets/webapp/index.html rather than duplicated.
 #
 # What this does NOT cover, and why: everything else that changed in the
 # scheduler/streaming/embedder work (InferenceScheduler's admission control,
@@ -14,7 +14,9 @@
 # `./gradlew testCoreDebugUnitTest` / `connectedCoreDebugAndroidTest`, and as
 # the manual on-device checklist in docs/TESTING.md.
 #
-# Requires: kotlinc, java. Neither requires network access or an Android SDK.
+# Requires: kotlinc, java for the Kotlin tests; node for the webapp tests
+# (skipped with a note if node isn't on PATH). None require network access or
+# an Android SDK.
 set -euo pipefail
 cd "$(dirname "$0")"
 SRC="../../app/src/main/java/com/adabala/medha"
@@ -37,3 +39,17 @@ echo "== EmbedderTest =="
 kotlinc "$SRC/rag/Embedder.kt" EmbedderTest.kt \
   -include-runtime -d "$WORK/embed.jar"
 java -jar "$WORK/embed.jar"
+
+if command -v node >/dev/null 2>&1; then
+  echo
+  echo "== webapp_markdown_test (Node) =="
+  node webapp_markdown_test.js
+
+  echo
+  echo "== webapp_sse_test (Node) =="
+  node webapp_sse_test.js
+else
+  echo
+  echo "node not found on PATH — skipping the two webapp JS tests."
+  echo "Get it from https://nodejs.org/, then re-run this script."
+fi

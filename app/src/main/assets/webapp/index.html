@@ -5,44 +5,118 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Medha · మేధా</title>
 <style>
-  :root { --indigo:#5B3FA8; --indigo-d:#3B2E7E; --saffron:#F48C2E; --soft:#F3F0FF; --line:#E7E0FA; }
+  :root {
+    --indigo:#5B3FA8; --indigo-d:#3B2E7E; --saffron:#F48C2E;
+    --surface:#F3F0FF; --card:#FFFFFF; --line:#E7E0FA;
+    --text:#241261; --text-dim:#7a6fa8;
+    --ok-bg:#d6f5e0; --ok-fg:#1b8a3a;
+    --warn-bg:#fdeecb; --warn-fg:#a86b00;
+    --err-bg:#f7d6d1; --err-fg:#c0392b;
+    --idle-bg:#e6e0f5; --idle-fg:#6a5aa0;
+    --code-bg:#2b2440; --code-fg:#eae3fb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --surface:#15121C; --card:#221D2E; --line:#3a3350;
+      --text:#EDE9F5; --text-dim:#a79bc9;
+      --ok-bg:#123a22; --ok-fg:#5fd889;
+      --warn-bg:#3d2f0a; --warn-fg:#f0c05a;
+      --err-bg:#3d1712; --err-fg:#f28b7d;
+      --idle-bg:#2a2540; --idle-fg:#b2a6d9;
+      --code-bg:#0f0d17; --code-fg:#eae3fb;
+    }
+  }
   * { box-sizing:border-box; }
-  body { font-family:system-ui,-apple-system,sans-serif; margin:0; background:var(--soft); color:#241261; }
-  header { background:linear-gradient(135deg,var(--indigo-d),var(--indigo) 60%,#7C4DBC);
-    color:#fff; padding:20px 18px; display:flex; align-items:center; gap:12px; }
-  header .flame { width:34px; height:34px; border-radius:50%;
+  body {
+    font-family:system-ui,-apple-system,sans-serif; margin:0;
+    background:var(--surface); color:var(--text);
+  }
+  header {
+    background:linear-gradient(135deg,var(--indigo-d),var(--indigo) 60%,#7C4DBC);
+    color:#fff; padding:18px; display:flex; align-items:center; gap:12px;
+    position:sticky; top:0; z-index:5;
+  }
+  header .flame { width:32px; height:32px; border-radius:50%; flex:none;
     background:radial-gradient(circle at 50% 40%, #FFD36E, #F48C2E); box-shadow:0 0 18px #f48c2e88; }
-  header h1 { margin:0; font-size:20px; }
+  header h1 { margin:0; font-size:19px; }
   header p { margin:2px 0 0; font-size:12px; opacity:.85; }
-  main { padding:16px; max-width:680px; margin:0 auto; }
-  .card { background:#fff; border:1px solid var(--line); border-radius:18px; padding:16px; margin-bottom:14px; }
-  .row { display:flex; gap:10px; flex-wrap:wrap; }
-  .stat { flex:1; min-width:110px; background:var(--soft); border-radius:12px; padding:10px 12px; }
-  .stat .k { font-size:11px; color:#7a6fa8; } .stat .v { font-size:18px; font-weight:700; }
-  textarea, input { width:100%; border:1px solid var(--line); border-radius:12px; padding:12px;
-    font-size:15px; resize:vertical; font-family:inherit; }
-  button { background:var(--indigo); color:#fff; border:0; border-radius:12px; padding:12px 18px;
-    font-size:15px; font-weight:600; cursor:pointer; }
+  main { padding:14px; max-width:720px; margin:0 auto; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px;
+    padding:15px; margin-bottom:14px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .stat { flex:1; min-width:100px; background:var(--surface); border-radius:10px; padding:8px 10px; }
+  .stat .k { font-size:10.5px; color:var(--text-dim); }
+  .stat .v { font-size:16px; font-weight:700; }
+  textarea, input, select {
+    width:100%; border:1px solid var(--line); border-radius:10px; padding:10px 12px;
+    font-size:15px; resize:vertical; font-family:inherit; background:var(--card); color:var(--text);
+  }
+  label.field { display:block; font-size:11.5px; color:var(--text-dim); margin:0 0 4px; }
+  button {
+    background:var(--indigo); color:#fff; border:0; border-radius:10px; padding:10px 16px;
+    font-size:14px; font-weight:600; cursor:pointer;
+  }
   button:disabled { opacity:.5; cursor:default; }
-  button.ghost { background:transparent; color:var(--indigo); }
-  pre { white-space:pre-wrap; word-break:break-word; background:var(--soft); border-radius:12px;
-    padding:12px; min-height:48px; margin:10px 0 0; font-size:14px; }
-  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:12px; font-weight:600; }
-  .ok{background:#d6f5e0;color:#1b8a3a} .warn{background:#fdeecb;color:#a86b00}
-  .err{background:#f7d6d1;color:#c0392b} .idle{background:#e6e0f5;color:#6a5aa0}
-  h3 { margin:0 0 10px; font-size:14px; display:flex; align-items:center; gap:8px; }
-  .msg { padding:8px 12px; border-radius:12px; margin-bottom:8px; font-size:14px; }
-  .msg.user { background:var(--soft); }
-  .msg.bot { background:#fff; border:1px solid var(--line); }
-  .hint { font-size:11px; color:#7a6fa8; margin-top:8px; }
+  button.ghost { background:transparent; color:var(--indigo); border:1px solid var(--line); }
+  @media (prefers-color-scheme: dark) { button.ghost { color:var(--idle-fg); } }
+  button.icon { padding:6px 10px; font-size:12px; }
+  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11.5px; font-weight:600; }
+  .ok{background:var(--ok-bg);color:var(--ok-fg)} .warn{background:var(--warn-bg);color:var(--warn-fg)}
+  .err{background:var(--err-bg);color:var(--err-fg)} .idle{background:var(--idle-bg);color:var(--idle-fg)}
+  h3 { margin:0 0 10px; font-size:14px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  h3 .sub { font-weight:400; font-size:11.5px; color:var(--text-dim); }
+  .hint { font-size:11.5px; color:var(--text-dim); margin:6px 0 10px; line-height:1.5; }
+  .toggles { display:flex; gap:14px; flex-wrap:wrap; margin:8px 0; font-size:13px; }
+  .toggles label { display:flex; align-items:center; gap:6px; cursor:pointer; }
+
+  /* ---- chat ---- */
+  #thread { display:flex; flex-direction:column; gap:8px; max-height:52vh; overflow-y:auto;
+    padding:2px 2px 4px; margin-bottom:10px; }
+  #thread:empty::before {
+    content:"Nothing sent yet. Ask it something below."; color:var(--text-dim); font-size:13px;
+  }
+  .msg { padding:9px 13px; border-radius:14px; font-size:14.5px; line-height:1.5; max-width:88%; }
+  .msg.user { background:var(--indigo); color:#fff; align-self:flex-end; border-bottom-right-radius:4px; }
+  .msg.bot { background:var(--surface); border:1px solid var(--line); align-self:flex-start;
+    border-bottom-left-radius:4px; }
+  .msg.bot.error { background:var(--err-bg); color:var(--err-fg); border-color:transparent; }
+  .msg code { background:var(--code-bg); color:var(--code-fg); border-radius:4px; padding:1px 5px;
+    font-size:.92em; font-family:ui-monospace,Menlo,Consolas,monospace; }
+  .msg pre.code { background:var(--code-bg); color:var(--code-fg); border-radius:10px; padding:10px 12px;
+    overflow-x:auto; margin:6px 0; font-size:.88em; font-family:ui-monospace,Menlo,Consolas,monospace; }
+  .msg .meta { display:block; margin-top:6px; font-size:10.5px; opacity:.65; }
+  .cursor { display:inline-block; width:7px; height:1em; background:currentColor; vertical-align:text-bottom;
+    animation:blink 1s step-start infinite; margin-left:1px; }
+  @keyframes blink { 50% { opacity:0; } }
+  .typing span { display:inline-block; width:6px; height:6px; margin:0 1.5px; border-radius:50%;
+    background:var(--text-dim); animation:bounce 1.2s infinite ease-in-out; }
+  .typing span:nth-child(2){animation-delay:.15s} .typing span:nth-child(3){animation-delay:.3s}
+  @keyframes bounce { 0%,80%,100%{transform:translateY(0);opacity:.4} 40%{transform:translateY(-4px);opacity:1} }
+
+  /* ---- api reference ---- */
+  .snippet { position:relative; margin-top:8px; }
+  .snippet pre { background:var(--code-bg); color:var(--code-fg); border-radius:10px; padding:12px 40px 12px 12px;
+    overflow-x:auto; font-size:12.5px; font-family:ui-monospace,Menlo,Consolas,monospace; margin:0;
+    white-space:pre-wrap; word-break:break-word; }
+  .snippet button { position:absolute; top:8px; right:8px; padding:4px 9px; font-size:11px; }
+  .tabs { display:flex; gap:6px; margin-bottom:2px; flex-wrap:wrap; }
+  .tabs button.tab { background:transparent; color:var(--text-dim); border:1px solid var(--line); padding:5px 11px; font-size:12px; }
+  .tabs button.tab.active { background:var(--indigo); color:#fff; border-color:var(--indigo); }
+
+  .coll-list { display:flex; flex-direction:column; gap:6px; margin-top:8px; }
+  .coll-item { display:flex; align-items:center; gap:8px; font-size:12.5px; background:var(--surface);
+    border-radius:10px; padding:7px 10px; }
+  .coll-item b { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .coll-item span { color:var(--text-dim); }
 </style>
 </head>
 <body>
 <header>
   <div class="flame"></div>
-  <div><h1>Medha · మేధా</h1><p>On-device intelligence, running locally</p></div>
+  <div><h1>Medha · మేధా</h1><p>On-device intelligence — running locally, reachable over HTTP</p></div>
 </header>
 <main>
+
   <div class="card">
     <h3>Status <span id="pill" class="pill idle">checking…</span></h3>
     <div class="row">
@@ -50,84 +124,131 @@
       <div class="stat"><div class="k">Memory used</div><div class="v" id="mem">—</div></div>
       <div class="stat"><div class="k">Avg speed</div><div class="v" id="speed">—</div></div>
     </div>
-    <div class="row" style="margin-top:10px">
+    <div class="row" style="margin-top:8px">
       <div class="stat"><div class="k">Requests</div><div class="v" id="reqs">0</div></div>
       <div class="stat"><div class="k">Stored chats</div><div class="v" id="chats">0</div></div>
-      <div class="stat"><div class="k">Load time</div><div class="v" id="load">—</div></div>
+      <div class="stat"><div class="k">Retrieval mode</div><div class="v" id="ragmode">—</div></div>
     </div>
-    <p id="device" style="font-size:12px;color:#7a6fa8;margin:12px 0 0"></p>
+    <p id="device" style="font-size:11.5px;color:var(--text-dim);margin:10px 0 0"></p>
   </div>
 
   <div class="card">
-    <h3>One-shot generation</h3>
-    <p class="hint">
-      <b>Generate</b> waits for the whole answer. <b>Stream</b> shows tokens as
-      they arrive — if it appears all at once, your LiteRT build has no async
-      surface and Medha fell back to a single emission. Both are real inference.
-    </p>
-    <textarea id="prompt" rows="3">Give me three tips to save money on daily spending.</textarea>
-    <div class="row" style="margin-top:10px">
-      <button id="send">Generate</button>
-      <button id="stream" class="ghost">Stream</button>
-    </div>
-    <pre id="out"></pre>
-  </div>
-
-  <div class="card">
-    <h3>Chat with memory</h3>
-    <p class="hint">
-      Stored in SQLite on this device and keyed by the session id below, so the
-      thread survives restarts. Tell it something, restart Medha, then ask about
-      it.
-    </p>
+    <h3>Chat <span class="sub">via <code>/v1/chat/completions</code>, OpenAI-compatible</span></h3>
     <div id="thread"></div>
-    <textarea id="chatInput" rows="2" placeholder="Medha remembers this thread across restarts…"></textarea>
-    <div class="row" style="margin-top:10px">
-      <button id="chatSend">Send</button>
-      <button id="chatClear" class="ghost">New session</button>
+    <textarea id="chatInput" rows="2" placeholder="Ask something… (Enter to send, Shift+Enter for a new line)"></textarea>
+    <div class="toggles">
+      <label><input type="checkbox" id="optStream" checked /> Stream response</label>
+      <label><input type="checkbox" id="optRag" /> Use knowledge base</label>
+      <input id="ragCollection" placeholder="collection" value="demo" style="width:120px;display:none" />
     </div>
-    <p class="hint">Session: <span id="sid"></span></p>
+    <div class="row">
+      <button id="chatSend">Send</button>
+      <button id="chatClear" class="ghost">Clear chat</button>
+    </div>
+    <p class="hint" id="streamHint">
+      If a streamed reply appears all at once instead of growing token by token, this build's
+      LiteRT-LM has no async surface and Medha fell back to a single emission — still a real
+      answer, just not streamed.
+    </p>
   </div>
 
   <div class="card">
-    <h3>Knowledge (RAG)</h3>
+    <h3>Knowledge base <span class="sub">RAG collections this device holds</span></h3>
     <p class="hint">
-      Ingest text, then <b>Ask with context</b> retrieves the relevant chunks and
-      answers from them. Retrieval is keyword-based unless an embedding model is
-      installed; <code>/system</code> reports which mode is active.
+      Ingest text into a named collection, then tick "Use knowledge base" above and reference it
+      by name to answer from it. Retrieval is keyword-based unless an embedding model is
+      installed — the "Retrieval mode" stat above reports which is active right now.
     </p>
-    <input id="coll" value="demo" placeholder="collection name" />
-    <textarea id="doc" rows="3" style="margin-top:8px"
-      placeholder="Paste text to ingest, then ask a question about it."></textarea>
+    <label class="field">Collection name</label>
+    <input id="coll" value="demo" />
+    <label class="field" style="margin-top:8px">Text to ingest</label>
+    <textarea id="doc" rows="3" placeholder="Paste a paragraph or two, then ask about it in Chat."></textarea>
     <div class="row" style="margin-top:10px">
       <button id="ingest">Ingest</button>
-      <button id="retrieve" class="ghost">Show retrieved</button>
-      <button id="ask" class="ghost">Ask with context</button>
+      <button id="refreshColls" class="ghost">Refresh list</button>
     </div>
-    <pre id="ragOut"></pre>
+    <pre id="ragOut" style="white-space:pre-wrap;font-size:12.5px;background:var(--surface);
+      border-radius:10px;padding:10px;margin-top:10px;min-height:20px"></pre>
+    <div class="coll-list" id="collList"></div>
   </div>
+
+  <div class="card">
+    <h3>Use it from another app <span class="sub">this device's token, ready to paste</span></h3>
+    <p class="hint">
+      Any HTTP client on this network can call the same endpoints this page uses. Swap the host
+      below for this device's LAN address if calling from elsewhere.
+    </p>
+    <div class="tabs" id="apiTabs">
+      <button class="tab active" data-tab="curl-chat">Chat</button>
+      <button class="tab" data-tab="curl-stream">Streaming</button>
+      <button class="tab" data-tab="curl-rag">RAG-augmented</button>
+      <button class="tab" data-tab="curl-embed">Embeddings</button>
+    </div>
+    <div class="snippet"><pre id="snippetBody"></pre><button class="icon" id="copySnippet">Copy</button></div>
+  </div>
+
 </main>
 
 <script>
-// The Android service substitutes these when serving this page, so the bundled
-// UI needs no setup. Third-party PWAs send the token from the Medha app.
-var TOKEN = "__MEDHA_TOKEN__";
-var base = location.origin;
+"use strict";
 
+// The Android service substitutes this when serving the page, so the bundled
+// UI needs no setup. Third-party apps supply their own token instead.
+var TOKEN = "__MEDHA_TOKEN__";
+var BASE = location.origin;
+
+function authed() { return TOKEN && TOKEN.indexOf("__MEDHA") !== 0; }
 function headers() {
   var h = { "Content-Type": "application/json" };
-  if (TOKEN && TOKEN.indexOf("__MEDHA") !== 0) h["Authorization"] = "Bearer " + TOKEN;
+  if (authed()) h["Authorization"] = "Bearer " + TOKEN;
   return h;
 }
 
 async function api(path, opts) {
-  var r = await fetch(base + path, Object.assign({ headers: headers() }, opts || {}));
+  var r = await fetch(BASE + path, Object.assign({ headers: headers() }, opts || {}));
   if (!r.ok) {
     var detail = "HTTP " + r.status;
     try { var e = await r.json(); if (e.error) detail = e.error; } catch (_) {}
     throw new Error(detail);
   }
   return r.json();
+}
+
+// ------------------------------- markdown (safe) -------------------------------
+//
+// Escapes HTML entities FIRST, then applies a small, fixed set of
+// transforms — the escape step means nothing the model outputs can ever
+// inject a tag, no matter what markdown-like text it produces.
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+function renderMarkdown(raw) {
+  var s = escapeHtml(raw);
+  // Pull fenced code out FIRST and hold the fully-rendered block aside, so no
+  // later pass (bold/italic/newline-to-br) ever touches code content. Running
+  // bold/italic over the whole string after substituting code blocks would
+  // happily "format" literal asterisks or pointer syntax inside a code
+  // sample -- exactly the kind of thing that only shows up once real code
+  // gets pasted through it, not prose.
+  var blocks = [];
+  s = s.replace(/```([\s\S]*?)```/g, function (_, code) {
+    var trimmed = code.replace(/^\n/, "").replace(/\n$/, "");
+    blocks.push("<pre class=\"code\">" + trimmed + "</pre>");
+    return "\u0000" + (blocks.length - 1) + "\u0000";
+  });
+  s = s.replace(/`([^`\n]+)`/g, "<code>$1</code>");
+  s = s.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
+  s = s.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>");
+  s = s.replace(/\n/g, "<br>");
+  // Restored last, after the newline pass: a <pre> already preserves
+  // internal newlines visually (white-space:pre-wrap), so they must NOT
+  // also become <br> or every code sample gains extra blank lines.
+  s = s.replace(/\u0000(\d+)\u0000/g, function (_, i) { return blocks[Number(i)]; });
+  return s;
 }
 
 // ------------------------------- status -------------------------------
@@ -149,41 +270,30 @@ async function refresh() {
     document.getElementById("speed").textContent = (m.avgTokensPerSec || 0).toFixed(1) + " t/s";
     document.getElementById("reqs").textContent = m.totalRequests || 0;
     document.getElementById("chats").textContent = m.db_conversations || 0;
-    document.getElementById("load").textContent = (s.loadMs || 0) + "ms";
+    document.getElementById("ragmode").textContent = s.vectorSearch ? "hybrid" : "lexical";
     var dev = (s.manufacturer || "") + " " + (s.model || "") + " · " + (s.soc || "");
     if (s.thermal && s.thermal !== "none" && s.thermal !== "unknown") dev += " · thermal: " + s.thermal;
     document.getElementById("device").textContent = dev;
   } catch (e) {
     pill.className = "pill idle";
-    pill.textContent = String(e.message).indexOf("token") >= 0 ? "unauthorized" : "not running";
+    pill.textContent = String(e.message).toLowerCase().indexOf("token") >= 0 ||
+      String(e.message).indexOf("401") >= 0 ? "unauthorized" : "not running";
   }
 }
 
-// ---------------------------- one-shot ----------------------------
+// ------------------------------- SSE reader -------------------------------
+//
+// Buffers until a complete "\n\n"-terminated event arrives, rather than
+// splitting each network chunk on newlines independently — an event
+// straddling a chunk boundary would otherwise be silently corrupted.
 
-document.getElementById("send").onclick = async function () {
-  var out = document.getElementById("out");
-  out.textContent = "…";
-  try {
-    var d = await api("/generate", {
-      method: "POST",
-      body: JSON.stringify({ prompt: document.getElementById("prompt").value })
-    });
-    out.textContent = (d.text || JSON.stringify(d)) +
-      "\n\n[" + d.tokens + " tok · " + d.ms + "ms · " + (d.tokensPerSec || 0).toFixed(1) + " t/s]";
-  } catch (e) { out.textContent = "error: " + e.message; }
-};
-
-/**
- * SSE reader. The previous version split each network chunk on newlines
- * independently, so an event straddling a chunk boundary was silently
- * corrupted. This buffers until a complete "\n\n"-terminated event arrives.
- */
-async function readSse(path, body, onDelta) {
-  var r = await fetch(base + path, {
-    method: "POST", headers: headers(), body: JSON.stringify(body)
-  });
-  if (!r.ok) throw new Error("HTTP " + r.status);
+async function readSse(path, body, onEvent) {
+  var r = await fetch(BASE + path, { method: "POST", headers: headers(), body: JSON.stringify(body) });
+  if (!r.ok) {
+    var detail = "HTTP " + r.status;
+    try { var e = await r.json(); if (e.error) detail = e.error; } catch (_) {}
+    throw new Error(detail);
+  }
   var reader = r.body.getReader();
   var dec = new TextDecoder();
   var buf = "";
@@ -200,118 +310,198 @@ async function readSse(path, body, onDelta) {
         if (lines[n].indexOf("data: ") !== 0) continue;
         var raw = lines[n].slice(6);
         if (raw === "[DONE]") return;
-        // Payload is a JSON string, so embedded newlines round-trip intact.
-        try { onDelta(JSON.parse(raw)); } catch (_) { onDelta(raw); }
+        try { onEvent(JSON.parse(raw)); } catch (_) { /* keep-alive or malformed line; ignore */ }
       }
     }
   }
 }
 
-document.getElementById("stream").onclick = async function () {
-  var out = document.getElementById("out");
-  out.textContent = "";
-  try {
-    await readSse("/generate/stream",
-      { prompt: document.getElementById("prompt").value },
-      function (d) { out.textContent += d; });
-  } catch (e) { out.textContent = "error: " + e.message; }
-};
+// ------------------------------- chat -------------------------------
 
-// ------------------------------ chat ------------------------------
+var history = []; // OpenAI-shaped {role, content} turns, resent in full each request
 
-function newSession() {
-  var id = "demo-" + Math.random().toString(36).slice(2, 10);
-  document.getElementById("sid").textContent = id;
-  document.getElementById("thread").innerHTML = "";
-  return id;
-}
-var sessionId = newSession();
-
-function bubble(role, text) {
+function bubble(role, isError) {
   var d = document.createElement("div");
-  d.className = "msg " + (role === "user" ? "user" : "bot");
-  d.textContent = text;
+  d.className = "msg " + (role === "user" ? "user" : "bot") + (isError ? " error" : "");
   document.getElementById("thread").appendChild(d);
+  d.scrollIntoView({ block: "end", behavior: "smooth" });
   return d;
 }
 
-document.getElementById("chatSend").onclick = async function () {
+function typingBubble() {
+  var d = bubble("bot", false);
+  d.innerHTML = "<span class=\"typing\"><span></span><span></span><span></span></span>";
+  return d;
+}
+
+document.getElementById("optRag").onchange = function () {
+  document.getElementById("ragCollection").style.display = this.checked ? "" : "none";
+};
+
+document.getElementById("chatInput").addEventListener("keydown", function (e) {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); }
+});
+document.getElementById("chatSend").onclick = sendChat;
+
+document.getElementById("chatClear").onclick = function () {
+  history = [];
+  document.getElementById("thread").innerHTML = "";
+};
+
+async function sendChat() {
   var input = document.getElementById("chatInput");
   var text = input.value.trim();
   if (!text) return;
   input.value = "";
-  bubble("user", text);
-  var pending = bubble("bot", "…");
+  document.getElementById("chatSend").disabled = true;
+
+  var userDiv = bubble("user", false);
+  userDiv.textContent = text;
+  history.push({ role: "user", content: text });
+
+  var pending = typingBubble();
+  var streaming = document.getElementById("optStream").checked;
+  var useRag = document.getElementById("optRag").checked;
+  var body = { model: "medha", messages: history, stream: streaming };
+  if (useRag) {
+    body.collection = document.getElementById("ragCollection").value.trim() || "demo";
+    body.ragTopK = 3;
+  }
+
+  var started = Date.now();
   try {
-    var d = await api("/chat", {
-      method: "POST",
-      body: JSON.stringify({ sessionId: sessionId, message: text })
-    });
-    pending.textContent = d.text;
-  } catch (e) { pending.textContent = "error: " + e.message; }
-};
+    var full = "";
+    if (streaming) {
+      pending.innerHTML = "<span class=\"cursor\"></span>";
+      await readSse("/v1/chat/completions", body, function (evt) {
+        var choice = evt.choices && evt.choices[0];
+        var delta = choice && choice.delta && choice.delta.content;
+        if (!delta) return;
+        full += delta;
+        pending.innerHTML = renderMarkdown(full) + "<span class=\"cursor\"></span>";
+        pending.scrollIntoView({ block: "end" });
+      });
+      pending.innerHTML = renderMarkdown(full || "(empty response)");
+    } else {
+      var d = await api("/v1/chat/completions", { method: "POST", body: JSON.stringify(body) });
+      full = (d.choices && d.choices[0] && d.choices[0].message.content) || "(empty response)";
+      pending.innerHTML = renderMarkdown(full);
+    }
+    var meta = document.createElement("span");
+    meta.className = "meta";
+    meta.textContent = ((Date.now() - started) / 1000).toFixed(1) + "s" + (useRag ? " · from " + body.collection : "");
+    pending.appendChild(meta);
+    history.push({ role: "assistant", content: full });
+  } catch (e) {
+    pending.className = "msg bot error";
+    pending.textContent = "Error: " + e.message;
+    history.pop(); // don't let a failed turn poison the next request's context
+  } finally {
+    document.getElementById("chatSend").disabled = false;
+  }
+}
 
-document.getElementById("chatClear").onclick = function () { sessionId = newSession(); };
-
-// ------------------------------- RAG -------------------------------
+// ------------------------------- knowledge base -------------------------------
 
 document.getElementById("ingest").onclick = async function () {
   var out = document.getElementById("ragOut");
+  var text = document.getElementById("doc").value.trim();
+  if (!text) { out.textContent = "Paste some text first."; return; }
   out.textContent = "…";
   try {
     var d = await api("/rag/ingest", {
       method: "POST",
-      body: JSON.stringify({
-        collection: document.getElementById("coll").value,
-        text: document.getElementById("doc").value,
-        title: "pasted"
-      })
+      body: JSON.stringify({ collection: document.getElementById("coll").value, text: text, title: "pasted" })
     });
-    out.textContent = "Ingested " + d.chunks + " chunk(s) into '" + d.collection + "'.";
+    out.textContent = "Ingested " + d.chunks + " chunk(s) into '" + d.collection + "' (" + d.mode + " mode, " +
+      d.embedded + " embedded).";
+    document.getElementById("doc").value = "";
+    loadCollections();
   } catch (e) { out.textContent = "error: " + e.message; }
 };
 
-// Retrieval on its own, so a bad answer can be traced to bad retrieval rather
-// than guessed at.
-document.getElementById("retrieve").onclick = async function () {
-  var out = document.getElementById("ragOut");
-  var q = document.getElementById("chatInput").value.trim() ||
-          document.getElementById("prompt").value.trim();
-  out.textContent = "…";
+document.getElementById("refreshColls").onclick = loadCollections;
+
+async function loadCollections() {
+  var box = document.getElementById("collList");
   try {
-    var d = await api("/rag/query", {
-      method: "POST",
-      body: JSON.stringify({
-        collection: document.getElementById("coll").value,
-        query: q, topK: 3
-      })
+    var d = await api("/rag/collections");
+    if (!d.collections.length) { box.innerHTML = "<p class=\"hint\">No collections yet.</p>"; return; }
+    box.innerHTML = "";
+    d.collections.forEach(function (c) {
+      var row = document.createElement("div");
+      row.className = "coll-item";
+      row.innerHTML = "<b>" + escapeHtml(c.collection) + "</b>" +
+        "<span>" + c.documents + " doc · " + c.chunks + " chunks · " + c.embedded + " embedded</span>";
+      var use = document.createElement("button");
+      use.className = "icon ghost"; use.textContent = "Use in chat";
+      use.onclick = function () {
+        document.getElementById("optRag").checked = true;
+        document.getElementById("ragCollection").style.display = "";
+        document.getElementById("ragCollection").value = c.collection;
+      };
+      row.appendChild(use);
+      box.appendChild(row);
     });
-    if (!d.hits.length) { out.textContent = "No matching chunks in '" + d.collection + "'."; return; }
-    out.textContent = "mode: " + d.mode + "\n\n" + d.hits.map(function (h, i) {
-      return "[" + (i + 1) + "] score " + h.score.toFixed(3) + "\n" + h.text;
-    }).join("\n\n");
-  } catch (e) { out.textContent = "error: " + e.message; }
+  } catch (e) { box.innerHTML = "<p class=\"hint\">Could not load: " + escapeHtml(e.message) + "</p>"; }
+}
+
+// ------------------------------- API reference tabs -------------------------------
+
+var authLine = authed() ? "  -H \"Authorization: Bearer " + TOKEN + "\" \\\n" : "";
+var SNIPPETS = {
+  "curl-chat":
+    "curl " + BASE + "/v1/chat/completions \\\n" +
+    "  -H \"Content-Type: application/json\" \\\n" + authLine +
+    "  -d '{\n" +
+    "    \"model\": \"medha\",\n" +
+    "    \"messages\": [{\"role\": \"user\", \"content\": \"Give me three tips to save money.\"}]\n" +
+    "  }'",
+  "curl-stream":
+    "curl -N " + BASE + "/v1/chat/completions \\\n" +
+    "  -H \"Content-Type: application/json\" \\\n" + authLine +
+    "  -d '{\n" +
+    "    \"model\": \"medha\", \"stream\": true,\n" +
+    "    \"messages\": [{\"role\": \"user\", \"content\": \"Tell me a short story.\"}]\n" +
+    "  }'",
+  "curl-rag":
+    "# collection/ragTopK are a Medha extension on top of the OpenAI shape.\n" +
+    "# Requires the RAG capability on the token in addition to GENERATE.\n" +
+    "curl " + BASE + "/v1/chat/completions \\\n" +
+    "  -H \"Content-Type: application/json\" \\\n" + authLine +
+    "  -d '{\n" +
+    "    \"model\": \"medha\",\n" +
+    "    \"messages\": [{\"role\": \"user\", \"content\": \"What does the doc say about refunds?\"}],\n" +
+    "    \"collection\": \"demo\", \"ragTopK\": 3\n" +
+    "  }'",
+  "curl-embed":
+    "curl " + BASE + "/v1/embeddings \\\n" +
+    "  -H \"Content-Type: application/json\" \\\n" + authLine +
+    "  -d '{\"input\": [\"some text\"], \"input_type\": \"query\"}'\n" +
+    "\n# Returns 501 until an embedding model is installed; see docs/EMBEDDINGS.md."
 };
 
-document.getElementById("ask").onclick = async function () {
-  var out = document.getElementById("ragOut");
-  var q = document.getElementById("chatInput").value.trim() ||
-          document.getElementById("prompt").value.trim();
-  out.textContent = "…";
-  try {
-    var d = await api("/chat", {
-      method: "POST",
-      body: JSON.stringify({
-        sessionId: sessionId,
-        message: q,
-        collection: document.getElementById("coll").value,
-        ragTopK: 3
-      })
-    });
-    out.textContent = d.text;
-  } catch (e) { out.textContent = "error: " + e.message; }
+function showSnippet(tab) {
+  document.querySelectorAll("#apiTabs .tab").forEach(function (b) {
+    b.classList.toggle("active", b.dataset.tab === tab);
+  });
+  document.getElementById("snippetBody").textContent = SNIPPETS[tab];
+}
+document.querySelectorAll("#apiTabs .tab").forEach(function (b) {
+  b.onclick = function () { showSnippet(b.dataset.tab); };
+});
+document.getElementById("copySnippet").onclick = function () {
+  var btn = this;
+  navigator.clipboard.writeText(document.getElementById("snippetBody").textContent).then(function () {
+    var was = btn.textContent; btn.textContent = "Copied!";
+    setTimeout(function () { btn.textContent = was; }, 1200);
+  });
 };
 
+// ------------------------------- boot -------------------------------
+
+showSnippet("curl-chat");
+loadCollections();
 refresh();
 setInterval(refresh, 2500);
 </script>

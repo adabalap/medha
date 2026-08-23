@@ -207,11 +207,74 @@ class LlmEngine(private val appContext: Context) {
         if (systemInstruction.isNullOrBlank()) prompt
         else "System: $systemInstruction\n\n$prompt"
 
+    /**
+     * Extracts plain text from whatever the installed LiteRT-LM AAR's
+     * `Message` type actually looks like.
+     *
+     * Every other official LiteRT-LM binding represents a response as
+     * `content: [{type: "text", text: "..."}]`, not a flat string — e.g.
+     * `response.content[0].text` in the JS SDK, `response["content"][0]
+     * ["text"]` in Python. The Kotlin `Message` class very likely mirrors
+     * that shape rather than exposing a flat `getText()`. The previous
+     * version only tried `getText()` and fell back to `msg.toString()` on
+     * anything else — which, if `getText()` doesn't actually exist on this
+     * type, means every streamed AND non-streamed response silently became
+     * the raw Kotlin data-class dump of the Message object (something like
+     * `Message(role=ASSISTANT, content=[Text(text=Hello)])`) instead of the
+     * reply text. That failure mode never throws, so it looks exactly like
+     * "streaming is broken" or "the model returns garbage" without any
+     * exception anywhere to point at it.
+     *
+     * Tries, in order: a direct `getText()`; then a `content`/`contents`
+     * list, walking it for text-typed items only (so a tool-call or
+     * image/audio entry never leaks its raw payload into chat text); then
+     * gives up to `toString()` as a genuine last resort — logging loudly
+     * when it has to, so a future SDK shape change is visible instead of
+     * silently wrong.
+     */
     private fun extractText(msg: Any?): String {
         if (msg == null) return ""
-        return runCatching {
-            (msg.javaClass.getMethod("getText").invoke(msg) as? String) ?: msg.toString()
-        }.getOrElse { msg.toString() }
+
+        runCatching {
+            val t = msg.javaClass.getMethod("getText").invoke(msg) as? String
+            if (!t.isNullOrEmpty()) return t
+        }
+
+        runCatching {
+            val content = listOf("getContent", "getContents")
+                .firstNotNullOfOrNull { name ->
+                    runCatching { msg.javaClass.getMethod(name).invoke(msg) }.getOrNull()
+                }
+            if (content is Iterable<*>) {
+                val text = content.mapNotNull(::extractTextFromContentItem).joinToString("")
+                if (text.isNotEmpty()) return text
+            }
+        }
+
+        Diagnostics.w(
+            TAG,
+            "extractText: no known text accessor on ${msg.javaClass.name}; " +
+                "falling back to toString(). Streamed/generated text may be wrong " +
+                "until this is updated for the installed litertlm-android version."
+        )
+        return msg.toString()
+    }
+
+    /** One item of a Message's content list; null if it isn't a text item. */
+    private fun extractTextFromContentItem(item: Any?): String? {
+        if (item == null) return null
+        // Skip anything explicitly typed as non-text (tool calls, images,
+        // audio) so their raw payload never leaks into chat output.
+        val type = runCatching {
+            item.javaClass.getMethod("getType").invoke(item)?.toString()
+        }.getOrNull()
+        if (type != null && !type.equals("text", ignoreCase = true)) return null
+
+        for (name in listOf("getText", "component1")) {
+            val v = runCatching { item.javaClass.getMethod(name).invoke(item) as? String }.getOrNull()
+            if (!v.isNullOrEmpty()) return v
+        }
+        return null
     }
 
     fun close() {
