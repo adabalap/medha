@@ -1,7 +1,7 @@
 package com.adabala.medha.rag
 
 import android.content.Context
-import android.util.Log
+import com.adabala.medha.diag.Diagnostics
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
@@ -75,14 +75,14 @@ class AiEdgeEmbedder private constructor(
                 runCatching {
                     val raw = invokeEmbed(delegate, prefixed) ?: return@runCatching null
                     if (raw.size != dimensions) {
-                        Log.w(TAG, "embedder returned ${raw.size} dims, expected $dimensions")
+                        Diagnostics.w(TAG, "embedder returned ${raw.size} dims, expected $dimensions")
                         return@runCatching null
                     }
                     // Normalise here rather than trusting the backend: the
                     // Embedder contract promises unit vectors so that callers
                     // can use a dot product, and not every variant normalises.
                     Embedder.normalize(raw)
-                }.onFailure { Log.w(TAG, "embed failed", it) }.getOrNull()
+                }.onFailure { Diagnostics.w(TAG, "embed failed", it) }.getOrNull()
             }
         }
     }
@@ -160,13 +160,13 @@ class AiEdgeEmbedder private constructor(
             val tokenizer = File(dir, "sentencepiece.model")
 
             if (model == null || !tokenizer.exists()) {
-                Log.i(TAG, "No embedding model in ${dir.path}; RAG stays lexical")
+                Diagnostics.i(TAG, "No embedding model in ${dir.path}; RAG stays lexical")
                 return NoEmbedder
             }
 
             val cls = runCatching { Class.forName(SDK_CLASS) }.getOrNull()
             if (cls == null) {
-                Log.i(
+                Diagnostics.i(
                     TAG,
                     "AI Edge RAG SDK not on the classpath; uncomment localagents-rag " +
                         "in build.gradle.kts to enable vector retrieval"
@@ -185,7 +185,7 @@ class AiEdgeEmbedder private constructor(
                 cls.getConstructor(String::class.java, String::class.java)
                     .newInstance(model.absolutePath, tokenizer.absolutePath)
             }.onFailure {
-                Log.w(TAG, "Could not construct ${cls.name}; RAG stays lexical", it)
+                Diagnostics.w(TAG, "Could not construct ${cls.name}; RAG stays lexical", it)
             }.getOrNull() ?: return NoEmbedder
 
             // Dimensionality is measured, not guessed from the filename.
@@ -204,7 +204,7 @@ class AiEdgeEmbedder private constructor(
             }.getOrNull()
 
             if (probe == null || probe.isEmpty()) {
-                Log.w(
+                Diagnostics.w(
                     TAG,
                     "Constructed ${cls.name} but a startup probe embed produced no output; " +
                         "RAG stays lexical"
@@ -215,7 +215,7 @@ class AiEdgeEmbedder private constructor(
 
             val dims = probe.size
             val id = "${model.nameWithoutExtension}@$dims"
-            Log.i(TAG, "Embedder ready: $id (seq=$seq, measured via startup probe)")
+            Diagnostics.i(TAG, "Embedder ready: $id (seq=$seq, measured via startup probe)")
             return AiEdgeEmbedder(delegate, id, dims, seq)
         }
 

@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  One row in the client list (see ClientListAdapter). Replaces what used to
+  be a single multi-line string inside a dialog's setItems() — that meant no
+  per-item action affordance beyond "tap the whole line and hope", and no way
+  to visually distinguish the admin client from the rest at a glance.
+
+  The whole row is clickable (opens the same action sheet as before: copy
+  token / rotate / edit / revoke), and the trailing overflow button is a
+  second, explicit way to reach the same actions — both call through to
+  identical, unchanged logic in MainActivity, so the actual client-management
+  behavior carries zero risk from this being a visual-only change.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/clientRow"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:background="?attr/selectableItemBackground"
+    android:clickable="true"
+    android:focusable="true"
+    android:minHeight="56dp"
+    android:paddingStart="16dp"
+    android:paddingEnd="4dp"
+    android:paddingTop="10dp"
+    android:paddingBottom="10dp">
+
+    <ImageView
+        android:id="@+id/clientAdminBadge"
+        android:layout_width="20dp"
+        android:layout_height="20dp"
+        android:layout_marginEnd="12dp"
+        android:src="@drawable/ic_key"
+        android:contentDescription="@string/client_admin_badge"
+        app:tint="@color/saffron" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/clientId"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="middle"
+            tools:text="client-abc123" />
+
+        <TextView
+            android:id="@+id/clientCaps"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            android:maxLines="2"
+            android:ellipsize="end"
+            tools:text="generate, memory, rag" />
+    </LinearLayout>
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/clientOverflow"
+        style="?attr/materialIconButtonStyle"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:contentDescription="@string/client_actions"
+        app:icon="@drawable/ic_more_vert"
+        app:iconTint="@color/neutral_grey"
+        app:iconGravity="textStart"
+        app:iconPadding="0dp" />
+</LinearLayout>

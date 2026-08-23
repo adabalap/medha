@@ -1,7 +1,7 @@
 package com.adabala.medha
 
 import android.content.Context
-import android.util.Log
+import com.adabala.medha.diag.Diagnostics
 import com.adabala.medha.data.MedhaDatabase
 import com.adabala.medha.auth.ClientRegistry
 import com.adabala.medha.connectors.SmsConnector
@@ -184,7 +184,7 @@ class LocalServer(
             install(StatusPages) {
                 exception<Throwable> { call, cause ->
                     SystemInfo.recordFailure()
-                    Log.e(TAG, "Unhandled server error on ${call.request.path()}", cause)
+                    Diagnostics.e(TAG, "Unhandled server error on ${call.request.path()}", cause)
                     // Return structured JSON, not a bare string: clients were
                     // getting a text/plain body where they expected an object.
                     call.respond(
@@ -946,7 +946,7 @@ class LocalServer(
             }
         }.also { it.start(wait = false) }
 
-        Log.i(TAG, "Medha server on http://$LOOPBACK:$port (auth=${if (requireAuth) "on" else "OFF"})")
+        Diagnostics.i(TAG, "Medha server on http://$LOOPBACK:$port (auth=${if (requireAuth) "on" else "OFF"})")
     }
 
     fun stop() {
@@ -1162,7 +1162,18 @@ class LocalServer(
     }
 }
 
-/** Single place for the version string surfaced over HTTP. */
+/**
+ * Single place for the version string surfaced over HTTP and in the About
+ * dialog.
+ *
+ * Sourced from [BuildConfig.VERSION_NAME], which Gradle generates from
+ * `versionName` in app/build.gradle.kts — not hand-duplicated here. This used
+ * to be a separately hand-maintained string literal, and it drifted: bumping
+ * the Gradle version silently left this constant behind, so both `/system`'s
+ * `"version"` field and the About screen kept reporting the old release after
+ * a real version bump. A client polling `/system` to decide whether it needs
+ * a newer server was being lied to, not just the UI.
+ */
 object BuildInfo {
-    const val VERSION = "0.8.2"
+    val VERSION: String = BuildConfig.VERSION_NAME
 }

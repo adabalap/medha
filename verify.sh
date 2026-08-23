@@ -14,13 +14,19 @@ for f in app/build.gradle.kts app/src/main/AndroidManifest.xml \
          app/src/full/AndroidManifest.xml; do need "$f"; done
 
 echo; echo "Sources"
-for f in MainActivity InferenceService LlmEngine LocalServer SystemInfo MemoryRepository; do
+for f in MainActivity InferenceService LlmEngine LocalServer SystemInfo MemoryRepository \
+         MedhaApplication; do
   need "app/src/main/java/com/adabala/medha/$f.kt"; done
 for f in auth/ClientRegistry sched/InferenceScheduler sched/SchedulerConfig \
          connectors/SmsConnector \
          notify/NotificationHub notify/MedhaWidgetProvider data/MedhaDatabase \
-         data/Entities rag/Retriever rag/Embedder rag/AiEdgeEmbedder; do
+         data/Entities rag/Retriever rag/Embedder rag/AiEdgeEmbedder diag/Diagnostics \
+         ui/ClientListAdapter; do
   need "app/src/main/java/com/adabala/medha/$f.kt"; done
+
+echo; echo "Tests"
+need "app/src/test/java/com/adabala/medha/sched/InferenceSchedulerConcurrencyTest.kt"
+need "app/src/androidTest/java/com/adabala/medha/data/MedhaDatabaseMigrationTest.kt"
 
 echo; echo "Hygiene"
 [ -x gradlew ] && say OK "gradlew is executable" || { say FIX "chmod +x gradlew"; }
@@ -28,6 +34,15 @@ if find . -name "*[{}]*" -not -path "./.git/*" | grep -q .; then
   say BAD "filenames with braces (some extractors fail on these)"; fail=1
 else say OK "no problematic filenames"; fi
 if [ -d medha ]; then say BAD "nested medha/ folder - flatten it"; fail=1; fi
+
+# BuildInfo.VERSION drifted from app/build.gradle.kts's versionName once
+# already (shipped 0.8.3 with the About page and /system still reporting
+# 0.8.2) because it was a separately hand-maintained literal. It now reads
+# BuildConfig.VERSION_NAME instead, so this just confirms nobody reverts that.
+if grep -q 'const val VERSION = "' app/src/main/java/com/adabala/medha/LocalServer.kt 2>/dev/null; then
+  say BAD "BuildInfo.VERSION is hardcoded again instead of reading BuildConfig.VERSION_NAME"
+  fail=1
+else say OK "BuildInfo.VERSION sources from BuildConfig, not a literal"; fi
 
 echo
 if [ "$fail" -eq 0 ]; then
@@ -40,3 +55,6 @@ fi
 echo
 echo "Pure-logic tests (SchedulerConfig, Embedder — no Android SDK needed)"
 ./tools/tests/run.sh || { echo "Pure-logic tests failed."; exit 1; }
+
+echo
+python3 tools/check_resources.py || { echo "Resource reference check failed."; exit 1; }

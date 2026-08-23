@@ -1,6 +1,6 @@
 package com.adabala.medha.rag
 
-import android.util.Log
+import com.adabala.medha.diag.Diagnostics
 import com.adabala.medha.data.ChunkEntity
 import com.adabala.medha.data.MedhaDatabase
 import kotlin.math.ln
@@ -69,7 +69,7 @@ class Retriever(
             // the query prefix here instead would cost recall silently.
             val vec = if (embedder.isReady) {
                 runCatching { embedder.embedDocument(piece, title) }
-                    .onFailure { Log.w(TAG, "embedDocument failed; storing chunk without a vector", it) }
+                    .onFailure { Diagnostics.w(TAG, "embedDocument failed; storing chunk without a vector", it) }
                     .getOrNull()
             } else null
 
@@ -137,7 +137,7 @@ class Retriever(
     private suspend fun denseSearch(collection: String, query: String, limit: Int): List<Hit> {
         if (!embedder.isReady) return emptyList()
         val q = runCatching { embedder.embedQuery(query) }
-            .onFailure { Log.w(TAG, "embedQuery failed; falling back to lexical", it) }
+            .onFailure { Diagnostics.w(TAG, "embedQuery failed; falling back to lexical", it) }
             .getOrNull() ?: return emptyList()
 
         // Scoped to this embedding space; stale vectors are invisible.

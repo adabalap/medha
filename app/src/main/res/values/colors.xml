@@ -12,4 +12,19 @@
     <color name="err_red">#C0392B</color>
     <color name="neutral_grey">#7F8C8D</color>
     <color name="surface_soft">#F3F0FF</color>
+
+    <!--
+      Added for dark-theme support: these were previously hardcoded hex
+      literals directly in activity_main.xml (cardBackgroundColor="#FFFFFF",
+      textColor="#333333"/"#555555"), which meant the four non-brand cards
+      stayed stark white with dark text no matter what system theme setting
+      was active. values-night/colors.xml overrides these three; every other
+      color in this file is a fixed brand/status color that's intentionally
+      the same in both themes (the indigo status card, toolbar, and nav
+      header all use a permanently dark brand background by design, same as
+      the widget).
+    -->
+    <color name="card_surface">#FFFFFF</color>
+    <color name="text_primary">#333333</color>
+    <color name="text_secondary">#555555</color>
 </resources>

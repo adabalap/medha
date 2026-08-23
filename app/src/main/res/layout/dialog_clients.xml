@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Content view passed to MaterialAlertDialogBuilder.setView() by
+  showClientsDialog(). A RecyclerView instead of the dialog's own setItems()
+  because setItems() only supports a flat array of single-style strings — no
+  room for the admin badge, no per-row overflow button, no way to visually
+  separate "this is the admin client" from the rest at a glance.
+
+  maxHeight caps how tall the dialog can grow with many clients, so the list
+  scrolls internally instead of pushing the dialog's own buttons off-screen.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/clientList"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:maxHeight="420dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:clipToPadding="false"
+        tools:listitem="@layout/item_client" />
+
+    <TextView
+        android:id="@+id/clientListEmpty"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:padding="32dp"
+        android:gravity="center"
+        android:text="@string/clients_empty"
+        android:textColor="@color/text_secondary"
+        android:visibility="gone" />
+</FrameLayout>

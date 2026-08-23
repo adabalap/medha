@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Deliberately narrow: only files-path name="diagnostics" is exposed, mapping
+  to filesDir/diagnostics/ (see Diagnostics.kt). This grants read access to
+  exactly the diagnostics dumps and nothing else in the app's private storage
+  -- not the SQLite database, not client tokens, not ingested RAG documents.
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res-auto">
+    <files-path name="diagnostics" path="diagnostics/" />
+</paths>

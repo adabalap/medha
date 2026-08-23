@@ -4,7 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
-import android.util.Log
+import com.adabala.medha.diag.Diagnostics
 import com.adabala.medha.SystemInfo
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
@@ -178,13 +178,13 @@ class InferenceScheduler(
         while (true) {
             val block = batchBlockReason(cfg)
             if (block == null && interactiveWaiting.get() == 0) {
-                if (batchPaused) Log.i(TAG, "batch resumed")
+                if (batchPaused) Diagnostics.i(TAG, "batch resumed")
                 batchPaused = false
                 lastGateReason = ""
                 return
             }
             val reason = block ?: "yielding to interactive work"
-            if (reason != lastGateReason) Log.i(TAG, "batch gated: $reason")
+            if (reason != lastGateReason) Diagnostics.i(TAG, "batch gated: $reason")
             batchPaused = block != null
             lastGateReason = reason
 

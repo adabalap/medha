@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Dark-theme overrides. Only the colors that actually need to change with
+  theme are here — the brand-colored surfaces (the status card, toolbar, nav
+  header, widget) all use a fixed dark indigo background by design in both
+  themes and are deliberately NOT overridden here; overriding them would
+  make the brand header look different depending on system theme, which
+  isn't the goal. This file exists specifically to fix the four white,
+  dark-text "runtime/scheduler/access/about" cards, which previously stayed
+  stark white under a dark system theme because their colors were hardcoded
+  hex literals with nothing here to override.
+-->
+<resources>
+    <!-- Near-black with a faint purple cast, echoing the light theme's
+         lavender surface_soft rather than a neutral grey. -->
+    <color name="surface_soft">#15121C</color>
+    <!-- Elevated relative to surface_soft, the way a white card reads as
+         elevated against the light theme's pale lavender background. -->
+    <color name="card_surface">#221D2E</color>
+    <color name="text_primary">#EDE9F5</color>
+    <color name="text_secondary">#C6BFD9</color>
+    <!-- The light theme's stroke is a pale lavender tint of colorPrimary;
+         this is the same relationship one step darker, tuned to keep the
+         card outline meeting the ~3:1 non-text contrast guideline (WCAG
+         2.1 SC 1.4.11) against card_surface rather than just "a bit
+         darker than the card" and barely visible. This resource also backs
+         the theme's colorPrimaryContainer (see themes.xml), so
+         on_indigo_container is overridden alongside it below — leaving that
+         at its light-theme value (dark purple text) would put low-contrast
+         text on this now-dark container for any Material component that
+         uses that role by default, even ones this app doesn't style
+         directly. -->
+    <color name="indigo_container">#746890</color>
+    <color name="on_indigo_container">#EAE3FB</color>
+</resources>

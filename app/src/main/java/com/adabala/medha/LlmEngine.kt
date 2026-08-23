@@ -1,7 +1,7 @@
 package com.adabala.medha
 
 import android.content.Context
-import android.util.Log
+import com.adabala.medha.diag.Diagnostics
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
@@ -67,7 +67,7 @@ class LlmEngine(private val appContext: Context) {
             if (!force && engine != null &&
                 loadedModelPath == modelPath && configuredBackend == backend
             ) {
-                Log.i(TAG, "Model already loaded with the same config; skipping reload")
+                Diagnostics.i(TAG, "Model already loaded with the same config; skipping reload")
                 return
             }
             val f = File(modelPath)
@@ -96,7 +96,7 @@ class LlmEngine(private val appContext: Context) {
             engine = e
             loadedModelPath = modelPath
             loadedAt = System.currentTimeMillis()
-            Log.i(TAG, "Engine initialized: $modelPath backend=$backend in ${loadMs}ms")
+            Diagnostics.i(TAG, "Engine initialized: $modelPath backend=$backend in ${loadMs}ms")
         }
     }
 

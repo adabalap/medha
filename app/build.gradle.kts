@@ -44,6 +44,7 @@ android {
         targetSdk = 34
         versionCode = 10
         versionName = "0.8.3"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -112,6 +113,7 @@ android {
 
     buildFeatures {
         viewBinding = true
+        buildConfig = true
     }
 
     androidResources {
@@ -164,6 +166,10 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
+    // Client list, item_client.xml — replaces a plain-text dialog setItems()
+    // with a real Material list row (admin badge, capability summary,
+    // overflow action button) and DiffUtil-backed incremental updates.
+    implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("androidx.preference:preference-ktx:1.2.1")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     // Pulled in transitively by material, but declared explicitly because the
@@ -212,4 +218,13 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
     testImplementation("io.mockk:mockk:1.13.11")
+
+    // ---------------------------------------------------------------------
+    // Instrumented tests (app/src/androidTest — real device/emulator, real
+    // SQLite). This is what actually exercises MedhaDatabase's v1->v4
+    // migration and FTS4 sync, which no unit test or sandbox harness can:
+    // both need Android's bundled SQLite, not a desktop JDBC driver.
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:core:1.6.1")
 }

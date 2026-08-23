@@ -12,7 +12,7 @@ import android.os.Looper
 import android.provider.ContactsContract
 import android.provider.Telephony
 import android.telephony.SmsManager
-import android.util.Log
+import com.adabala.medha.diag.Diagnostics
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -150,7 +150,7 @@ class SmsConnector(private val appContext: Context) {
                     )
                 }
             }
-        }.onFailure { Log.w(TAG, "conversations query failed", it) }
+        }.onFailure { Diagnostics.w(TAG, "conversations query failed", it) }
         return out
     }
 
@@ -223,7 +223,7 @@ class SmsConnector(private val appContext: Context) {
                     )
                 }
             }
-        }.onFailure { Log.w(TAG, "messages query failed", it) }
+        }.onFailure { Diagnostics.w(TAG, "messages query failed", it) }
         return out
     }
 

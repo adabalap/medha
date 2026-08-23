@@ -29,6 +29,7 @@
     <uses-feature android:name="android.hardware.opengles.aep" android:required="false" />
 
     <application
+        android:name=".MedhaApplication"
         android:allowBackup="false"
         android:fullBackupContent="@xml/backup_rules"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -70,5 +71,24 @@
             android:exported="false"
             android:stopWithTask="false"
             android:foregroundServiceType="dataSync" />
+
+        <!--
+          Diagnostics dumps live under filesDir/diagnostics, which is private
+          to the app. Sharing one via an ACTION_SEND intent needs a content://
+          URI another app's share-sheet target can actually read -- a raw
+          file:// URI to app-private storage is rejected by modern Android
+          (StrictMode FileUriExposedException) or simply unreadable by the
+          receiving app. FileProvider is the standard, no-extra-dependency way
+          to hand out a short-lived, scoped read grant for exactly that file.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.diagnostics"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 </manifest>

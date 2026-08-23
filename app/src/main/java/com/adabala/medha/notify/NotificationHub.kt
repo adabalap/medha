@@ -7,7 +7,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import android.util.Log
+import com.adabala.medha.diag.Diagnostics
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.adabala.medha.MainActivity
@@ -101,13 +101,13 @@ class NotificationHub(private val appContext: Context) {
             runCatching {
                 val f = Notification::class.java.getField("FLAG_PROMOTED_ONGOING")
                 n.flags = n.flags or f.getInt(null)
-            }.onFailure { Log.d(TAG, "promoted-ongoing flag unavailable") }
+            }.onFailure { Diagnostics.d(TAG, "promoted-ongoing flag unavailable") }
         }
 
         return runCatching {
             manager.notify(key, n)
             true
-        }.onFailure { Log.w(TAG, "notify failed (permission?)", it) }.getOrDefault(false)
+        }.onFailure { Diagnostics.w(TAG, "notify failed (permission?)", it) }.getOrDefault(false)
     }
 
     fun cancel(clientId: String, id: String) {

@@ -24,6 +24,7 @@
     <item android:title="@string/nav_group_system">
         <menu>
             <item android:id="@+id/nav_battery" android:icon="@drawable/ic_battery" android:title="@string/nav_battery" />
+            <item android:id="@+id/nav_diagnostics" android:icon="@drawable/ic_book" android:title="@string/nav_diagnostics" />
             <item android:id="@+id/nav_stop" android:icon="@drawable/ic_stop" android:title="@string/nav_stop" />
         </menu>
     </item>

@@ -14,7 +14,7 @@ Three different bars, and Medha sits at different heights on each:
 
 | Bar | Status |
 |---|---|
-| **Runs reliably on your own phone** | Close. Finish the P0 list. |
+| **Runs reliably on your own phone** | All P0 items addressed in code. Run the instrumented test suite on a real device first — see `docs/TESTING.md` — before fully trusting that. |
 | **Other people sideload it** | Not yet. P0 + P1. |
 | **Public distribution (Play Store / F-Droid)** | Some distance. P0 + P1 + P2. |
 
@@ -22,27 +22,39 @@ Three different bars, and Medha sits at different heights on each:
 
 ## P0 — blockers for trusting it yourself
 
-### 1. Zero automated tests against a real device
-Everything verified so far is either a syntax pass, a pure-logic harness, or a
-CI grep. **No test has ever executed against Android's SQLite, the Ktor server,
-or the LiteRT engine.** The two places this hurts most:
+### 1. ~~Zero automated tests against a real device~~ — RESOLVED
+`app/src/androidTest/java/.../MedhaDatabaseMigrationTest.kt` now exercises the
+real v1 -> v4 on-disk SQLite upgrade (hand-building the actual v1 schema —
+no `chunks_fts`, no `kv`, embeddings as TEXT — and forcing the real
+`onUpgrade` path against it) and FTS4 insert/delete sync. `MedhaDatabase`
+gained a `@VisibleForTesting forTesting(context, dbName)` construction path
+so tests get isolated database files instead of colliding with the
+process-wide singleton `get()` uses.
 
-- **`MedhaDatabase` migration v1 → v2.** If it is wrong, users lose stored
-  conversations, silently, on upgrade. This is the single highest-consequence
-  untested path in the codebase.
-- **FTS4 sync.** Chunks and their index are kept consistent by hand across
-  insert and delete. A drift bug degrades retrieval quietly rather than loudly.
+Run: `./gradlew connectedCoreDebugAndroidTest --tests "*MedhaDatabaseMigrationTest*"`
+(needs a connected device or emulator — see `docs/TESTING.md`).
 
-Fix: an `androidTest` suite with a handful of instrumented tests. This is
-maybe half a day and it removes the largest unknown in the project.
+Honesty note, consistent with how this doc treats everything else: this was
+written and hand-verified against the real `onUpgrade` implementation in a
+sandbox with no Android SDK, so it has never actually executed. Treat a first
+green run as the real confirmation, not this paragraph.
 
-### 2. No crash reporting, and the logs are unreachable
-When it dies on your phone at 2am you have nothing. There is no local log
-buffer, no crash handler, no way to export a report. `adb logcat` is not an
-answer once the app leaves your desk.
+### 2. ~~No crash reporting, and the logs are unreachable~~ — RESOLVED
+`Diagnostics` is a bounded 500-line in-memory ring buffer with drop-in
+`d/i/w/e` replacements for `Log`'s own methods (same signatures, same logcat
+output — every existing call site in the crash-relevant files now routes
+through it instead). `MedhaApplication` installs an uncaught-exception
+handler that writes the buffer to a local file the moment a fatal exception
+is about to kill the process, then **always** chains to whatever handler was
+already installed — it must never suppress the real crash. The drawer's new
+"Diagnostics" entry lists past dumps (tap to share via a scoped `FileProvider`
+that only exposes the diagnostics folder, nothing else in app-private
+storage) and has an "export now" action for capturing the buffer on demand.
 
-Fix: a bounded in-memory ring buffer written to a file on crash, plus a "share
-diagnostics" action in the drawer. Deliberately local-only — no telemetry.
+Deliberately local-only: nothing here transmits anything on its own. A dump
+is a file the person explicitly shares, the same as they'd attach a
+manually-copied logcat capture — except it's actually still there after the
+crash that mattered.
 
 ### 3. ~~The engine is a single-request bottleneck with no timeout~~ — RESOLVED
 `InferenceScheduler` already provided admission control (bounded queue → 429)
@@ -115,12 +127,30 @@ There is no retention policy and no quota.
 
 10. **Privacy policy and data-handling statement.** Even though nothing leaves
     the device, stores require the statement, and users deserve it in writing.
-11. **Accessibility.** No content descriptions on most controls, no TalkBack
-    pass, no large-font layout testing.
+11. **Accessibility — partially addressed.** An audit found the main screen
+    already clean (every `ImageView` has a `contentDescription`, the drawer's
+    nav icon does too, no undersized touch targets). Not yet audited: the
+    dialog-heavy secondary flows (SMS, thermal, scheduler, about) and no
+    TalkBack pass or large-font layout test has actually been run on device.
 12. **Localisation.** Strings are extracted now, which is the hard part, but
-    only `values/` exists. The Telugu name deserves a Telugu locale.
-13. **No dark theme.** The theme is `DayNight` but the cards hardcode
-    `#FFFFFF` and `#333333`, so dark mode is currently broken-looking.
+    only `values/` exists. The Telugu name deserves a Telugu locale. A
+    meaningful chunk of the main screen's remaining hardcoded strings were
+    externalized this session (capability labels, primary status text, all
+    static button/section labels); the technical diagnostic-panel text
+    (thermal, scheduler, SMS, about dialogs) deliberately was not, as a lower
+    ROI / higher-risk-of-invisible-mistake tradeoff given no device to
+    visually verify against — flagged here rather than silently left undone.
+13. **~~No dark theme~~ — RESOLVED.** The four non-brand cards hardcoded
+    `#FFFFFF` cardBackgroundColor and `#333333`/`#555555` text with nothing in
+    `values-night/` to override them, so dark mode stayed stark white with
+    dark text regardless of system theme. `card_surface`/`text_primary`/
+    `text_secondary` are now named resources with real dark-mode values in
+    `values-night/colors.xml`, contrast-checked against WCAG 2.1 (text pairs
+    9–14:1, the card's border color retuned from an initial 1.6:1 up to 3.2:1
+    to actually meet the non-text contrast guideline). The brand-colored
+    surfaces (status card, toolbar, nav header, widget) are deliberately left
+    theme-invariant — that's a design choice already in the app, not a bug.
+    Not yet verified on an actual device with dark mode toggled on.
 14. **targetSdk 34.** Play requires newer for new submissions; irrelevant for
     sideload, relevant the moment you list it.
 15. **Battery behaviour is unmeasured.** A wake lock plus a resident multi-GB
@@ -149,7 +179,8 @@ Worth stating, because the list above is long and one-sided:
 1. ~~Change `applicationId`.~~ Done — `com.adabala.medha`.
 2. Generate and back up a release keystore; add the CI secrets. *(30 min)*
 3. ~~Add request timeout + queue cap.~~ Done — see item 3 above.
-4. Write instrumented tests for the DB migration and FTS sync. *(half a day)*
-5. Add the local diagnostics buffer. *(half a day)*
+4. ~~Write instrumented tests for the DB migration and FTS sync.~~ Written —
+   see item 1 above. Run them on a real device before treating this as closed.
+5. ~~Add the local diagnostics buffer.~~ Done — see item 2 above.
 6. Then reassess — after those five, "other people can sideload it" is a fair
    claim.

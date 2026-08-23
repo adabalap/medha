@@ -82,6 +82,22 @@ load a model, grab the admin token from the app UI, and run these from a
 machine on the same network (or `adb reverse tcp:8080 tcp:8080` and use
 `localhost`).
 
+### 3a-pre. Instrumented tests — run these first
+
+```
+./gradlew connectedCoreDebugAndroidTest --tests "*MedhaDatabaseMigrationTest*"
+```
+
+Same "be the first to run this" caveat as tier 2: this exercises the actual
+v1 -> v4 on-disk SQLite upgrade (hand-builds the real v1 schema, forces the
+real `onUpgrade` path against it, checks conversations/messages/chunk text
+survive, unattributed old embeddings get cleared rather than silently
+misused, and FTS4 is backfilled and searchable immediately) plus FTS
+insert/delete sync — the single highest-consequence previously-untested path
+in the app, per `docs/PRODUCTION-READINESS.md`. Needs a connected device or a
+running emulator; there is no way to fake real SQLite upgrade behavior from a
+desktop JDBC driver.
+
 ### 3a. Streaming/OpenAI-compat now goes through admission control
 
 This is the actual bug this session fixed — before, these two endpoints had
@@ -166,6 +182,43 @@ From the app UI: create a client, copy its token, curl an endpoint with it,
 rotate the token and confirm the old one now 401s, try revoking the last
 admin and confirm it's refused.
 
+### 3e. Diagnostics
+
+Open the drawer → Diagnostics. With no crash yet, it should show
+"No diagnostics files yet." Tap "Export current logs now" — a file should
+appear in the list immediately and the share sheet should open with a
+readable text file containing recent log lines. To test the crash path
+itself, trigger an actual uncaught exception (e.g. temporarily throw one from
+a button handler in a debug build), relaunch the app, and confirm a dump
+appears in the list dated at the crash time — with the previous default
+handler still having run too (i.e. the app still shows its normal "has
+stopped" behavior; diagnostics capture must never replace that).
+
+### 3f. Dark theme
+
+Toggle system dark mode (Settings → Display) with Medha open, or launch it
+with dark mode already on. The status card/toolbar/nav header should stay the
+same brand indigo in both modes — that's intentional, not a bug. The other
+four cards (runtime, model/backend, scheduler, clients/about) should switch
+to a dark elevated surface with light text, not stay stark white. Open the
+drawer → Diagnostics and Clients dialogs in dark mode too, since those use
+the same `card_surface`/`text_primary` colors. Nothing here was verified on
+an actual display — only computed WCAG contrast ratios on the hex values —
+so this is the first real check of whether it actually looks right.
+
+### 3g. Client list
+
+Drawer → API clients, with at least two clients created. Confirm: the admin
+client shows the key-icon badge, the row's capability line shows
+`namespace:*  •  capabilities`, tapping anywhere on the row opens the same
+action sheet (copy token / rotate / edit / revoke) as tapping the trailing
+overflow button, and the list scrolls internally rather than pushing the
+dialog's Close/Add buttons off-screen once you have enough clients to
+overflow `maxHeight`. With zero clients, drawer → API clients should still
+jump straight to "Add client" (unchanged behavior) rather than showing the
+list's own empty state — the empty state view exists as a defensive
+fallback and is not expected to be reachable through the current UI.
+
 ---
 
 ## Summary table
@@ -175,6 +228,10 @@ admin and confirm it's refused.
 | `SchedulerConfig.validated()` clamping | Executed in sandbox, real source | High |
 | `Embedder` codec/normalize/dot/prefixes | Executed in sandbox, real source | High |
 | Scheduler admission/queue-cap/timeout concurrency | Written, reasoned by hand, **not executed anywhere yet** | Run tier 2 first |
+| `MedhaDatabase` v1->v4 migration + FTS sync | Written, reasoned by hand against real `onUpgrade`, **not executed anywhere yet** | Run tier 3a-pre first |
 | `/generate/stream`, `/v1/chat/completions` now admission-controlled | Code review + `check_symbols`/`check_overrides` clean | Needs tier 3a |
 | Embedder dimension probe correctness | Code review only | Needs tier 3c, on real SDK |
+| Diagnostics ring buffer + crash handler + share flow | Code review + `check_overrides` clean (correctly sees `override fun onCreate`) | Needs tier 3e |
+| Dark theme colors | WCAG contrast computed on hex values, not seen rendered | Needs tier 3f |
+| Client list RecyclerView conversion | `check_symbols`/`check_overrides`/`check_resources` clean, logic unchanged from prior dialog flow | Needs tier 3g |
 | Client CRUD | Unchanged this session | Already working per prior sessions |

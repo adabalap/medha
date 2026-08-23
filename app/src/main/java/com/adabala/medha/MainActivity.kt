@@ -21,12 +21,17 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.core.view.GravityCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.adabala.medha.auth.ClientRegistry
 import com.adabala.medha.connectors.SmsConnector
+import com.adabala.medha.diag.Diagnostics
 import com.adabala.medha.sched.InferenceScheduler
+import com.adabala.medha.ui.ClientListAdapter
 import android.widget.EditText
 import android.widget.LinearLayout
 import androidx.preference.PreferenceManager
@@ -43,6 +48,8 @@ import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
@@ -182,6 +189,7 @@ class MainActivity : AppCompatActivity() {
                 R.id.nav_copy_token -> copyToken()
                 R.id.nav_regen_token -> confirmRegenerateToken()
                 R.id.nav_battery -> requestBatteryExemption()
+                R.id.nav_diagnostics -> showDiagnosticsDialog()
                 R.id.nav_stop -> stopMedha()
                 R.id.nav_endpoints -> showEndpointsDialog()
                 R.id.nav_about -> showAboutDialog()
@@ -369,15 +377,17 @@ class MainActivity : AppCompatActivity() {
         // 401 — the ellipsis was invisible in a password field. Showing no
         // token at all forces the one path that yields a working value: tap the
         // client, then Copy token.
-        val labels = clients.map { c ->
-            val caps = if (c.isAdmin) "full access" else c.capabilities.sorted().joinToString(", ")
-            "${c.id}   [${c.namespace}:*]\n$caps\ntap to copy the token or edit"
-        }.toTypedArray()
+        val view = layoutInflater.inflate(R.layout.dialog_clients, null)
+        val list = view.findViewById<RecyclerView>(R.id.clientList)
+        list.layoutManager = LinearLayoutManager(this)
+        val adapter = ClientListAdapter { client -> showClientActions(client) }
+        list.adapter = adapter
+        adapter.submitList(clients)
 
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.clients_title)
             .setIcon(R.drawable.ic_client)
-            .setItems(labels) { _, i -> showClientActions(clients[i]) }
+            .setView(view)
             .setPositiveButton(R.string.close, null)
             .setNeutralButton(R.string.client_add) { _, _ -> showAddClientDialog() }
             .show()
@@ -413,13 +423,14 @@ class MainActivity : AppCompatActivity() {
 
     /** Shows the token in full and selectable, since clipboards can fail. */
     private fun showTokenDialog(client: ClientRegistry.Client) {
+        val caps = if (client.isAdmin) getString(R.string.client_full_access)
+            else client.capabilities.sorted().joinToString(", ")
         MaterialAlertDialogBuilder(this)
             .setTitle(client.id)
             .setMessage(
                 "${client.token}\n\nCopied to the clipboard.\n" +
                     "Namespace: ${client.namespace}:*\n" +
-                    "Capabilities: ${if (client.isAdmin) "full access"
-                        else client.capabilities.sorted().joinToString(", ")}"
+                    "Capabilities: $caps"
             )
             .setPositiveButton(R.string.close, null)
             .show()
@@ -467,19 +478,27 @@ class MainActivity : AppCompatActivity() {
     /**
      * Capabilities offered in the UI, in the order they are shown.
      *
+     * `by lazy`, not a plain `val`: this is a class-body property, and a
+     * plain `val` here would call [getString] while the Activity is still
+     * being constructed — before Android has attached its Resources via
+     * `attachBaseContext()`. `lazy` defers evaluation to first access, which
+     * only happens from [showCapabilitiesDialog], well after `onCreate`.
+     *
      * SMS and notify are deliberately absent from the default set: most
      * consumers should not have them, and a grant that broad should be a
      * decision rather than a default.
      */
-    private val grantable = listOf(
-        ClientRegistry.Cap.GENERATE to "Run the model",
-        ClientRegistry.Cap.MEMORY to "Chat memory / sessions",
-        ClientRegistry.Cap.RAG to "Knowledge (RAG)",
-        ClientRegistry.Cap.STORE to "Store its own data",
-        ClientRegistry.Cap.SMS_READ to "Read SMS",
-        ClientRegistry.Cap.SMS_SEND to "Send SMS",
-        ClientRegistry.Cap.NOTIFY to "Post notifications"
-    )
+    private val grantable by lazy {
+        listOf(
+            ClientRegistry.Cap.GENERATE to getString(R.string.cap_generate),
+            ClientRegistry.Cap.MEMORY to getString(R.string.cap_memory),
+            ClientRegistry.Cap.RAG to getString(R.string.cap_rag),
+            ClientRegistry.Cap.STORE to getString(R.string.cap_store),
+            ClientRegistry.Cap.SMS_READ to getString(R.string.cap_sms_read),
+            ClientRegistry.Cap.SMS_SEND to getString(R.string.cap_sms_send),
+            ClientRegistry.Cap.NOTIFY to getString(R.string.cap_notify)
+        )
+    }
 
     private fun showCapabilitiesDialog(client: ClientRegistry.Client) {
         val checked = grantable.map { it.first in client.capabilities }.toBooleanArray()
@@ -722,6 +741,61 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    /**
+     * Local-only, on-demand view into [Diagnostics]: past crash dumps (if
+     * any) plus an explicit "export now" action for capturing the current
+     * in-memory buffer without needing an actual crash to see one.
+     * Nothing here transmits anything — sharing is always a separate,
+     * explicit action the person takes afterward.
+     */
+    private fun showDiagnosticsDialog() {
+        val files = Diagnostics.listDumps(this)
+        val dateFmt = SimpleDateFormat("MMM d, HH:mm", Locale.US)
+        val labels = files.map { f ->
+            val kb = f.length() / 1024
+            "${dateFmt.format(Date(f.lastModified()))}   (${kb} KB)\ntap to share"
+        }.toTypedArray()
+
+        val builder = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.diagnostics_title)
+            .setIcon(R.drawable.ic_book)
+            .setPositiveButton(R.string.close, null)
+            .setNeutralButton(R.string.diagnostics_export_now) { _, _ -> exportDiagnosticsNow() }
+
+        if (files.isEmpty()) {
+            builder.setMessage(getString(R.string.diagnostics_hint) + "\n\n" + getString(R.string.diagnostics_none))
+        } else {
+            builder.setMessage(R.string.diagnostics_hint)
+            builder.setItems(labels) { _, i -> shareDiagnosticsFile(files[i]) }
+        }
+        builder.show()
+    }
+
+    private fun exportDiagnosticsNow() {
+        val header = buildString {
+            append("Medha ").append(BuildInfo.VERSION).append(" — manual export\n")
+            append("Package ").append(packageName).append('\n')
+            lastSystemJson?.let { append("\nLast known /system:\n").append(it) }
+        }
+        val file = Diagnostics.dumpToFile(this, header)
+        if (file == null) {
+            toast(getString(R.string.diagnostics_export_failed))
+        } else {
+            toast(getString(R.string.diagnostics_exported))
+            shareDiagnosticsFile(file)
+        }
+    }
+
+    private fun shareDiagnosticsFile(file: File) {
+        val uri = FileProvider.getUriForFile(this, "$packageName.diagnostics", file)
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(Intent.createChooser(intent, getString(R.string.diagnostics_share)))
+    }
+
     private fun confirmRegenerateToken() {
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.regen_title)
@@ -957,11 +1031,11 @@ class MainActivity : AppCompatActivity() {
                 System.currentTimeMillis() - startRequestedAt < START_GRACE_MS
             binding.statusText.setTextColor(Color.parseColor(COLOR_IDLE))
             binding.statusText.text =
-                if (starting) "● Starting…" else "● Not running"
+                if (starting) getString(R.string.status_starting) else getString(R.string.status_not_running)
             binding.statusDetail.text =
-                if (starting) "Waiting for the service" else "Tap Start to load the model"
-            binding.systemText.text = "Backend: —\nMemory: —\nDevice: —"
-            binding.metricsText.text = "Requests: 0\nAvg speed: —\nStored: —"
+                if (starting) getString(R.string.status_waiting_for_service) else getString(R.string.status_tap_start)
+            binding.systemText.text = getString(R.string.runtime_placeholder)
+            binding.metricsText.text = getString(R.string.metrics_placeholder)
             if (!starting) startRequestedAt = 0L
             applyState(if (starting) UiState.STARTING else UiState.IDLE)
             return

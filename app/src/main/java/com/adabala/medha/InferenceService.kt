@@ -10,7 +10,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
-import android.util.Log
+import com.adabala.medha.diag.Diagnostics
 import androidx.core.app.NotificationCompat
 import androidx.preference.PreferenceManager
 import com.adabala.medha.data.MedhaDatabase
@@ -115,7 +115,7 @@ class InferenceService : Service() {
                     engine.load(modelPath, backend)
                     updateNotification(readyText(port))
                 } catch (t: Throwable) {
-                    Log.e(TAG, "Model load failed", t)
+                    Diagnostics.e(TAG, "Model load failed", t)
                     engine.recordError(t.message)
                     updateNotification("Load failed: ${t.message?.take(64)}")
                 }
@@ -125,7 +125,7 @@ class InferenceService : Service() {
     }
 
     private fun onServerFailed(e: Throwable, port: Int) {
-        Log.e(TAG, "Server failed to bind on port $port", e)
+        Diagnostics.e(TAG, "Server failed to bind on port $port", e)
         engine.recordError("port $port unavailable: ${e.message}")
         updateNotification("Port $port unavailable — pick another")
     }
@@ -142,7 +142,7 @@ class InferenceService : Service() {
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         if (level >= TRIM_MEMORY_COMPLETE) {
-            Log.w(TAG, "onTrimMemory($level): releasing engine and embedder")
+            Diagnostics.w(TAG, "onTrimMemory($level): releasing engine and embedder")
             engine.close()
             // The embedding model is a second resident model; release it too or
             // the trim accomplishes much less than it appears to.

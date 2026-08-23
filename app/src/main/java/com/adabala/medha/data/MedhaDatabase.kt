@@ -24,8 +24,8 @@ import android.database.sqlite.SQLiteOpenHelper
  * NOT drop user data. (v1 dropped every table on upgrade, silently destroying
  * all stored conversations on any schema bump.)
  */
-class MedhaDatabase private constructor(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, DB_NAME, null, DB_VERSION) {
+class MedhaDatabase private constructor(context: Context, dbName: String) :
+    SQLiteOpenHelper(context.applicationContext, dbName, null, DB_VERSION) {
 
     @Volatile private var ftsAvailable: Boolean = true
 
@@ -622,7 +622,21 @@ class MedhaDatabase private constructor(context: Context) :
 
         fun get(context: Context): MedhaDatabase =
             INSTANCE ?: synchronized(this) {
-                INSTANCE ?: MedhaDatabase(context).also { INSTANCE = it }
+                INSTANCE ?: MedhaDatabase(context, DB_NAME).also { INSTANCE = it }
             }
+
+        /**
+         * Test-only construction path that bypasses the process-wide
+         * [INSTANCE] cache. Instrumented tests exercise real on-disk SQLite
+         * upgrade behavior (see `MedhaDatabaseMigrationTest`), and each test
+         * needs its own independently-named database file rather than
+         * sharing whatever instance [get] has already cached in that test
+         * process — otherwise the second test to run would silently reuse
+         * the first test's already-upgraded database instead of exercising
+         * its own upgrade path.
+         */
+        @androidx.annotation.VisibleForTesting
+        fun forTesting(context: Context, dbName: String): MedhaDatabase =
+            MedhaDatabase(context, dbName)
     }
 }

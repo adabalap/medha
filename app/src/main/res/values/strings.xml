@@ -23,6 +23,7 @@
     <string name="nav_regen_token">Regenerate token</string>
     <string name="nav_group_system">Service</string>
     <string name="nav_battery">Battery optimisation</string>
+    <string name="nav_diagnostics">Diagnostics</string>
     <string name="nav_stop">Stop Medha</string>
     <string name="nav_group_about">About</string>
     <string name="nav_endpoints">API endpoints</string>
@@ -55,6 +56,16 @@ Licensed under the terms in the project repository.</string>
     <!-- button labels driven by the state machine -->
     <string name="btn_start">Start Medha</string>
     <string name="btn_starting">Starting…</string>
+    <string name="btn_stop">Stop</string>
+    <string name="section_runtime">Runtime</string>
+    <string name="section_model">Model</string>
+    <string name="section_backend">Backend</string>
+    <string name="btn_browse_model">Browse for .litertlm model</string>
+    <string name="backend_gpu">GPU</string>
+    <string name="backend_cpu">CPU</string>
+    <string name="backend_npu">NPU</string>
+    <string name="runtime_placeholder">Backend: —\nMemory: —\nDevice: —</string>
+    <string name="metrics_placeholder">Requests: 0\nAvg speed: — tok/s\nStored: —</string>
     <string name="btn_loading">Loading model…</string>
     <string name="btn_running">Running</string>
     <string name="btn_retry">Retry start</string>
@@ -104,6 +115,11 @@ Licensed under the terms in the project repository.</string>
     <!-- clients -->
     <string name="clients_title">API clients</string>
     <string name="client_add">Add client</string>
+    <string name="client_admin_badge">Admin client — full access</string>
+    <string name="client_actions">More actions</string>
+    <string name="client_full_access">full access</string>
+    <string name="client_row_subtitle">%1$s:*  •  %2$s</string>
+    <string name="clients_empty">No clients yet. Tap Add client to create one.</string>
     <string name="client_new_title">New API client</string>
     <string name="client_id_hint">id (e.g. sms-organizer)</string>
     <string name="create">Create</string>
@@ -128,4 +144,28 @@ Licensed under the terms in the project repository.</string>
     <string name="revoke_body">Its token stops working immediately. Data stored under its namespace is left untouched and becomes unreachable until a client with the same namespace is recreated.</string>
     <string name="revoked">Deleted %1$s</string>
     <string name="revoke_refused">Cannot delete the last admin client</string>
+
+    <!-- client capability labels -->
+    <string name="cap_generate">Run the model</string>
+    <string name="cap_memory">Chat memory / sessions</string>
+    <string name="cap_rag">Knowledge (RAG)</string>
+    <string name="cap_store">Store its own data</string>
+    <string name="cap_sms_read">Read SMS</string>
+    <string name="cap_sms_send">Send SMS</string>
+    <string name="cap_notify">Post notifications</string>
+
+    <!-- primary status line, shown on the main screen -->
+    <string name="status_starting">● Starting…</string>
+    <string name="status_not_running">● Not running</string>
+    <string name="status_waiting_for_service">Waiting for the service</string>
+    <string name="status_tap_start">Tap Start to load the model</string>
+
+    <!-- diagnostics -->
+    <string name="diagnostics_title">Diagnostics</string>
+    <string name="diagnostics_hint">Local-only. Nothing here is sent anywhere unless you explicitly share it.</string>
+    <string name="diagnostics_export_now">Export current logs now</string>
+    <string name="diagnostics_share">Share</string>
+    <string name="diagnostics_none">No diagnostics files yet. A crash writes one automatically; \"Export current logs now\" writes one on demand.</string>
+    <string name="diagnostics_export_failed">Could not write a diagnostics file</string>
+    <string name="diagnostics_exported">Diagnostics saved</string>
 </resources>
