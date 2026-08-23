@@ -13,3 +13,8 @@
 # so CI and every developer use the same Gradle. Do not let a broad *.jar rule
 # swallow it.
 !gradle/wrapper/gradle-wrapper.jar
+
+# tools/tests/webapp_smoke_test.js's jsdom dependency. Not part of the Android
+# build; installed on demand via `npm install` in tools/tests/.
+tools/tests/node_modules/
+tools/tests/package-lock.json

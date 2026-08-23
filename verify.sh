@@ -29,6 +29,8 @@ need "app/src/test/java/com/adabala/medha/sched/InferenceSchedulerConcurrencyTes
 need "app/src/androidTest/java/com/adabala/medha/data/MedhaDatabaseMigrationTest.kt"
 need "tools/tests/webapp_markdown_test.js"
 need "tools/tests/webapp_sse_test.js"
+need "tools/tests/webapp_smoke_test.js"
+need "tools/tests/package.json"
 
 echo; echo "Bundled demo webapp"
 need "app/src/main/assets/webapp/index.html"

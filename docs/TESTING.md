@@ -49,6 +49,32 @@ model output as HTML: that a raw `<script>`/`onerror` payload from the model
 is neutralized rather than executed, and that an SSE event split across a
 network chunk boundary reassembles instead of corrupting.
 
+**A third test, `webapp_smoke_test.js`, exists because those two weren't
+enough.** A real build shipped with `var history = [];` at the top level of
+the script — a name that collides with `window.history`, a real,
+non-configurable, getter-only property every browser provides. Node has no
+such global, so `node --check` and both function-level tests above passed
+cleanly; the bug only threw in an actual Window, which halted the *entire*
+script the instant it ran — before a single event handler got wired up. The
+page still rendered fine (HTML/CSS are unaffected by a JS error), which is
+exactly why it looked like "the demo doesn't reach the model, nothing
+happens" rather than an obvious crash: every button was simply inert.
+
+`webapp_smoke_test.js` loads the real file into an actual DOM via `jsdom`,
+runs the real script, and checks two things: that nothing throws during
+execution, and that every interactive control actually has its handler
+attached afterward. This needs a one-time setup step the other two tests
+don't:
+
+```
+$ cd tools/tests && npm install
+$ node webapp_smoke_test.js
+```
+
+`tools/tests/run.sh` runs it automatically if `node_modules/jsdom` is
+present, and skips it with that same instruction otherwise — the same
+graceful-skip pattern already used for a missing `kotlinc` or `node` itself.
+
 ---
 
 ## Tier 2 — scheduler concurrency. Written, not yet run — run it via Gradle.
@@ -269,6 +295,7 @@ endpoints would happily generate text for a client with zero capabilities.
 | `Embedder` codec/normalize/dot/prefixes | Executed in sandbox, real source | High |
 | Demo webapp markdown rendering (XSS safety) | Executed in sandbox (Node), real source, 13 checks | High |
 | Demo webapp SSE frame parsing | Executed in sandbox (Node), real source, 8 checks | High |
+| Demo webapp script executes without throwing; all controls wired | Executed in sandbox (Node + jsdom), real source, real DOM | High — this is what caught the `history` bug |
 | Scheduler admission/queue-cap/timeout concurrency | Written, reasoned by hand, **not executed anywhere yet** | Run tier 2 first |
 | `MedhaDatabase` v1->v4 migration + FTS sync | Written, reasoned by hand against real `onUpgrade`, **not executed anywhere yet** | Run tier 3a-pre first |
 | `/generate/stream`, `/v1/chat/completions` now admission-controlled | Code review + `check_symbols`/`check_overrides` clean | Needs tier 3a |

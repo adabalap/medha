@@ -80,11 +80,16 @@ jobs:
 
       # GitHub-hosted runners ship Node.js already; no setup-node step needed.
       # These test the bundled demo webapp's actual shipped JS (markdown
-      # rendering, SSE frame parsing), extracted from index.html itself.
+      # rendering, SSE frame parsing, and a full jsdom-driven smoke test that
+      # catches script-halting bugs like a variable colliding with a
+      # built-in window property — the exact bug this test suite exists
+      # because of, see webapp_smoke_test.js).
       - name: Test demo webapp JS
         run: |
           node tools/tests/webapp_markdown_test.js
           node tools/tests/webapp_sse_test.js
+          cd tools/tests && npm install --no-audit --no-fund && cd ../..
+          node tools/tests/webapp_smoke_test.js
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4

@@ -318,7 +318,7 @@ async function readSse(path, body, onEvent) {
 
 // ------------------------------- chat -------------------------------
 
-var history = []; // OpenAI-shaped {role, content} turns, resent in full each request
+var chatHistory = []; // OpenAI-shaped {role, content} turns, resent in full each request
 
 function bubble(role, isError) {
   var d = document.createElement("div");
@@ -344,7 +344,7 @@ document.getElementById("chatInput").addEventListener("keydown", function (e) {
 document.getElementById("chatSend").onclick = sendChat;
 
 document.getElementById("chatClear").onclick = function () {
-  history = [];
+  chatHistory = [];
   document.getElementById("thread").innerHTML = "";
 };
 
@@ -357,12 +357,12 @@ async function sendChat() {
 
   var userDiv = bubble("user", false);
   userDiv.textContent = text;
-  history.push({ role: "user", content: text });
+  chatHistory.push({ role: "user", content: text });
 
   var pending = typingBubble();
   var streaming = document.getElementById("optStream").checked;
   var useRag = document.getElementById("optRag").checked;
-  var body = { model: "medha", messages: history, stream: streaming };
+  var body = { model: "medha", messages: chatHistory, stream: streaming };
   if (useRag) {
     body.collection = document.getElementById("ragCollection").value.trim() || "demo";
     body.ragTopK = 3;
@@ -391,11 +391,11 @@ async function sendChat() {
     meta.className = "meta";
     meta.textContent = ((Date.now() - started) / 1000).toFixed(1) + "s" + (useRag ? " · from " + body.collection : "");
     pending.appendChild(meta);
-    history.push({ role: "assistant", content: full });
+    chatHistory.push({ role: "assistant", content: full });
   } catch (e) {
     pending.className = "msg bot error";
     pending.textContent = "Error: " + e.message;
-    history.pop(); // don't let a failed turn poison the next request's context
+    chatHistory.pop(); // don't let a failed turn poison the next request's context
   } finally {
     document.getElementById("chatSend").disabled = false;
   }

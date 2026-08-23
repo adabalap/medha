@@ -48,8 +48,19 @@ if command -v node >/dev/null 2>&1; then
   echo
   echo "== webapp_sse_test (Node) =="
   node webapp_sse_test.js
+
+  echo
+  echo "== webapp_smoke_test (Node + jsdom) =="
+  if [ -d node_modules/jsdom ]; then
+    node webapp_smoke_test.js
+  else
+    echo "jsdom not installed — run 'npm install' in tools/tests/ first, then re-run this script."
+    echo "This is the test that catches a script-level bug (like a variable"
+    echo "colliding with a built-in window property) silently halting the"
+    echo "whole page with no visible error — worth the one-time npm install."
+  fi
 else
   echo
-  echo "node not found on PATH — skipping the two webapp JS tests."
+  echo "node not found on PATH — skipping the three webapp JS tests."
   echo "Get it from https://nodejs.org/, then re-run this script."
 fi
