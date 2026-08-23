@@ -23,6 +23,34 @@ import glob
 import os
 import re
 import sys
+import xml.dom.minidom
+
+
+def check_xml_well_formed():
+    """
+    Parses every XML file under app/src with a real XML parser.
+
+    Why this earns its place here rather than being "obviously already
+    covered": a real bug shipped past ad-hoc `minidom.parse()` calls made by
+    hand on some-but-not-all edited files in one session, because it's easy
+    to create a new file, validate three others, and never circle back to
+    the one that actually broke. A blanket sweep over every file removes
+    "did I remember to check this one" as a failure mode entirely.
+
+    Concretely, this catches things like a literal "--" inside an XML
+    comment (illegal anywhere in a comment body per the XML spec, not just
+    adjacent to the closing "-->") — invisible to a human skim, invisible to
+    Kotlin-side tooling, and something aapt2 only reports once a real Gradle
+    build runs far enough to parse resources.
+    """
+    failed = []
+    files = sorted(glob.glob("app/src/**/*.xml", recursive=True))
+    for f in files:
+        try:
+            xml.dom.minidom.parse(f)
+        except Exception as e:
+            failed.append(f"{f}: {e}")
+    return files, failed
 
 
 def declared_values():
@@ -58,6 +86,13 @@ def declared_ids():
 
 
 def main():
+    xml_files, xml_failures = check_xml_well_formed()
+    if xml_failures:
+        print("XML files that do not parse:\n")
+        for line in xml_failures:
+            print(" ", line)
+        return 1
+
     declared = declared_values()
     drawables = declared_drawables()
     ids = declared_ids()
@@ -93,7 +128,8 @@ def main():
         return 1
 
     print(
-        f"check_resources: OK ({len(declared['string'])} strings, "
+        f"check_resources: OK ({len(xml_files)} XML files well-formed, "
+        f"{len(declared['string'])} strings, "
         f"{len(declared['color'])} colors, {len(drawables)} drawables, "
         f"{len(ids)} ids)"
     )
