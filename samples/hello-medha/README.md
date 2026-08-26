@@ -4,17 +4,37 @@ A complete, working example of another app using Medha's on-device model:
 request access, get a token, stream an answer. Two Kotlin files, no
 dependencies beyond `appcompat`, and no dependency on Medha's own code.
 
+## Building it — no desktop needed
+
+This is a **standalone Gradle project**, not a module of the Medha build.
+Keeping it separate means a mistake in a demo app can never stop Medha itself
+from building — which matters a lot when CI is the only build path you have.
+
+**From your phone, via GitHub Actions:**
+
+1. Push this repo. `.github/workflows/build-sample.yml` triggers on any change
+   under `samples/hello-medha/`, or run it manually from the Actions tab
+   (**Build sample APK** → *Run workflow*).
+2. Download the **`hello-medha-apk`** artifact from the finished run.
+3. Unzip it on the phone and tap `hello-medha-debug.apk` to install. You may
+   need to allow installs from your browser or file manager the first time.
+
+It uses the same Gradle wrapper, AGP and Kotlin versions as Medha itself, so
+if Medha builds, the toolchain is already known to work here.
+
+**On a desktop, if you have one:** open `samples/hello-medha/` directly (not
+the repo root) in Android Studio, or run `./gradlew assembleDebug` in that
+folder.
+
 ## Running it
 
-This is a **standalone Gradle project**, not a module of the Medha build —
-open `samples/hello-medha/` directly in Android Studio rather than the repo
-root. (Keeping it separate means a broken sample can never fail Medha's own
-build, and CI never compiles a demo on every push.)
-
-1. Build and install Medha, start the service, load a model.
-2. Open this folder in Android Studio and run it on the same device.
+1. Install and start Medha, and load a model.
+2. Install this sample on the same device.
 3. Tap **Connect to Medha** → the consent dialog appears → Allow.
 4. Type a question and tap **Ask**.
+
+Both apps must be on the same device — Medha binds to `127.0.0.1`, so nothing
+off-device can reach it.
 
 ## What each part demonstrates
 
@@ -63,8 +83,12 @@ never work again.
 
 ## Not verified on a device
 
-Written and reviewed, never run. If something doesn't work, the most likely
-culprits in order: the Gradle plugin versions above not matching your
-installed Android Studio, `<queries>` visibility, and the consent activity's
-`launchMode` (it must stay `standard` — `singleTask` makes
-`startActivityForResult` return `RESULT_CANCELED` instantly).
+Written and reviewed, never built or run anywhere. The first CI run is the
+real test. If it fails, likely culprits in order:
+
+| Symptom | Probable cause |
+|---|---|
+| Build fails at configuration | AGP/Kotlin/Gradle mismatch — these are pinned to the same versions Medha uses, so compare against the root `build.gradle.kts` if they've since diverged |
+| "Medha is not installed" on device | `<queries>` package visibility, or Medha genuinely isn't installed |
+| Consent dialog never appears, instant cancel | The consent activity's `launchMode` must stay `standard`; `singleTask` makes `startActivityForResult` return `RESULT_CANCELED` immediately |
+| 403 after allowing | A capability was filtered out — check what `GRANTED_CAPABILITIES` actually came back with |

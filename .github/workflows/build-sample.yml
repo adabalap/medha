@@ -1,0 +1,50 @@
+name: Build sample APK
+
+# Deliberately a separate workflow from build-apk.yml, not another job in it.
+#
+# The sample is a standalone Gradle project (see samples/hello-medha/
+# settings.gradle.kts) precisely so a mistake in a demo app can never stop
+# Medha itself from building. Folding it into the main workflow would give
+# back exactly the coupling that separation exists to avoid -- and since CI is
+# the only way this project gets built, a configuration error in the sample
+# would mean no Medha APK at all, which is a far worse failure than no sample.
+on:
+  push:
+    paths:
+      - 'samples/hello-medha/**'
+      - '.github/workflows/build-sample.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: samples/hello-medha
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Stage APK
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk dist/hello-medha-debug.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: hello-medha-apk
+          path: samples/hello-medha/dist/*.apk
+          if-no-files-found: error

@@ -18,3 +18,10 @@
 # build; installed on demand via `npm install` in tools/tests/.
 tools/tests/node_modules/
 tools/tests/package-lock.json
+
+# The sample is a separate Gradle project, so the root-anchored /build/ and
+# /app/build/ rules above do not reach its output. Without these, a local
+# build of the sample would offer its entire intermediates tree for commit.
+samples/*/build/
+samples/*/app/build/
+samples/*/dist/
