@@ -101,22 +101,32 @@ object MedhaAccessContract {
     const val ERROR_INVALID_REQUEST = "invalid_request"
 
     /**
+     * Capability wire values.
+     *
+     * Declared here as plain string literals rather than referencing
+     * [ClientRegistry.Cap], because this file is meant to be copied verbatim
+     * into a third-party project and must therefore compile with nothing but
+     * the JDK. These are the same strings the server matches on; a test
+     * (`tools/tests/AccessContractTest.kt`) asserts the two declarations
+     * cannot drift apart.
+     */
+    const val CAP_GENERATE = "generate"
+    const val CAP_MEMORY = "memory"
+    const val CAP_RAG = "rag"
+    const val CAP_STORE = "store"
+
+    /**
      * Capabilities obtainable through this flow.
      *
-     * [ClientRegistry.Cap.ADMIN] is deliberately absent and is filtered out
-     * even if requested: admin bypasses every namespace check in the server,
-     * so a third-party app must never be able to obtain it by asking, no
-     * matter how the consent screen is worded. SMS and notification access are
-     * likewise excluded — those are the user's messages and their notification
-     * shade, and granting them deserves a deliberate trip through Medha's own
-     * UI rather than a generic consent dialog another app triggered.
+     * `admin` is deliberately absent and is filtered out even if requested:
+     * admin bypasses every namespace check in the server, so a third-party
+     * app must never be able to obtain it by asking, no matter how the
+     * consent screen is worded. SMS and notification access are likewise
+     * excluded — those are the user's messages and their notification shade,
+     * and granting them deserves a deliberate trip through Medha's own UI
+     * rather than a generic consent dialog another app triggered.
      */
-    val GRANTABLE: Set<String> = setOf(
-        ClientRegistry.Cap.GENERATE,
-        ClientRegistry.Cap.MEMORY,
-        ClientRegistry.Cap.RAG,
-        ClientRegistry.Cap.STORE
-    )
+    val GRANTABLE: Set<String> = setOf(CAP_GENERATE, CAP_MEMORY, CAP_RAG, CAP_STORE)
 
     /**
      * Derives a stable, collision-resistant client id / namespace from a

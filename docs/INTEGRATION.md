@@ -1,5 +1,10 @@
 # Integrating with Medha
 
+> **Working example:** `samples/hello-medha/` is a complete, runnable app that
+> does everything described here — handshake, token persistence, streaming,
+> and every error path. Open that folder directly in Android Studio (it is a
+> standalone Gradle project, not a module of this build).
+
 Medha runs a local, OpenAI-compatible inference server on the device. Another
 app on the same device can request scoped access to it at runtime, get a bearer
 token, and then talk to it over plain HTTP.

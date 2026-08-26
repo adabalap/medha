@@ -36,6 +36,14 @@ need "tools/tests/package.json"
 echo; echo "Bundled demo webapp"
 need "app/src/main/assets/webapp/index.html"
 
+# Standalone Gradle project, deliberately not part of this build (see its
+# settings.gradle.kts). Checked for presence only -- building it is a separate
+# "open samples/hello-medha in Android Studio" step.
+echo; echo "Integration sample"
+need "samples/hello-medha/README.md"
+need "samples/hello-medha/app/src/main/java/com/example/hellomedha/MainActivity.kt"
+need "samples/hello-medha/app/src/main/java/com/example/hellomedha/MedhaClient.kt"
+
 echo; echo "Hygiene"
 [ -x gradlew ] && say OK "gradlew is executable" || { say FIX "chmod +x gradlew"; }
 if find . -name "*[{}]*" -not -path "./.git/*" | grep -q .; then

@@ -77,8 +77,57 @@ private fun assertMirrorsSource() {
     }
 }
 
+/**
+ * Asserts the capability strings duplicated in MedhaAccessContract match the
+ * authoritative ones in ClientRegistry.Cap.
+ *
+ * The duplication is deliberate — MedhaAccessContract must compile with only
+ * the JDK so a third-party developer can copy the single file — but a
+ * duplicated wire value that drifts is worse than no duplication at all: the
+ * consumer would request "generate" while the server matched on something
+ * else, and every grant would silently come back with fewer capabilities than
+ * asked for.
+ */
+private fun assertCapabilitiesAgree() {
+    val contract = File("../../app/src/main/java/com/adabala/medha/auth/MedhaAccessContract.kt")
+    val registry = File("../../app/src/main/java/com/adabala/medha/auth/ClientRegistry.kt")
+    if (!contract.exists() || !registry.exists()) {
+        println("WARN: could not locate both sources to compare capability strings")
+        return
+    }
+    val contractText = contract.readText()
+    val registryText = registry.readText()
+
+    // Every CAP_* literal the contract publishes must appear as the value of
+    // the matching Cap constant in ClientRegistry.
+    val pairs = listOf(
+        "CAP_GENERATE" to "GENERATE",
+        "CAP_MEMORY" to "MEMORY",
+        "CAP_RAG" to "RAG",
+        "CAP_STORE" to "STORE"
+    )
+    pairs.forEach { (contractName, registryName) ->
+        val contractValue = Regex("""const val $contractName = "([^"]+)"""")
+            .find(contractText)?.groupValues?.get(1)
+        val registryValue = Regex("""const val $registryName = "([^"]+)"""")
+            .find(registryText)?.groupValues?.get(1)
+        check(
+            "$contractName ('$contractValue') matches Cap.$registryName ('$registryValue')",
+            contractValue != null && contractValue == registryValue
+        )
+    }
+
+    // admin must never become grantable by being added to the contract's set.
+    val grantable = Regex("""val GRANTABLE: Set<String> = setOf\(([^)]*)\)""")
+        .find(contractText)?.groupValues?.get(1).orEmpty()
+    check("GRANTABLE does not include admin", !grantable.contains("ADMIN", ignoreCase = true))
+    check("GRANTABLE does not include SMS", !grantable.contains("SMS", ignoreCase = true))
+    check("GRANTABLE does not include notify", !grantable.contains("NOTIFY", ignoreCase = true))
+}
+
 fun main() {
     assertMirrorsSource()
+    assertCapabilitiesAgree()
 
     val samples = listOf(
         "com.example.app",
