@@ -39,7 +39,14 @@ class ClientRegistry private constructor(private val prefs: SharedPreferences) {
         val namespace: String,
         val capabilities: Set<String>,
         val token: String,
-        val createdAt: Long
+        val createdAt: Long,
+        /** How this grant came to exist. One of the [Origin] constants. */
+        val origin: String = Origin.MANUAL,
+        /**
+         * Epoch millis of the last request that authenticated with this token,
+         * or 0 if never used. Deliberately coarse — see [touch].
+         */
+        val lastUsedAt: Long = 0L
     ) {
         val isAdmin: Boolean get() = capabilities.contains(Cap.ADMIN)
 
@@ -56,6 +63,22 @@ class ClientRegistry private constructor(private val prefs: SharedPreferences) {
         /** Strips the namespace so clients see the keys they actually sent. */
         fun unscope(key: String): String =
             if (!isAdmin && key.startsWith("$namespace:")) key.removePrefix("$namespace:") else key
+    }
+
+    /**
+     * Where a grant came from. Surfaced in the client list because "an app
+     * asked me for this" and "I made this for my own script" warrant different
+     * scrutiny when the user is scanning the list deciding what to cut off.
+     */
+    object Origin {
+        /** Created by the user in Medha's own UI. */
+        const val MANUAL = "manual"
+
+        /** Granted to another app through the consent flow. */
+        const val APP = "app"
+
+        /** The built-in admin client created on first run. */
+        const val BOOTSTRAP = "bootstrap"
     }
 
     /** Capability strings. Coarse on purpose — fine-grained scopes nobody sets correctly are theatre. */
@@ -75,12 +98,55 @@ class ClientRegistry private constructor(private val prefs: SharedPreferences) {
 
     @Volatile private var cache: Map<String, Client> = emptyMap()
 
+    /**
+     * Serialises every read-modify-write on [cache].
+     *
+     * This guards a pre-existing race that was previously hard to hit: each
+     * mutator reads `cache.values`, derives a new list, and calls
+     * [persistLocked], which overwrites the whole set. Two concurrent mutators
+     * could therefore drop each other's change. Until now every mutator was
+     * UI-driven — a person tapping a button, essentially never concurrent —
+     * so it never surfaced. [touch] runs on the request path, which makes
+     * "a background request writes a timestamp while the user taps Revoke"
+     * an ordinary Tuesday rather than a thought experiment, and losing the
+     * revoke in that race would be a security bug.
+     */
+    private val writeLock = Any()
+
     init {
         reload()
         if (cache.isEmpty()) bootstrapAdmin()
     }
 
     fun resolve(token: String): Client? = cache[token]
+
+    /**
+     * Records that [token] was just used, at most once per
+     * [TOUCH_THROTTLE_MS] per client.
+     *
+     * The throttle is the whole design. This is called from the auth
+     * interceptor, so it runs on *every* authenticated request — and
+     * [persist] serialises the entire client list to SharedPreferences. An
+     * unthrottled version would add a full JSON encode plus a disk write to
+     * the hot path of an inference server, to maintain a timestamp whose only
+     * consumer is a human reading "last used 3 days ago". An hour of
+     * granularity is far more precision than that decision needs.
+     *
+     * Returns immediately without locking in the common case, so a request
+     * that isn't due for a write pays only a map lookup and a subtraction.
+     */
+    fun touch(token: String) {
+        val now = System.currentTimeMillis()
+        val current = cache[token] ?: return
+        if (now - current.lastUsedAt < TOUCH_THROTTLE_MS) return
+        synchronized(writeLock) {
+            // Re-read inside the lock: another request may have won the race
+            // and already written, in which case there is nothing to do.
+            val fresh = cache[token] ?: return
+            if (now - fresh.lastUsedAt < TOUCH_THROTTLE_MS) return
+            persistLocked(cache.values.filter { it.token != token } + fresh.copy(lastUsedAt = now))
+        }
+    }
 
     fun all(): List<Client> = cache.values.sortedBy { it.createdAt }
 
@@ -90,8 +156,9 @@ class ClientRegistry private constructor(private val prefs: SharedPreferences) {
         id: String,
         name: String,
         namespace: String,
-        capabilities: Set<String>
-    ): Client {
+        capabilities: Set<String>,
+        origin: String = Origin.MANUAL
+    ): Client = synchronized(writeLock) {
         require(id.isNotBlank() && ID_RE.matches(id)) {
             "client id must match ${ID_RE.pattern}"
         }
@@ -106,18 +173,19 @@ class ClientRegistry private constructor(private val prefs: SharedPreferences) {
             namespace = namespace,
             capabilities = capabilities.filter { it in Cap.ALL }.toSet(),
             token = newToken(),
-            createdAt = System.currentTimeMillis()
+            createdAt = System.currentTimeMillis(),
+            origin = origin
         )
-        persist(cache.values + c)
+        persistLocked(cache.values + c)
         return c
     }
 
-    fun revoke(id: String): Boolean {
+    fun revoke(id: String): Boolean = synchronized(writeLock) {
         val target = cache.values.firstOrNull { it.id == id } ?: return false
         // Refuse to remove the last admin: doing so locks the owner out of
         // their own service with no recovery short of clearing app data.
         if (target.isAdmin && cache.values.count { it.isAdmin } <= 1) return false
-        persist(cache.values.filter { it.id != id })
+        persistLocked(cache.values.filter { it.id != id })
         return true
     }
 
@@ -130,22 +198,22 @@ class ClientRegistry private constructor(private val prefs: SharedPreferences) {
      * never reach /connectors/sms/∗ and every call returned 403 with no
      * remedy anywhere in the app.
      */
-    fun setCapabilities(id: String, capabilities: Set<String>): Client? {
+    fun setCapabilities(id: String, capabilities: Set<String>): Client? = synchronized(writeLock) {
         val target = cache.values.firstOrNull { it.id == id } ?: return null
         // The last admin keeps admin: dropping it locks the owner out of their
         // own service with no recovery short of clearing app data.
         val caps = capabilities.filter { it in Cap.ALL }.toMutableSet()
         if (target.isAdmin && cache.values.count { it.isAdmin } <= 1) caps.add(Cap.ADMIN)
         val updated = target.copy(capabilities = caps)
-        persist(cache.values.filter { it.id != id } + updated)
+        persistLocked(cache.values.filter { it.id != id } + updated)
         return updated
     }
 
     /** Rotates one client's token, leaving every other client working. */
-    fun rotate(id: String): Client? {
+    fun rotate(id: String): Client? = synchronized(writeLock) {
         val target = cache.values.firstOrNull { it.id == id } ?: return null
         val fresh = target.copy(token = newToken())
-        persist(cache.values.filter { it.id != id } + fresh)
+        persistLocked(cache.values.filter { it.id != id } + fresh)
         return fresh
     }
 
@@ -161,12 +229,13 @@ class ClientRegistry private constructor(private val prefs: SharedPreferences) {
             namespace = "admin",
             capabilities = Cap.ALL,
             token = legacy ?: newToken(),
-            createdAt = System.currentTimeMillis()
+            createdAt = System.currentTimeMillis(),
+            origin = Origin.BOOTSTRAP
         )
-        persist(listOf(c))
+        persistLocked(listOf(c))
     }
 
-    private fun persist(clients: Collection<Client>) {
+    private fun persistLocked(clients: Collection<Client>) {
         val arr = JSONArray()
         clients.forEach { c ->
             arr.put(JSONObject().apply {
@@ -176,6 +245,8 @@ class ClientRegistry private constructor(private val prefs: SharedPreferences) {
                 put("capabilities", JSONArray(c.capabilities.toList()))
                 put("token", c.token)
                 put("createdAt", c.createdAt)
+                put("origin", c.origin)
+                put("lastUsedAt", c.lastUsedAt)
             })
         }
         prefs.edit().putString(CLIENTS_KEY, arr.toString()).apply()
@@ -199,7 +270,12 @@ class ClientRegistry private constructor(private val prefs: SharedPreferences) {
                         namespace = o.optString("namespace", o.getString("id")),
                         capabilities = caps,
                         token = o.getString("token"),
-                        createdAt = o.optLong("createdAt", 0)
+                        createdAt = o.optLong("createdAt", 0),
+                        // Grants written before origin existed are, by
+                        // definition, ones the user made in the UI: the
+                        // consent flow did not exist yet.
+                        origin = o.optString("origin", Origin.MANUAL),
+                        lastUsedAt = o.optLong("lastUsedAt", 0)
                     )
                 )
             }
@@ -208,6 +284,9 @@ class ClientRegistry private constructor(private val prefs: SharedPreferences) {
     }
 
     companion object {
+        /** See [touch]. One hour is far finer than "last used" needs to be. */
+        private const val TOUCH_THROTTLE_MS = 60 * 60 * 1000L
+
         private const val CLIENTS_KEY = "clients_v1"
         private const val LEGACY_TOKEN_KEY = "api_token"
         private val ID_RE = Regex("[a-z0-9][a-z0-9_-]{1,31}")

@@ -9,4 +9,18 @@
         <item name="colorOnSecondary">@color/on_saffron</item>
         <item name="android:statusBarColor">@color/indigo_dark</item>
     </style>
+    <!--
+      For AccessRequestActivity, which shows only a consent dialog. Without a
+      transparent, no-title theme the dialog floats over a full-screen opaque
+      Medha background, which reads as "Medha launched itself" rather than as
+      a permission prompt belonging to the app the user was actually using.
+      windowIsFloating keeps normal dialog sizing/insets behaviour.
+    -->
+    <style name="Theme.Medha.Transparent" parent="Theme.Medha">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+    </style>
 </resources>

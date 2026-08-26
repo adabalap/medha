@@ -40,6 +40,11 @@ kotlinc "$SRC/rag/Embedder.kt" EmbedderTest.kt \
   -include-runtime -d "$WORK/embed.jar"
 java -jar "$WORK/embed.jar"
 
+echo
+echo "== AccessContractTest =="
+kotlinc AccessContractTest.kt -include-runtime -d "$WORK/access.jar"
+java -jar "$WORK/access.jar"
+
 if command -v node >/dev/null 2>&1; then
   echo
   echo "== webapp_markdown_test (Node) =="

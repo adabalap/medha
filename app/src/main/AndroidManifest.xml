@@ -55,6 +55,35 @@
             </intent-filter>
         </activity>
 
+        <!--
+          Third-party integration entry point. See MedhaAccessContract and
+          docs/INTEGRATION.md.
+
+          exported=true is required for other apps to reach it at all; the
+          activity itself refuses any caller it cannot identify via
+          getCallingPackage(), which is the actual security control here
+          rather than the manifest.
+
+          launchMode is deliberately left at the default "standard":
+          singleTask/singleInstance make startActivityForResult return
+          RESULT_CANCELED immediately, which would break every integration in
+          a way that looks to the calling app like an instant user decline.
+
+          excludeFromRecents keeps a bare consent dialog out of the recents
+          list, where it would otherwise linger as a confusing Medha entry
+          with no content behind it.
+        -->
+        <activity
+            android:name=".auth.AccessRequestActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.Medha.Transparent">
+            <intent-filter>
+                <action android:name="com.adabala.medha.action.REQUEST_ACCESS" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
         <receiver
             android:name=".notify.MedhaWidgetProvider"
             android:exported="false">

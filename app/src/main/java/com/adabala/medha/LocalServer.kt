@@ -232,7 +232,13 @@ class LocalServer(
                 }
 
                 val client = resolveClient(call)
-                if (client != null) call.attributes.put(CLIENT_KEY, client)
+                if (client != null) {
+                    call.attributes.put(CLIENT_KEY, client)
+                    // Throttled internally to at most one write per hour per
+                    // client, so this costs a map lookup on the vast majority
+                    // of requests. See ClientRegistry.touch.
+                    registry.touch(client.token)
+                }
 
                 if (requireAuth && !isPublic(path) && client == null) {
                     call.response.header(HttpHeaders.WWWAuthenticate, "Bearer realm=\"medha\"")

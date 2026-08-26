@@ -119,6 +119,14 @@ Licensed under the terms in the project repository.</string>
     <string name="client_actions">More actions</string>
     <string name="client_full_access">full access</string>
     <string name="client_row_subtitle">%1$s:*  •  %2$s</string>
+    <string name="client_row_meta">%1$s · %2$s</string>
+    <string name="client_origin_app">Granted to an app</string>
+    <string name="client_origin_manual">Created by you</string>
+    <string name="client_origin_bootstrap">Built in</string>
+    <string name="client_never_used">never used</string>
+    <string name="client_used_today">used today</string>
+    <string name="client_used_yesterday">used yesterday</string>
+    <string name="client_used_days_ago">used %1$d days ago</string>
     <string name="clients_empty">No clients yet. Tap Add client to create one.</string>
     <string name="client_new_title">New API client</string>
     <string name="client_id_hint">id (e.g. sms-organizer)</string>
@@ -159,6 +167,15 @@ Licensed under the terms in the project repository.</string>
     <string name="status_not_running">● Not running</string>
     <string name="status_waiting_for_service">Waiting for the service</string>
     <string name="status_tap_start">Tap Start to load the model</string>
+
+    <!-- third-party access consent -->
+    <string name="consent_title">%1$s wants to use Medha</string>
+    <string name="consent_body">%1$s is asking for:</string>
+    <string name="consent_reason">%1$s says: “%2$s”</string>
+    <string name="consent_scope">Its data stays in its own space (%1$s). It cannot read other apps\' chats or knowledge collections, and it cannot manage Medha itself.</string>
+    <string name="consent_expanding">This app already has access. Approving adds the permissions above to what it already had.</string>
+    <string name="consent_allow">Allow</string>
+    <string name="consent_deny">Deny</string>
 
     <!-- diagnostics -->
     <string name="diagnostics_title">Diagnostics</string>

@@ -73,6 +73,8 @@ startForeground stopSelf stopForeground or and xor shl shr inv emit collect
 get set invoke plus minus times div rem compareTo equals hashCode toString
 getItem submitList notifyDataSetChanged notifyItemChanged notifyItemInserted
 notifyItemRemoved notifyItemRangeChanged
+setResult setPackage getCallingPackage getApplicationLabel getApplicationInfo
+resolveActivity finishActivity
 embeddedServer constructor copy suspend val var isNull getLong getInt getString
 getBlob getFloat getDouble getColumnIndex moveToFirst moveToNext close
 getStringOrNull toChunk toMessage toConversation queryChunks simpleCount

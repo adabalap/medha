@@ -64,6 +64,17 @@
             android:maxLines="2"
             android:ellipsize="end"
             tools:text="generate, memory, rag" />
+
+        <TextView
+            android:id="@+id/clientMeta"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textColor="@color/neutral_grey"
+            android:textSize="11sp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            tools:text="Granted to an app · used today" />
     </LinearLayout>
 
     <com.google.android.material.button.MaterialButton

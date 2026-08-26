@@ -21,7 +21,7 @@ for f in auth/ClientRegistry sched/InferenceScheduler sched/SchedulerConfig \
          connectors/SmsConnector \
          notify/NotificationHub notify/MedhaWidgetProvider data/MedhaDatabase \
          data/Entities rag/Retriever rag/Embedder rag/AiEdgeEmbedder diag/Diagnostics \
-         ui/ClientListAdapter; do
+         ui/ClientListAdapter auth/MedhaAccessContract auth/AccessRequestActivity; do
   need "app/src/main/java/com/adabala/medha/$f.kt"; done
 
 echo; echo "Tests"
@@ -30,6 +30,7 @@ need "app/src/androidTest/java/com/adabala/medha/data/MedhaDatabaseMigrationTest
 need "tools/tests/webapp_markdown_test.js"
 need "tools/tests/webapp_sse_test.js"
 need "tools/tests/webapp_smoke_test.js"
+need "tools/tests/AccessContractTest.kt"
 need "tools/tests/package.json"
 
 echo; echo "Bundled demo webapp"

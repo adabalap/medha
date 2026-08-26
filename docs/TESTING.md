@@ -285,6 +285,26 @@ Create a client with an empty capability set (or just `MEMORY`, no
 both now return `403` for that token — before this session's fix, both
 endpoints would happily generate text for a client with zero capabilities.
 
+### 3k. Consent loop — grants are auditable and revocable
+
+The point of the handshake is that a grant can be reviewed and cut off later,
+which only works if the user can recognise what they approved. Drawer → API
+clients, after a third-party app has been granted access. Confirm each row
+shows the app's **real name** ("Notes App"), not its derived slug
+(`com-notes-app-8a464e05`), and a meta line reading e.g. "Granted to an app ·
+used today". The built-in admin client should read "Built in"; anything you
+created yourself, "Created by you".
+
+Then check last-use actually updates: note the meta line, make an API call
+with that client's token, reopen the list. It should read "used today". Note
+that `ClientRegistry.touch` throttles writes to once per hour per client, so
+a second call minutes later deliberately will *not* move the timestamp — that
+is correct behaviour, not a bug.
+
+Finally, revoke a granted app and confirm its token now returns `401`, and
+that the app can recover by re-running the handshake (which should re-prompt,
+since the grant is gone).
+
 ---
 
 ## Summary table
