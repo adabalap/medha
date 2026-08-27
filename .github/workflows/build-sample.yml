@@ -31,6 +31,17 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # Mirrors the main workflow. The runner's preinstalled SDK is not
+      # guaranteed to have the licences accepted or the right platform, so
+      # this is set up explicitly rather than assumed — the main build does
+      # the same, and diverging here means the sample can break for reasons
+      # that have nothing to do with the sample.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
       - name: Make gradlew executable
         run: chmod +x gradlew
 

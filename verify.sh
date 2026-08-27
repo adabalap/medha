@@ -43,6 +43,22 @@ echo; echo "Integration sample"
 need "samples/hello-medha/README.md"
 need "samples/hello-medha/app/src/main/java/com/example/hellomedha/MainActivity.kt"
 need "samples/hello-medha/app/src/main/java/com/example/hellomedha/MedhaClient.kt"
+# Build scaffolding. Checked explicitly because a missing gradle.properties
+# (no android.useAndroidX) already cost one CI round-trip, and every one of
+# these fails only after a push, a queue wait and a Gradle download.
+need "samples/hello-medha/settings.gradle.kts"
+need "samples/hello-medha/build.gradle.kts"
+need "samples/hello-medha/gradle.properties"
+need "samples/hello-medha/app/build.gradle.kts"
+need "samples/hello-medha/app/src/main/AndroidManifest.xml"
+need "samples/hello-medha/gradlew"
+need "samples/hello-medha/gradle/wrapper/gradle-wrapper.jar"
+need "samples/hello-medha/gradle/wrapper/gradle-wrapper.properties"
+if grep -q "^android.useAndroidX=true" samples/hello-medha/gradle.properties 2>/dev/null; then
+  say OK "sample sets android.useAndroidX"
+else
+  say BAD "samples/hello-medha/gradle.properties must set android.useAndroidX=true"; fail=1
+fi
 
 echo; echo "Hygiene"
 [ -x gradlew ] && say OK "gradlew is executable" || { say FIX "chmod +x gradlew"; }
