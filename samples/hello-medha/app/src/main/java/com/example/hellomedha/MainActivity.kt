@@ -199,9 +199,28 @@ class MainActivity : AppCompatActivity() {
         thread {
             val sb = StringBuilder()
             try {
-                if (!c.isReady()) {
-                    runOnUiThread { pending.text = getString(R.string.error_no_model) }
-                    return@thread
+                // Check readiness first and report what is actually wrong.
+                // A generic "no model loaded" sends people to fix the wrong
+                // thing when the real cause is an unreachable server.
+                when (val r = c.readiness()) {
+                    is MedhaClient.Readiness.Ready -> Unit
+                    is MedhaClient.Readiness.NoModel -> {
+                        val msg = if (r.lastError != null) {
+                            getString(R.string.error_model_failed, r.lastError)
+                        } else {
+                            getString(R.string.error_no_model)
+                        }
+                        runOnUiThread { pending.text = msg }
+                        turns.removeAt(turns.lastIndex)
+                        return@thread
+                    }
+                    is MedhaClient.Readiness.Unreachable -> {
+                        runOnUiThread {
+                            pending.text = getString(R.string.error_unreachable, r.reason)
+                        }
+                        turns.removeAt(turns.lastIndex)
+                        return@thread
+                    }
                 }
                 c.chatStream(turns.toList(), collection) { delta ->
                     sb.append(delta)

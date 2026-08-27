@@ -36,11 +36,42 @@ class MedhaClient(private val baseUrl: String, private val token: String) {
         val isTransient: Boolean get() = status == 429 || status == 503 || status == 504
     }
 
-    /** True if a model is loaded and ready to answer. */
-    fun isReady(): Boolean = try {
-        JSONObject(get("/health")).optBoolean("modelLoaded", false)
+    /**
+     * What state the server is actually in.
+     *
+     * Three genuinely different situations that a boolean would flatten into
+     * one useless "false": the model is not loaded, the server cannot be
+     * reached at all, or the request was rejected. Telling a user "no model is
+     * loaded" when the real problem is a revoked token sends them to fix the
+     * wrong thing entirely.
+     */
+    sealed class Readiness {
+        /** A model is loaded and can answer. */
+        object Ready : Readiness()
+
+        /**
+         * Server is up, no model loaded. [lastError] carries the engine's own
+         * explanation when a load was attempted and failed — a missing file or
+         * an out-of-memory on a large model is far more actionable than a
+         * generic "not loaded".
+         */
+        data class NoModel(val lastError: String?) : Readiness()
+
+        /** Could not reach or authenticate against the server. */
+        data class Unreachable(val reason: String) : Readiness()
+    }
+
+    fun readiness(): Readiness = try {
+        val j = JSONObject(get("/health"))
+        if (j.optBoolean("modelLoaded", false)) {
+            Readiness.Ready
+        } else {
+            Readiness.NoModel(j.optString("error").takeIf { it.isNotBlank() })
+        }
+    } catch (e: ApiException) {
+        Readiness.Unreachable("HTTP ${e.status}: ${e.message}")
     } catch (e: Exception) {
-        false
+        Readiness.Unreachable(e.message ?: e.javaClass.simpleName)
     }
 
     /** One-shot completion. Returns the assistant's reply text. */

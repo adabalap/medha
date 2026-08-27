@@ -21,7 +21,8 @@
     <string name="status_bad_launch">Medha could not identify this app</string>
     <string name="status_bad_request">No grantable capability requested</string>
 
-    <string name="error_no_model">Medha is running but no model is loaded. Open Medha and load one.</string>
+    <string name="error_no_model">Medha is running, but no model is loaded. Open Medha and tap “Browse for .litertlm model”.</string>
+    <string name="error_model_failed">Medha could not load its model: %1$s</string>
     <string name="error_revoked">Access was revoked. Tap Connect to request it again.</string>
     <string name="error_forbidden">Missing a capability: %1$s</string>
     <string name="error_busy">Medha is busy — it asked us to retry in %1$d seconds.</string>
