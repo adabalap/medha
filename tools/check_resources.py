@@ -44,7 +44,15 @@ def check_xml_well_formed():
     build runs far enough to parse resources.
     """
     failed = []
-    files = sorted(glob.glob("app/src/**/*.xml", recursive=True))
+    # samples/ is included deliberately. It is a separate Gradle project that
+    # this build never compiles, so nothing else here would ever look at its
+    # XML -- and a malformed manifest there fails only after a push, a CI
+    # queue and a Gradle download. An illegal "--" inside a comment slipped
+    # through exactly that gap once.
+    files = sorted(
+        glob.glob("app/src/**/*.xml", recursive=True)
+        + glob.glob("samples/**/*.xml", recursive=True)
+    )
     for f in files:
         try:
             xml.dom.minidom.parse(f)

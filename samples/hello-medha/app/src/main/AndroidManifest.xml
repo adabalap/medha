@@ -18,10 +18,19 @@
     </queries>
 
     <!--
-      Medha binds to 127.0.0.1, so no INTERNET permission is needed for
-      loopback traffic on Android. usesCleartextTraffic is required because
-      the local server is plain HTTP.
+      INTERNET is required even though Medha is on 127.0.0.1.
+      Android gates socket() itself on this permission: the kernel denies
+      socket creation to any process outside the "inet" group, and loopback
+      is not exempt. Without it every request dies with
+      "socket failed: EPERM (Operation not permitted)" before a single byte
+      moves, which reads like a server problem and is not one.
+
+      usesCleartextTraffic is separately required because the local server is
+      plain HTTP; TLS to 127.0.0.1 would be ceremony without benefit, since
+      the traffic never leaves the device.
     -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"

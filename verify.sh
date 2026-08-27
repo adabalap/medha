@@ -59,6 +59,21 @@ if grep -q "^android.useAndroidX=true" samples/hello-medha/gradle.properties 2>/
 else
   say BAD "samples/hello-medha/gradle.properties must set android.useAndroidX=true"; fail=1
 fi
+# INTERNET is required even for 127.0.0.1: Android gates socket() on it and
+# loopback is not exempt. Its absence fails at runtime with an opaque
+# "socket failed: EPERM", not at build time -- so it has to be checked here.
+if grep -q "android.permission.INTERNET" samples/hello-medha/app/src/main/AndroidManifest.xml 2>/dev/null; then
+  say OK "sample declares INTERNET (needed even for loopback)"
+else
+  say BAD "sample manifest must declare android.permission.INTERNET"; fail=1
+fi
+# Visibility must be declared by intent action, not a fixed package: Medha's
+# applicationIdSuffix means the installed package varies by variant.
+if grep -q "com.adabala.medha.action.REQUEST_ACCESS" samples/hello-medha/app/src/main/AndroidManifest.xml 2>/dev/null; then
+  say OK "sample queries Medha by intent action, not fixed package"
+else
+  say BAD "sample manifest must declare <queries><intent> for REQUEST_ACCESS"; fail=1
+fi
 
 echo; echo "Hygiene"
 [ -x gradlew ] && say OK "gradlew is executable" || { say FIX "chmod +x gradlew"; }
