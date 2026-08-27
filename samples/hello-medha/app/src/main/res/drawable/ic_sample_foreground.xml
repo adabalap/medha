@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  A speech bubble with an atomic orbital inside it: "an app talking to the
+  on-device model". The orbital deliberately echoes Medha's own mark so the
+  relationship is legible, while the bubble and the teal palette keep the two
+  icons distinguishable at a glance in a launcher.
+
+  Content stays within x,y in [22,86] of the 108 viewport, inside the adaptive
+  icon keyline, so no launcher mask clips it.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+
+    <!-- speech bubble with a tail at the lower left -->
+    <path
+        android:pathData="M32,28 h44 a12,12 0 0 1 12,12 v28 a12,12 0 0 1 -12,12 h-26 l-14,12 v-12 h-4 a12,12 0 0 1 -12,-12 v-28 a12,12 0 0 1 12,-12 z"
+        android:fillColor="#FFFFFFFF" />
+
+    <!-- orbital, centred on the bubble body at (54,54) -->
+    <group android:pivotX="54" android:pivotY="54">
+        <path android:pathData="M40.5,54 a13.5,4.2 0 1,0 27,0 a13.5,4.2 0 1,0 -27,0"
+            android:strokeColor="#FF12797E" android:strokeWidth="2.8" android:fillColor="#00000000" />
+    </group>
+    <group android:pivotX="54" android:pivotY="54" android:rotation="60">
+        <path android:pathData="M40.5,54 a13.5,4.2 0 1,0 27,0 a13.5,4.2 0 1,0 -27,0"
+            android:strokeColor="#FF12797E" android:strokeWidth="2.8" android:fillColor="#00000000" />
+    </group>
+    <group android:pivotX="54" android:pivotY="54" android:rotation="120">
+        <path android:pathData="M40.5,54 a13.5,4.2 0 1,0 27,0 a13.5,4.2 0 1,0 -27,0"
+            android:strokeColor="#FF12797E" android:strokeWidth="2.8" android:fillColor="#00000000" />
+    </group>
+
+    <path android:pathData="M54,48.6 a5.4,5.4 0 1,0 0,10.8 a5.4,5.4 0 1,0 0,-10.8"
+        android:fillColor="#FFFFFFFF" />
+    <path android:pathData="M54,50.2 a3.8,3.8 0 1,0 0,7.6 a3.8,3.8 0 1,0 0,-7.6"
+        android:fillColor="#FFF4A32E" />
+</vector>

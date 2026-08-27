@@ -4,30 +4,30 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import android.widget.Button
-import android.widget.EditText
+import android.view.Gravity
+import android.view.View
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
+import com.example.hellomedha.databinding.ActivityMainBinding
 import kotlin.concurrent.thread
 
 /**
- * The whole integration, end to end, in one screen:
+ * The whole integration, end to end:
  *
- *   Connect  ->  consent dialog  ->  token  ->  streamed answer
+ *   Connect -> consent dialog -> scoped token -> streamed answer
  *
- * Nothing here depends on Medha's own code. It talks to a package name and an
- * HTTP endpoint, which is exactly the position a real third-party app is in.
+ * Nothing here depends on Medha's own code. It resolves an intent action and
+ * talks to an HTTP endpoint, which is exactly the position a real third-party
+ * app is in.
  */
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var status: TextView
-    private lateinit var output: TextView
-    private lateinit var prompt: EditText
-    private lateinit var connectBtn: Button
-    private lateinit var askBtn: Button
-
+    private lateinit var b: ActivityMainBinding
     private var client: MedhaClient? = null
+    private val turns = mutableListOf<Pair<String, String>>()
 
     private val handshake = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -39,124 +39,209 @@ class MainActivity : AppCompatActivity() {
             val granted = data.getStringArrayExtra(EXTRA_GRANTED).orEmpty()
             val namespace = data.getStringExtra(EXTRA_NAMESPACE).orEmpty()
 
-            // Persist so we never prompt again unnecessarily. Re-requesting
-            // the same capabilities is silent on Medha's side, but not asking
-            // at all is better still.
+            // Persist so we never prompt again unnecessarily. Note baseUrl
+            // carries whatever port Medha is actually configured for -- it is
+            // never assumed or hardcoded on this side.
             prefs().edit()
                 .putString(PREF_TOKEN, token)
                 .putString(PREF_BASE_URL, baseUrl)
+                .putString(PREF_GRANTED, granted.joinToString(","))
+                .putString(PREF_NS, namespace)
                 .apply()
-
-            client = MedhaClient(baseUrl, token)
-            status.text = getString(
-                R.string.status_connected, granted.joinToString(", "), namespace
-            )
-            askBtn.isEnabled = true
+            connect(baseUrl, token, granted.toList(), namespace)
         } else {
-            status.text = when (data?.getStringExtra(EXTRA_ERROR)) {
+            val why = when (data?.getStringExtra(EXTRA_ERROR)) {
                 "denied" -> getString(R.string.status_denied)
                 "unidentified_caller" -> getString(R.string.status_bad_launch)
                 "invalid_request" -> getString(R.string.status_bad_request)
                 else -> getString(R.string.status_cancelled)
             }
+            b.status.text = why
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-        status = findViewById(R.id.status)
-        output = findViewById(R.id.output)
-        prompt = findViewById(R.id.prompt)
-        connectBtn = findViewById(R.id.connect)
-        askBtn = findViewById(R.id.ask)
+        b = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(b.root)
 
+        b.connect.setOnClickListener { requestAccess() }
+        b.ask.setOnClickListener { ask() }
+        b.ragToggle.setOnCheckedChangeListener { _, on ->
+            b.collection.visibility = if (on) View.VISIBLE else View.GONE
+        }
         restoreExistingGrant()
-
-        connectBtn.setOnClickListener { requestAccess() }
-        askBtn.setOnClickListener { ask() }
     }
+
+    // ------------------------------ connection ------------------------------
 
     /** A stored token from a previous run means no prompt at all. */
     private fun restoreExistingGrant() {
         val token = prefs().getString(PREF_TOKEN, null)
         val baseUrl = prefs().getString(PREF_BASE_URL, null)
         if (token.isNullOrBlank() || baseUrl.isNullOrBlank()) {
-            status.text = getString(R.string.status_not_connected)
-            askBtn.isEnabled = false
+            setDisconnected(getString(R.string.status_not_connected))
             return
         }
+        connect(
+            baseUrl, token,
+            prefs().getString(PREF_GRANTED, "").orEmpty().split(",").filter { it.isNotBlank() },
+            prefs().getString(PREF_NS, "").orEmpty()
+        )
+    }
+
+    private fun connect(baseUrl: String, token: String, granted: List<String>, ns: String) {
         client = MedhaClient(baseUrl, token)
-        status.text = getString(R.string.status_restored, baseUrl)
-        askBtn.isEnabled = true
+        b.status.text = getString(R.string.status_connected, baseUrl)
+        b.grantDetail.text = getString(
+            R.string.grant_detail, granted.joinToString(", ").ifBlank { "—" }, ns
+        )
+        b.grantDetail.visibility = View.VISIBLE
+        b.connect.text = getString(R.string.reconnect)
+        b.ask.isEnabled = true
+        b.ragToggle.isEnabled = granted.contains("rag")
+    }
+
+    private fun setDisconnected(message: String) {
+        client = null
+        b.status.text = message
+        b.grantDetail.visibility = View.GONE
+        b.connect.text = getString(R.string.connect)
+        b.ask.isEnabled = false
+    }
+
+    /**
+     * Finds whichever Medha variant is actually installed.
+     *
+     * Medha ships under several package names depending on build variant
+     * (`com.adabala.medha` plus optional `.full` and `.debug` suffixes), so
+     * targeting one hardcoded name reports "not installed" against a working
+     * debug build -- which is exactly what happened the first time this
+     * sample ran. Resolving the action finds whatever is really there; the
+     * prefix check then makes the intent explicit again so an unrelated app
+     * declaring the same filter cannot intercept the request.
+     *
+     * For production, compare the resolved package's signing certificate
+     * against Medha's. A prefix is a sanity check, not authentication.
+     */
+    private fun resolveMedhaPackage(): String? {
+        val matches = packageManager
+            .queryIntentActivities(Intent(ACTION_REQUEST_ACCESS), 0)
+            .map { it.activityInfo.packageName }
+            .filter { it == MEDHA_PACKAGE || it.startsWith("$MEDHA_PACKAGE.") }
+            .distinct()
+        return matches.firstOrNull { it == MEDHA_PACKAGE } ?: matches.firstOrNull()
     }
 
     private fun requestAccess() {
-        val intent = Intent(ACTION_REQUEST_ACCESS).apply {
-            // Explicit package: without this, an implicit action could in
-            // principle be answered by some other app that declared the same
-            // filter, and we would hand our trust to it.
-            setPackage(MEDHA_PACKAGE)
-            putExtra(EXTRA_CAPABILITIES, arrayOf("generate", "rag"))
-            putExtra(EXTRA_REASON, getString(R.string.access_reason))
-        }
-        if (intent.resolveActivity(packageManager) == null) {
-            status.text = getString(R.string.status_not_installed)
+        val target = resolveMedhaPackage() ?: run {
+            setDisconnected(getString(R.string.status_not_installed))
             return
         }
-        // Must be a for-result launch: Medha identifies us by the calling
-        // package, which the platform only populates for this launch type.
-        handshake.launch(intent)
+        handshake.launch(
+            Intent(ACTION_REQUEST_ACCESS).apply {
+                setPackage(target)
+                putExtra(EXTRA_CAPABILITIES, arrayOf("generate", "rag"))
+                putExtra(EXTRA_REASON, getString(R.string.access_reason))
+            }
+        )
+    }
+
+    // -------------------------------- chat ---------------------------------
+
+    private fun bubble(text: String, mine: Boolean, error: Boolean = false): TextView {
+        val tv = TextView(this).apply {
+            setText(text)
+            setTextColor(
+                ContextCompat.getColor(
+                    context,
+                    if (mine) R.color.on_teal else R.color.text_primary
+                )
+            )
+            textSize = 14.5f
+            setPadding(dp(13), dp(9), dp(13), dp(9))
+            setBackgroundResource(if (mine) R.drawable.bg_bubble_user else R.drawable.bg_bubble_bot)
+            if (error) setBackgroundColor(0x33CC4433)
+        }
+        val lp = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            topMargin = dp(5)
+            bottomMargin = dp(5)
+            gravity = if (mine) Gravity.END else Gravity.START
+            marginStart = if (mine) dp(48) else 0
+            marginEnd = if (mine) 0 else dp(48)
+        }
+        tv.layoutParams = lp
+        b.thread.addView(tv)
+        b.empty.visibility = View.GONE
+        b.scroll.post { b.scroll.fullScroll(View.FOCUS_DOWN) }
+        return tv
     }
 
     private fun ask() {
         val c = client ?: return
-        val question = prompt.text.toString().trim()
+        val question = b.prompt.text.toString().trim()
         if (question.isEmpty()) return
+        b.prompt.setText("")
+        b.ask.isEnabled = false
 
-        askBtn.isEnabled = false
-        output.text = ""
-        val sb = StringBuilder()
+        bubble(question, mine = true)
+        turns.add("user" to question)
+        val pending = bubble("…", mine = false)
 
-        // A plain thread, not coroutines, to keep the dependency list at zero.
-        // Real apps should use whatever they already use.
+        val collection = if (b.ragToggle.isChecked) {
+            b.collection.text.toString().trim().ifBlank { "demo" }
+        } else {
+            null
+        }
+
         thread {
+            val sb = StringBuilder()
             try {
                 if (!c.isReady()) {
-                    runOnUiThread { output.text = getString(R.string.error_no_model) }
+                    runOnUiThread { pending.text = getString(R.string.error_no_model) }
                     return@thread
                 }
-                c.chatStream(listOf("user" to question)) { delta ->
+                c.chatStream(turns.toList(), collection) { delta ->
                     sb.append(delta)
-                    runOnUiThread { output.text = sb.toString() }
+                    runOnUiThread {
+                        pending.text = sb.toString()
+                        b.scroll.fullScroll(View.FOCUS_DOWN)
+                    }
                 }
+                val answer = sb.toString().ifBlank { getString(R.string.empty_reply) }
+                runOnUiThread { pending.text = answer }
+                turns.add("assistant" to answer)
             } catch (e: MedhaClient.ApiException) {
+                // Drop the failed turn so it does not poison the next request's
+                // context -- resending a question the model never answered
+                // makes the transcript progressively less coherent.
+                turns.removeAt(turns.lastIndex)
                 val msg = when {
                     e.isUnauthorized -> {
-                        // Revoked or rotated. Drop the dead token so the next
-                        // Connect actually re-prompts instead of silently
-                        // failing again with the same credential.
-                        prefs().edit().remove(PREF_TOKEN).remove(PREF_BASE_URL).apply()
-                        client = null
-                        runOnUiThread { askBtn.isEnabled = false }
+                        prefs().edit().clear().apply()
+                        runOnUiThread { setDisconnected(getString(R.string.status_revoked)) }
                         getString(R.string.error_revoked)
                     }
                     e.isForbidden -> getString(R.string.error_forbidden, e.message.orEmpty())
-                    e.retryAfterSeconds != null ->
-                        getString(R.string.error_busy, e.retryAfterSeconds)
+                    e.retryAfterSeconds != null -> getString(R.string.error_busy, e.retryAfterSeconds)
                     e.isTransient -> getString(R.string.error_transient, e.message.orEmpty())
                     else -> getString(R.string.error_generic, e.status, e.message.orEmpty())
                 }
-                runOnUiThread { output.text = msg }
+                runOnUiThread { pending.text = msg }
             } catch (e: Exception) {
+                turns.removeAt(turns.lastIndex)
                 runOnUiThread {
-                    output.text = getString(R.string.error_unreachable, e.message.orEmpty())
+                    pending.text = getString(R.string.error_unreachable, e.message.orEmpty())
                 }
             } finally {
-                runOnUiThread { if (client != null) askBtn.isEnabled = true }
+                runOnUiThread { b.ask.isEnabled = client != null }
             }
         }
     }
+
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
     private fun prefs() = getSharedPreferences("hello-medha", Context.MODE_PRIVATE)
 
@@ -173,5 +258,7 @@ class MainActivity : AppCompatActivity() {
 
         const val PREF_TOKEN = "medha_token"
         const val PREF_BASE_URL = "medha_base_url"
+        const val PREF_GRANTED = "medha_granted"
+        const val PREF_NS = "medha_namespace"
     }
 }

@@ -58,7 +58,39 @@ import java.security.MessageDigest
  */
 object MedhaAccessContract {
 
+    /**
+     * Medha's *release* package name.
+     *
+     * Do not use this to target the app. Medha applies an
+     * `applicationIdSuffix` per build variant, so the installed package is
+     * any of `com.adabala.medha`, `com.adabala.medha.full`,
+     * `com.adabala.medha.debug` or `com.adabala.medha.full.debug` — a
+     * consumer has no way to know which one the user installed, and
+     * hardcoding this constant makes the integration silently report "Medha
+     * is not installed" against a perfectly working debug build.
+     *
+     * Resolve [ACTION_REQUEST_ACCESS] instead and read the package name off
+     * the result. See [PACKAGE_PREFIX] and the snippet in
+     * `docs/INTEGRATION.md`.
+     */
     const val MEDHA_PACKAGE = "com.adabala.medha"
+
+    /**
+     * Every Medha variant's package name starts with this.
+     *
+     * Used to sanity-check a resolved package before trusting it: the
+     * consent action is declared in an intent filter, and an implicit intent
+     * can in principle be answered by any app that declares the same filter.
+     * Checking the prefix means a resolver result from some unrelated app is
+     * ignored rather than handed the request.
+     *
+     * Honest limit: a prefix check is not authentication. An app could
+     * install itself as `com.adabala.medha.something` and match. The robust
+     * version compares the resolved package's signing certificate against
+     * Medha's known one — worth doing if you are shipping this to users
+     * rather than running it on your own device.
+     */
+    const val PACKAGE_PREFIX = "com.adabala.medha"
 
     const val ACTION_REQUEST_ACCESS = "com.adabala.medha.action.REQUEST_ACCESS"
 

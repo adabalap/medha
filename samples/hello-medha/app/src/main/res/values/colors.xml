@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="teal">#12797E</color>
+    <color name="teal_dark">#0E4F52</color>
+    <color name="teal_light">#1AA39A</color>
+    <color name="on_teal">#FFFFFF</color>
+    <color name="amber">#F4A32E</color>
+
+    <!-- Overridden in values-night. Everything below is theme-dependent;
+         the brand teals above intentionally are not. -->
+    <color name="surface">#F2F7F7</color>
+    <color name="card">#FFFFFF</color>
+    <color name="line">#D8E6E6</color>
+    <color name="text_primary">#10302F</color>
+    <color name="text_secondary">#4F6A69</color>
+    <color name="bubble_bot">#E8F2F2</color>
+</resources>

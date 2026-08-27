@@ -15,6 +15,10 @@ android {
         versionName = "1.0"
     }
 
+    buildFeatures {
+        viewBinding = true
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -36,4 +40,7 @@ dependencies {
     // HttpURLConnection and org.json are both in the platform.
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.activity:activity-ktx:1.9.2")
+    // Material 3 for the chat UI. Still no HTTP or JSON library -- the point
+    // that talking to Medha needs neither is unchanged.
+    implementation("com.google.android.material:material:1.12.0")
 }

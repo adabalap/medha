@@ -1,25 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Hello Medha</string>
-    <string name="tagline">A minimal example of using on-device AI from another app.</string>
-    <string name="connect">Connect to Medha</string>
-    <string name="ask">Ask</string>
+    <string name="connect">Connect</string>
+    <string name="reconnect">Reconnect</string>
+    <string name="ask">Send</string>
     <string name="prompt_hint">Ask something…</string>
+    <string name="use_kb">Knowledge base</string>
+    <string name="collection_hint">collection</string>
     <string name="access_reason">To answer your questions without sending them anywhere</string>
+    <string name="empty_hint">Connect, then ask anything. Answers are generated on this device — nothing leaves it.</string>
+    <string name="empty_reply">(empty response)</string>
 
-    <string name="status_not_connected">Not connected. Tap Connect to request access.</string>
-    <string name="status_connected">Connected. Granted: %1$s (namespace %2$s)</string>
-    <string name="status_restored">Using a saved grant for %1$s. No prompt needed.</string>
-    <string name="status_denied">Access denied. Tap Connect to ask again.</string>
-    <string name="status_cancelled">Request cancelled.</string>
-    <string name="status_not_installed">Medha is not installed on this device.</string>
-    <string name="status_bad_launch">Medha could not identify this app — launch must use startActivityForResult.</string>
-    <string name="status_bad_request">No grantable capability was requested.</string>
+    <string name="status_not_connected">Not connected</string>
+    <string name="status_connected">Connected · %1$s</string>
+    <string name="grant_detail">Granted: %1$s · namespace %2$s</string>
+    <string name="status_denied">Access denied — tap Connect to ask again</string>
+    <string name="status_cancelled">Request cancelled</string>
+    <string name="status_revoked">Access revoked — tap Connect to request again</string>
+    <string name="status_not_installed">Medha not found on this device</string>
+    <string name="status_bad_launch">Medha could not identify this app</string>
+    <string name="status_bad_request">No grantable capability requested</string>
 
     <string name="error_no_model">Medha is running but no model is loaded. Open Medha and load one.</string>
     <string name="error_revoked">Access was revoked. Tap Connect to request it again.</string>
     <string name="error_forbidden">Missing a capability: %1$s</string>
-    <string name="error_busy">Medha is busy. It asked us to retry in %1$d seconds.</string>
+    <string name="error_busy">Medha is busy — it asked us to retry in %1$d seconds.</string>
     <string name="error_transient">Temporarily unavailable: %1$s</string>
     <string name="error_generic">HTTP %1$d: %2$s</string>
     <string name="error_unreachable">Could not reach Medha: %1$s</string>

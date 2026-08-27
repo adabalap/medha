@@ -1,4 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.HelloMedha" parent="Theme.AppCompat.DayNight" />
+    <style name="Theme.HelloMedha" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/teal</item>
+        <item name="colorOnPrimary">@color/on_teal</item>
+        <item name="colorSecondary">@color/amber</item>
+        <item name="android:statusBarColor">@color/teal_dark</item>
+        <item name="android:windowBackground">@color/surface</item>
+    </style>
 </resources>

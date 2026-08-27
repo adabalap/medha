@@ -1,65 +1,122 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:padding="20dp">
+    android:orientation="vertical"
+    android:background="@color/surface">
 
+    <!-- header -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical">
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@color/teal_dark"
+        android:paddingStart="18dp" android:paddingEnd="18dp"
+        android:paddingTop="16dp" android:paddingBottom="16dp">
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/app_name"
-            android:textSize="22sp"
-            android:textStyle="bold" />
+        <ImageView
+            android:layout_width="30dp" android:layout_height="30dp"
+            android:layout_marginEnd="12dp"
+            android:src="@drawable/ic_sample_foreground"
+            android:contentDescription="@string/app_name" />
 
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="@string/tagline"
-            android:textSize="13sp" />
+        <LinearLayout
+            android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:orientation="vertical">
+            <TextView
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="@string/app_name"
+                android:textColor="@color/on_teal"
+                android:textSize="17sp" android:textStyle="bold" />
+            <TextView
+                android:id="@+id/status"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:textColor="#CCFFFFFF" android:textSize="11.5sp" />
+        </LinearLayout>
 
-        <TextView
-            android:id="@+id/status"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:textSize="13sp" />
-
-        <Button
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/connect"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:text="@string/connect" />
-
-        <EditText
-            android:id="@+id/prompt"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:hint="@string/prompt_hint"
-            android:importantForAutofill="no"
-            android:inputType="textMultiLine"
-            android:minLines="2" />
-
-        <Button
-            android:id="@+id/ask"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/ask" />
-
-        <TextView
-            android:id="@+id/output"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:textIsSelectable="true"
-            android:textSize="15sp" />
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:minWidth="0dp" android:paddingStart="14dp" android:paddingEnd="14dp"
+            android:text="@string/connect" android:textSize="12sp" />
     </LinearLayout>
-</ScrollView>
+
+    <!-- grant detail, only visible once connected -->
+    <TextView
+        android:id="@+id/grantDetail"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:background="@color/card"
+        android:paddingStart="18dp" android:paddingEnd="18dp"
+        android:paddingTop="8dp" android:paddingBottom="8dp"
+        android:textColor="@color/text_secondary" android:textSize="11.5sp"
+        android:visibility="gone" />
+
+    <!-- chat thread -->
+    <ScrollView
+        android:id="@+id/scroll"
+        android:layout_width="match_parent" android:layout_height="0dp"
+        android:layout_weight="1"
+        android:padding="14dp" android:clipToPadding="false">
+
+        <LinearLayout
+            android:id="@+id/thread"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" />
+    </ScrollView>
+
+    <TextView
+        android:id="@+id/empty"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:gravity="center" android:padding="24dp"
+        android:text="@string/empty_hint"
+        android:textColor="@color/text_secondary" android:textSize="13sp" />
+
+    <!-- composer -->
+    <LinearLayout
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@color/card"
+        android:paddingStart="12dp" android:paddingEnd="12dp"
+        android:paddingTop="8dp" android:paddingBottom="12dp">
+
+        <LinearLayout
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:gravity="center_vertical"
+            android:paddingBottom="6dp">
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/ragToggle"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="@string/use_kb" android:textSize="12.5sp"
+                android:textColor="@color/text_secondary" />
+            <EditText
+                android:id="@+id/collection"
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:layout_marginStart="10dp"
+                android:hint="@string/collection_hint"
+                android:importantForAutofill="no" android:inputType="text"
+                android:textSize="12.5sp" android:visibility="gone" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:gravity="bottom">
+            <EditText
+                android:id="@+id/prompt"
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:hint="@string/prompt_hint"
+                android:importantForAutofill="no"
+                android:inputType="textMultiLine|textCapSentences"
+                android:maxLines="4" android:textSize="15sp" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/ask"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:minWidth="0dp" android:paddingStart="20dp" android:paddingEnd="20dp"
+                android:text="@string/ask" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>
