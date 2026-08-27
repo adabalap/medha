@@ -305,6 +305,41 @@ Finally, revoke a granted app and confirm its token now returns `401`, and
 that the app can recover by re-running the handshake (which should re-prompt,
 since the grant is gone).
 
+### 3L. Minified release build — R8 keep rules
+
+**This is the one that cannot be verified by a debug build**, because
+minification does not run in debug. `isMinifyEnabled = true` is now on for
+release, backed by `app/proguard-rules.pro`.
+
+```
+./gradlew assembleCoreRelease
+```
+
+Install the resulting APK and check, in order:
+1. The app launches at all (a missing keep rule on an entry point shows up
+   here as an immediate ClassNotFoundException).
+2. `GET /health` responds — proves Ktor's reflective plugin resolution and
+   kotlinx.serialization survived.
+3. **Generate something and read the output carefully.** This is the real
+   test. If `extractText`'s reflective probe was stripped, responses come
+   back as a Kotlin object dump like `Message(role=ASSISTANT, ...)` rather
+   than prose — plausible-looking, non-crashing, completely wrong. Compare
+   against the same prompt on a debug build.
+4. If an embedding model is installed, check `/system` still reports
+   `vectorSearch: true`; a stripped `GeckoEmbeddingModel` makes RAG silently
+   fall back to lexical.
+
+### 3M. Document ingest in the sample
+
+Sample app → **Add document**. Try each of: a PDF, a .docx, a .xlsx, and a
+.csv. Expect a progress line counting chunks, then a confirmation, then the
+knowledge-base toggle flipping on automatically. Ask a question only that
+document can answer and confirm the answer reflects it.
+
+Legacy `.doc`/`.xls` should report "unsupported" clearly rather than ingesting
+garbage — that is deliberate, since a half-working binary-format parser
+poisons a RAG corpus with plausible nonsense.
+
 ---
 
 ## Summary table
@@ -327,3 +362,6 @@ since the grant is gone).
 | Dark theme colors | WCAG contrast computed on hex values, not seen rendered | Needs tier 3f |
 | Client list RecyclerView conversion | `check_symbols`/`check_overrides`/`check_resources` clean, logic unchanged from prior dialog flow | Needs tier 3g |
 | Client CRUD | Unchanged this session | Already working per prior sessions |
+| Integration handshake end-to-end | **Verified on a real device** | Done |
+| R8 keep rules | Written; R8 parses them at build time. Runtime behaviour of a minified build **not** verified | Run tier 3L before any release |
+| Document extraction (docx/xlsx/csv chunking) | Chunking executed in sandbox, 10 checks incl. content preservation. Extraction itself not run against real files | Run tier 3M |

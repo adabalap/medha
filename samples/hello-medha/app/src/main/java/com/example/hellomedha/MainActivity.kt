@@ -3,6 +3,7 @@ package com.example.hellomedha
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
@@ -60,6 +61,16 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * SAF picker. OpenDocument rather than GetContent: it returns a
+     * persistable, re-readable URI and shows the system file browser
+     * including Drive and other providers, which is what people expect when
+     * an app says "add a document".
+     */
+    private val picker = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> if (uri != null) ingest(uri) }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         b = ActivityMainBinding.inflate(layoutInflater)
@@ -67,6 +78,17 @@ class MainActivity : AppCompatActivity() {
 
         b.connect.setOnClickListener { requestAccess() }
         b.ask.setOnClickListener { ask() }
+        b.attach.setOnClickListener {
+            if (!b.ragToggle.isEnabled) {
+                bubble(getString(R.string.ingest_needs_rag), mine = false, error = true)
+            } else {
+                // Wildcard plus an explicit list: some providers refuse to
+                // surface a file whose MIME type they report oddly, and a
+                // bare list would hide it entirely. The extension check in
+                // DocumentExtractor is the real gate.
+                picker.launch(arrayOf("*/*"))
+            }
+        }
         b.ragToggle.setOnCheckedChangeListener { _, on ->
             b.collection.visibility = if (on) View.VISIBLE else View.GONE
         }
@@ -256,6 +278,61 @@ class MainActivity : AppCompatActivity() {
                 }
             } finally {
                 runOnUiThread { b.ask.isEnabled = client != null }
+            }
+        }
+    }
+
+    /**
+     * Reads a document, splits it, and pushes the chunks into a RAG
+     * collection one at a time.
+     *
+     * Chunk-at-a-time rather than one giant POST: a 40-page PDF is megabytes
+     * of text, and a single request that large is both a memory spike on a
+     * phone and an all-or-nothing failure. Per-chunk means partial progress
+     * survives, and the user sees a count moving instead of a frozen button.
+     */
+    private fun ingest(uri: Uri) {
+        val c = client ?: return
+        val collection = b.collection.text.toString().trim().ifBlank { "documents" }
+        b.attach.isEnabled = false
+        val status = bubble(getString(R.string.ingesting, "…"), mine = false)
+
+        thread {
+            try {
+                val doc = DocumentExtractor.extract(this, uri)
+                val chunks = DocumentExtractor.chunk(doc.text)
+                runOnUiThread {
+                    status.text = getString(R.string.ingest_progress, doc.displayName, 0, chunks.size)
+                }
+                chunks.forEachIndexed { i, piece ->
+                    c.ingest(collection, piece, doc.displayName)
+                    runOnUiThread {
+                        status.text = getString(
+                            R.string.ingest_progress, doc.displayName, i + 1, chunks.size
+                        )
+                    }
+                }
+                runOnUiThread {
+                    status.text = getString(
+                        R.string.ingest_done, doc.displayName, chunks.size, collection
+                    )
+                    // Switch the chat over to this collection automatically:
+                    // adding a document and then getting an answer that
+                    // ignores it is the most confusing possible outcome.
+                    b.ragToggle.isChecked = true
+                    b.collection.setText(collection)
+                    b.collection.visibility = View.VISIBLE
+                }
+            } catch (e: DocumentExtractor.UnsupportedFormat) {
+                runOnUiThread {
+                    status.text = getString(R.string.ingest_failed, e.name, getString(R.string.unsupported))
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    status.text = getString(R.string.ingest_failed, "file", e.message.orEmpty())
+                }
+            } finally {
+                runOnUiThread { b.attach.isEnabled = true }
             }
         }
     }

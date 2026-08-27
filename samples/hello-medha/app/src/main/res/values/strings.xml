@@ -6,6 +6,14 @@
     <string name="ask">Send</string>
     <string name="prompt_hint">Ask something…</string>
     <string name="use_kb">Knowledge base</string>
+    <string name="attach">Add document</string>
+    <string name="attach_desc">Ingest a PDF, Word, Excel or CSV file</string>
+    <string name="ingesting">Reading %1$s…</string>
+    <string name="ingest_progress">Ingesting %1$s — chunk %2$d of %3$d</string>
+    <string name="ingest_done">Added %1$s · %2$d chunks into “%3$s”. Ask about it below.</string>
+    <string name="ingest_failed">Could not read %1$s: %2$s</string>
+    <string name="ingest_needs_rag">This app was not granted the “rag” capability, so it cannot add documents.</string>
+    <string name="unsupported">Unsupported file type. Try PDF, DOCX, XLSX, CSV, TXT or MD.</string>
     <string name="collection_hint">collection</string>
     <string name="access_reason">To answer your questions without sending them anywhere</string>
     <string name="empty_hint">Connect, then ask anything. Answers are generated on this device — nothing leaves it.</string>

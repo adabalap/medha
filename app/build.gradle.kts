@@ -92,14 +92,26 @@ android {
         }
         release {
             isDebuggable = false
-            // Minification is deliberately OFF. Ktor resolves plugins and
+            // Minification is ON, backed by app/proguard-rules.pro.
+            //
+            // The rules exist because Ktor resolves plugins reflectively,
             // kotlinx.serialization resolves serializers reflectively, and
-            // LlmEngine probes the LiteRT AAR by reflection for
-            // sendMessageAsync. R8 would strip all three without a carefully
-            // written keep-rule set, and the failures are runtime-only.
-            // Turn this on only alongside a tested proguard-rules.pro.
-            isMinifyEnabled = false
-            isShrinkResources = false
+            // LlmEngine/AiEdgeEmbedder probe their SDKs by method name. R8
+            // renaming any of those produces silent wrong behaviour in
+            // release builds only — see the header comment in
+            // proguard-rules.pro for the specific failure.
+            //
+            // NOT yet verified at runtime: the rules are written and R8
+            // parses them, but no minified build has been installed and
+            // exercised. Before trusting a release APK, run through
+            // docs/TESTING.md tier 3L — a debug build proves nothing about
+            // this, because minification does not run in debug.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
             if (hasReleaseSigning) {
                 signingConfig = signingConfigs.getByName("release")
             }

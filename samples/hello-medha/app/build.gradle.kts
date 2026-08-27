@@ -43,4 +43,11 @@ dependencies {
     // Material 3 for the chat UI. Still no HTTP or JSON library -- the point
     // that talking to Medha needs neither is unchanged.
     implementation("com.google.android.material:material:1.12.0")
+    // The only third-party dependency, and only for PDF. PDF stores glyph
+    // positions rather than paragraphs, so reconstructing reading order is a
+    // real algorithm -- not something to hand-roll. Every other supported
+    // format (docx, xlsx, csv, txt) is handled with java.util.zip and the
+    // platform's own APIs, so MedhaClient.kt itself stays dependency-free
+    // and copyable.
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 }

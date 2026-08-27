@@ -86,6 +86,14 @@
             android:layout_width="match_parent" android:layout_height="wrap_content"
             android:orientation="horizontal" android:gravity="center_vertical"
             android:paddingBottom="6dp">
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/attach"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_marginEnd="10dp"
+                android:minWidth="0dp" android:paddingStart="14dp" android:paddingEnd="14dp"
+                android:text="@string/attach" android:textSize="12sp"
+                android:contentDescription="@string/attach_desc" />
             <com.google.android.material.materialswitch.MaterialSwitch
                 android:id="@+id/ragToggle"
                 android:layout_width="wrap_content" android:layout_height="wrap_content"
