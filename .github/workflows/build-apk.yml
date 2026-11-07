@@ -1,8 +1,26 @@
 name: Build Medha APK
 
+# Runs on EVERY branch, deliberately.
+#
+# This used to be `branches: [ main, master ]`, which quietly meant the Medha
+# APK was never built on a feature branch -- while build-sample.yml has no
+# branch filter at all and happily built the sample from the same push. Push a
+# feature branch and the only artifact you got back was `hello-medha-apk`,
+# with nothing anywhere saying why the real one was missing.
+#
+# CI is the only way this project gets built, so the main build has to be the
+# one that always runs, not the one that runs least.
+#
+# `'**'` and not `'*'`: a single star does not match a `/`, and this repo's
+# branches are named `feature/20260807-124135`. `'*'` would have looked like a
+# fix and changed nothing.
+#
+# Safe to widen: the release step is gated on `refs/tags/`, so a feature
+# branch builds and uploads an artifact but never publishes a release, and
+# `cache-read-only` keeps non-main branches from writing the shared cache.
 on:
   push:
-    branches: [ main, master ]
+    branches: [ '**' ]
     tags: [ 'v*' ]
   pull_request:
     branches: [ main, master ]

@@ -124,6 +124,54 @@ def main():
             else:
                 ok(f"{rel} Gradle tasks are flavour-free")
 
+    # ------------------------------------------------ main build reachability
+    #
+    # The Medha APK workflow has to run on every branch. It was once
+    # restricted to main/master while the sample workflow had no branch
+    # filter, so pushing a feature branch returned a `hello-medha-apk`
+    # artifact and no Medha APK, with nothing explaining the absence. CI is
+    # the only way this project gets built, so the main build must be the one
+    # that always runs.
+    main_wf = WF_DIR / "build-apk.yml"
+    if main_wf.is_file():
+        checks += 1
+        text = main_wf.read_text()
+        # The push: block, up to the next top-level trigger key.
+        push = re.search(
+            r"^on:\s*$.*?^\s{2}push:\s*$(.*?)(?=^\s{2}\w+:|^\w+:)",
+            text, re.MULTILINE | re.DOTALL
+        )
+        if push is None:
+            fail("build-apk.yml has no push: trigger -- it will not build on a push at all")
+        else:
+            branches = re.search(r"^\s*branches:\s*(.+?)\s*$", push.group(1), re.MULTILINE)
+            # Compare against the quote-stripped entries, not the raw line:
+            # `[ '*' ]` and `[ * ]` mean the same thing to Actions, and the
+            # single-star case is the one worth naming precisely because it
+            # looks like a fix.
+            entries = (
+                [e.strip().strip("\"'") for e in
+                 re.sub(r"[\[\]]", " ", branches.group(1)).split(",")]
+                if branches else []
+            )
+            if branches is None:
+                ok("build-apk.yml builds on every branch (no branches filter)")
+            elif "**" in entries:
+                ok("build-apk.yml builds on every branch (branches: '**')")
+            elif "*" in entries:
+                # A single star does not match a '/', so it silently skips
+                # every feature/... branch -- which looks like a fix and is not.
+                fail(
+                    "build-apk.yml uses branches: '*', which does NOT match "
+                    "branch names containing '/' such as feature/x. Use '**'"
+                )
+            else:
+                fail(
+                    "build-apk.yml restricts push to "
+                    f"{branches.group(1)} -- feature branches get no Medha APK, "
+                    "only the sample. Use branches: [ '**' ]"
+                )
+
     print()
     if failures:
         print(f"check_workflows: {len(failures)} of {checks} checks FAILED")
