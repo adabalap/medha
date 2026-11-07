@@ -114,8 +114,11 @@ To disable auth entirely (not recommended), set the `require_auth` preference to
 | GET | `/widget/content` | yes | read your section back (admin sees all) |
 | DELETE | `/widget/content` | yes | withdraw your section |
 
-`/notify` is rate limited per client (10 burst, 30/min). See
-`docs/NOTIFICATIONS.md` and the one-file example in `samples/notify-pwa/`.
+`/notify` is rate limited per client (10 burst, 30/min).
+
+**To add this to a PWA:** `samples/INTEGRATING.md`, with a dependency-free
+drop-in client at `samples/medha-brief.js`. Reference docs in
+`docs/NOTIFICATIONS.md`; a complete working page in `samples/notify-pwa/`.
 
 ### Key-value store
 | Method | Path | Auth | Purpose |

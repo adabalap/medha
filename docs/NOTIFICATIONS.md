@@ -3,7 +3,11 @@
 How a web app — hosted anywhere — posts to this phone's notification shade
 through Medha, and why the design is shaped the way it is.
 
-Working example: [`samples/notify-pwa/`](../samples/notify-pwa/).
+**Adding this to one of your PWAs: [`samples/INTEGRATING.md`](../samples/INTEGRATING.md)**,
+with a drop-in client at [`samples/medha-brief.js`](../samples/medha-brief.js).
+A complete working page: [`samples/notify-pwa/`](../samples/notify-pwa/).
+
+This document is the reference; INTEGRATING.md is the how-to.
 
 ---
 

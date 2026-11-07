@@ -85,6 +85,12 @@ if command -v node >/dev/null 2>&1; then
   node webapp_sse_test.js
 
   echo
+  echo "== medha_brief_client_test (Node) =="
+  # samples/medha-brief.js is the file every PWA copies, so a bug in it is a
+  # bug in all of them at once. Needs no jsdom -- it stubs fetch instead.
+  node medha_brief_client_test.js
+
+  echo
   echo "== webapp_smoke_test (Node + jsdom) =="
   if [ -d node_modules/jsdom ]; then
     node webapp_smoke_test.js

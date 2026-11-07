@@ -115,6 +115,7 @@ jobs:
           cd tools/tests && npm install --no-audit --no-fund && cd ../..
           node tools/tests/webapp_smoke_test.js
           node tools/tests/sample_pwa_smoke_test.js
+          node tools/tests/medha_brief_client_test.js
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4

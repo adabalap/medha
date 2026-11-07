@@ -327,8 +327,8 @@ $("briefPut").onclick = async function () {
       // ttlSeconds is optional; the server clamps it and defaults to 24h.
       body: JSON.stringify({ items: items, ttlSeconds: 6 * 60 * 60 })
     });
-    show(out, "Stored " + d.items + " item(s). The widget shows up to " +
-      d.rows + " rows across all apps.", "ok");
+    show(out, "Stored " + d.items + " item(s). The widget draws " +
+      d.pageRows + " at a time and rotates through up to " + d.maxRows + ".", "ok");
   } catch (e) { show(out, explain(e), "err"); }
 };
 

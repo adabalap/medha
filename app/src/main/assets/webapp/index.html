@@ -551,8 +551,8 @@ document.getElementById("briefPut").onclick = async function () {
     // Report what was KEPT, not what was sent: the server caps items per
     // client and the old version echoed the request size while silently
     // dropping the overflow.
-    out.textContent = "Stored " + d.items + " item(s). The widget shows up to " +
-      d.rows + " rows across all apps.";
+    out.textContent = "Stored " + d.items + " item(s). The widget draws " +
+      d.pageRows + " at a time and rotates through up to " + d.maxRows + ".";
   } catch (e) { out.textContent = "error: " + e.message; }
 };
 

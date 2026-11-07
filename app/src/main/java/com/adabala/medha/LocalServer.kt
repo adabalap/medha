@@ -1073,7 +1073,15 @@ class LocalServer(
                         // three of five items, so a client had no way to see
                         // the loss.
                         put("items", stored)
-                        put("rows", BriefPolicy.MAX_ROWS)
+                        // Two different numbers, and conflating them was a
+                        // bug: `rows` used to mean "drawn at once" when the
+                        // widget had no paging, then silently became
+                        // "capacity" when MAX_ROWS was raised to 12 for
+                        // rotation. Both are reported, named for what they
+                        // are, so a client can say "3 of your 7 showing"
+                        // rather than guessing.
+                        put("pageRows", BriefPolicy.PAGE_ROWS)
+                        put("maxRows", BriefPolicy.MAX_ROWS)
                     })
                 }
 
@@ -1087,7 +1095,8 @@ class LocalServer(
                     val visible = if (client.isAdmin) all else all.filter { it.clientId == client.id }
                     val now = System.currentTimeMillis()
                     call.respondJson(buildJsonObject {
-                        put("rows", BriefPolicy.MAX_ROWS)
+                        put("pageRows", BriefPolicy.PAGE_ROWS)
+                        put("maxRows", BriefPolicy.MAX_ROWS)
                         put("contributors", all.size)
                         putJsonArray("sections") {
                             visible.forEach { s ->
