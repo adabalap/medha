@@ -51,6 +51,9 @@ need "tools/tests/stubs/org/json/Stubs.kt"
 need "tools/check_workflows.py"
 need "samples/medha-brief.js"
 need "samples/INTEGRATING.md"
+need "samples/medha_brief.py"
+need "samples/hg-agent-brief.py"
+need "tools/tests/medha_brief_py_test.py"
 need "tools/tests/medha_brief_client_test.js"
 need "tools/tests/sample_pwa_smoke_test.js"
 need "samples/hello-medha/README.md"
@@ -170,3 +173,9 @@ python3 tools/check_resources.py || { echo "Resource reference check failed."; e
 # APK at all -- and these failures happen during provisioning, before
 # anything compiles, so the logs look nothing like a build problem.
 python3 tools/check_workflows.py || { echo "Workflow check failed."; exit 1; }
+
+# The Python client is the only thing here that can be exercised over a
+# REAL HTTP round trip -- a stdlib http.server stands in for Medha -- so
+# it runs unconditionally rather than behind a toolchain check.
+echo
+python3 tools/tests/medha_brief_py_test.py || { echo "Python client tests failed."; exit 1; }

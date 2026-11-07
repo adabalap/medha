@@ -102,6 +102,11 @@ jobs:
       - name: Check workflow configuration
         run: python3 tools/check_workflows.py
 
+      # Real HTTP round trips against a stdlib server standing in for
+      # Medha. Needs no Android SDK, no Gradle and no network.
+      - name: Test the Python client
+        run: python3 tools/tests/medha_brief_py_test.py
+
       # GitHub-hosted runners ship Node.js already; no setup-node step needed.
       # These test the bundled demo webapp's actual shipped JS (markdown
       # rendering, SSE frame parsing, and a full jsdom-driven smoke test that

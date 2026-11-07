@@ -116,9 +116,12 @@ To disable auth entirely (not recommended), set the `require_auth` preference to
 
 `/notify` is rate limited per client (10 burst, 30/min).
 
-**To add this to a PWA:** `samples/INTEGRATING.md`, with a dependency-free
-drop-in client at `samples/medha-brief.js`. Reference docs in
-`docs/NOTIFICATIONS.md`; a complete working page in `samples/notify-pwa/`.
+**To integrate:** `samples/INTEGRATING.md`. Two dependency-free drop-in
+clients — `samples/medha-brief.js` for a browser PWA, `samples/medha_brief.py`
+for a Python process on the same device (no CORS, no pairing code, since
+none of that governs a non-browser). Worked example for a Termux service in
+`samples/hg-agent-brief.py`. Reference docs in `docs/NOTIFICATIONS.md`;
+a complete working page in `samples/notify-pwa/`.
 
 ### Key-value store
 | Method | Path | Auth | Purpose |

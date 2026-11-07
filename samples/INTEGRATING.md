@@ -11,7 +11,43 @@ Five minutes per app. No SDK, no build step, no backend.
 
 ---
 
-## Before you write any code
+## Which client do you want?
+
+| Your app is | Use | Why |
+|---|---|---|
+| A static page / PWA served from an origin | [`medha-brief.js`](medha-brief.js) | Pairs a browser origin, runs in the page |
+| A Python process on the same device (Flask, a service, a cron job) | [`medha_brief.py`](medha_brief.py) | No CORS, no pairing code, no preflight — none of that governs a non-browser |
+
+**If your app has a server side, prefer the Python client**, even if it also
+has a web UI. Two reasons:
+
+1. The state worth showing — requests served, latency, whether a supervised
+   service is still up — lives in the server process, not the browser.
+2. A browser-only integration only updates the brief while someone has a tab
+   open, which defeats the point of a home-screen widget.
+
+A worked example for a runit-supervised Termux service is in
+[`hg-agent-brief.py`](hg-agent-brief.py).
+
+### Getting a token server-side
+
+Not by pairing: pairing binds a token to a web **origin**, and a Python
+process has none, so Medha refuses with `no_origin`. Instead:
+
+> Medha → drawer → **API clients** → **Add client** → id `hg-agent`, tick
+> **Post notifications** → copy the token.
+
+A token made that way has no bound origin, so Medha applies no origin check
+to it. Keep it out of the repo:
+
+```sh
+# ~/.config/hg_agent/env, sourced by the runit run script
+export MEDHA_TOKEN=...
+```
+
+---
+
+## Before you write any code (browser clients)
 
 **1. Serve your app over http or https.** A `file://` page sends
 `Origin: null`, which every sandboxed iframe on the device also sends, so
