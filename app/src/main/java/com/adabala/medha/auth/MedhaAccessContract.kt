@@ -146,6 +146,7 @@ object MedhaAccessContract {
     const val CAP_MEMORY = "memory"
     const val CAP_RAG = "rag"
     const val CAP_STORE = "store"
+    const val CAP_NOTIFY = "notify"
 
     /**
      * Capabilities obtainable through this flow.
@@ -153,12 +154,26 @@ object MedhaAccessContract {
      * `admin` is deliberately absent and is filtered out even if requested:
      * admin bypasses every namespace check in the server, so a third-party
      * app must never be able to obtain it by asking, no matter how the
-     * consent screen is worded. SMS and notification access are likewise
-     * excluded — those are the user's messages and their notification shade,
-     * and granting them deserves a deliberate trip through Medha's own UI
-     * rather than a generic consent dialog another app triggered.
+     * consent screen is worded.
+     *
+     * `notify` **is** grantable as of v0.9.0, reversing the earlier decision.
+     * The original reasoning was that the notification shade is personal
+     * enough to deserve a deliberate trip through Medha's own UI rather than
+     * a consent dialog some other app triggered. What changed is that web
+     * apps can now obtain `notify` by pairing — the user reads a six-digit
+     * code off Medha's screen and types it into a web page. Refusing the
+     * same capability to an installed app whose identity the *system*
+     * verifies, while granting it to a web page identified only by a typed
+     * code, is backwards: the consent dialog names a package Android
+     * guarantees, and the user still has to agree to it.
+     *
+     * It remains off by default — [ClientRegistry.Cap.DEFAULT] excludes it,
+     * the add-client dialog leaves its box unticked, and an app that wants
+     * it has to ask for it by name and be granted it.
      */
-    val GRANTABLE: Set<String> = setOf(CAP_GENERATE, CAP_MEMORY, CAP_RAG, CAP_STORE)
+    val GRANTABLE: Set<String> = setOf(
+        CAP_GENERATE, CAP_MEMORY, CAP_RAG, CAP_STORE, CAP_NOTIFY
+    )
 
     /**
      * Derives a stable, collision-resistant client id / namespace from a

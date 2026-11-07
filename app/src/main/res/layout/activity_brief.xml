@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The whole brief, reached by tapping the home-screen widget.
+
+  The widget shows three rows of up to twelve and rotates through the rest.
+  That makes "tap for everything" load-bearing rather than decorative: it is
+  the only place the user can read the overflow without waiting for it to come
+  around, which is exactly how Samsung's own digest behaves when tapped.
+
+  A plain ScrollView of generated rows rather than a RecyclerView: the list is
+  bounded at twelve rows across at most eight sections, so view recycling buys
+  nothing and an adapter would be more moving parts than the content warrants.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="?attr/colorSurface"
+    android:fitsSystemWindows="true">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/briefToolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:title="@string/brief_title"
+        app:navigationIcon="@drawable/ic_close"
+        app:menu="@menu/brief_menu" />
+
+    <TextView
+        android:id="@+id/briefSubtitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingBottom="4dp"
+        android:textSize="12.5sp"
+        android:textColor="@color/text_secondary" />
+
+    <ScrollView
+        android:id="@+id/briefScroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:paddingBottom="24dp">
+
+        <LinearLayout
+            android:id="@+id/briefContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:paddingTop="8dp" />
+    </ScrollView>
+
+    <TextView
+        android:id="@+id/briefEmpty"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:padding="32dp"
+        android:textSize="14sp"
+        android:textColor="@color/text_secondary"
+        android:text="@string/brief_empty"
+        android:visibility="gone" />
+</LinearLayout>

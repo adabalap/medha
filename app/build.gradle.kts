@@ -42,8 +42,8 @@ android {
         applicationId = "com.adabala.medha"
         minSdk = 27
         targetSdk = 34
-        versionCode = 10
-        versionName = "0.8.3"
+        versionCode = 13
+        versionName = "0.9.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -59,35 +59,33 @@ android {
     }
 
     // ---------------------------------------------------------------------
-    // Flavours exist for ONE reason: Play Protect blocks sideloaded APKs that
-    // declare SMS permissions, and that block is evaluated on the manifest, not
-    // on whether the feature is ever used. Keeping SMS out of the default build
-    // means the inference service installs cleanly.
+    // NO PRODUCT FLAVOURS, and no applicationIdSuffix anywhere.
     //
-    //   core  - inference, memory, RAG, store, notifications. No SMS.
-    //   full  - adds the SMS connector. Expect a Play Protect warning.
+    // v0.8.x shipped a core/full split for one reason: Play Protect blocks
+    // sideloaded APKs that declare SMS permissions, and that block is
+    // evaluated on the manifest rather than on whether the feature is ever
+    // used, so SMS had to be quarantined into a separate flavour.
+    //
+    // With the SMS connector gone there is nothing to quarantine, and the
+    // split was never free. Combined with the debug suffix it produced four
+    // applicationIds -- com.adabala.medha{,.full}{,.debug} -- and a consumer
+    // app cannot hardcode a package name it cannot predict. That is exactly
+    // the bug the hello-medha sample hit: it looked for com.adabala.medha
+    // while the installed build was com.adabala.medha.full.debug, and
+    // reported "Medha is not installed on this device" on a device where it
+    // plainly was.
+    //
+    // One variant, one applicationId, forever: com.adabala.medha. The build
+    // type still shows up in versionName, so the About screen can tell you
+    // which APK you are on without the package name having to encode it.
+    //
+    // Cost, stated plainly: a debug and a release build can no longer sit
+    // side by side on one device. Installing either replaces the other.
     // ---------------------------------------------------------------------
-    flavorDimensions += "connectors"
-    productFlavors {
-        create("core") {
-            dimension = "connectors"
-            versionNameSuffix = "-core"
-        }
-        create("full") {
-            dimension = "connectors"
-            versionNameSuffix = "-full"
-            // Separate applicationId so both can sit side by side and so a
-            // "full" install never silently replaces a clean "core" one.
-            applicationIdSuffix = ".full"
-        }
-    }
 
     buildTypes {
         debug {
             isDebuggable = true
-            // Lets a debug and a release build coexist on the same device, so
-            // you can compare them without uninstalling.
-            applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
         }
         release {
@@ -195,7 +193,9 @@ dependencies {
     implementation("io.ktor:ktor-server-cio:2.3.12")
     implementation("io.ktor:ktor-server-content-negotiation:2.3.12")
     implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.12")
-    implementation("io.ktor:ktor-server-cors:2.3.12")
+    // ktor-server-cors removed in v0.9.0: CORS is hand-rolled in
+    // net/CorsPolicy.kt, which the plugin could not express (dynamic origin
+    // set, and the Private Network Access preflight header).
     implementation("io.ktor:ktor-server-status-pages:2.3.12")
 
     // LiteRT-LM

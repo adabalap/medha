@@ -45,6 +45,36 @@ echo "== AccessContractTest =="
 kotlinc AccessContractTest.kt -include-runtime -d "$WORK/access.jar"
 java -jar "$WORK/access.jar"
 
+echo
+echo "== BriefPolicyTest =="
+# Medha's own brief: the multi-client home-screen digest that exists because
+# Samsung's Now Brief has no third-party API. Merge, expiry, ordering, bounds.
+kotlinc "$SRC/notify/BriefPolicy.kt" BriefPolicyTest.kt \
+  -include-runtime -d "$WORK/brief.jar"
+java -jar "$WORK/brief.jar"
+
+echo
+echo "== BriefJsonTest =="
+# The brief's on-disk format, INCLUDING the v0.9.0 -> v0.9.1 migration. Runs
+# against the real BriefJson.kt plus stubs/org/json, which mirror Android's
+# org.json signatures closely enough to execute the migration rather than
+# merely type-check it. A migration that is only reasoned about is a
+# migration that silently wipes someone's widget.
+kotlinc stubs/org/json/Stubs.kt "$SRC/notify/BriefPolicy.kt" "$SRC/notify/BriefJson.kt" \
+  BriefJsonTest.kt -include-runtime -d "$WORK/briefjson.jar"
+java -jar "$WORK/briefjson.jar"
+
+echo
+echo "== NetPolicyTest =="
+# Origin matching, the CORS decision, the Private Network Access preflight,
+# the notify rate limiter and the pairing-code state machine. This is the
+# access-control boundary for every web app that pairs with Medha, so it runs
+# against the real sources rather than a copy.
+kotlinc "$SRC/net/WebOrigin.kt" "$SRC/net/CorsPolicy.kt" "$SRC/net/RateLimiter.kt" \
+  "$SRC/auth/PairingManager.kt" NetPolicyTest.kt \
+  -include-runtime -d "$WORK/net.jar"
+java -jar "$WORK/net.jar"
+
 if command -v node >/dev/null 2>&1; then
   echo
   echo "== webapp_markdown_test (Node) =="
@@ -58,6 +88,9 @@ if command -v node >/dev/null 2>&1; then
   echo "== webapp_smoke_test (Node + jsdom) =="
   if [ -d node_modules/jsdom ]; then
     node webapp_smoke_test.js
+    echo
+    echo "== sample_pwa_smoke_test (Node + jsdom) =="
+    node sample_pwa_smoke_test.js
   else
     echo "jsdom not installed — run 'npm install' in tools/tests/ first, then re-run this script."
     echo "This is the test that catches a script-level bug (like a variable"

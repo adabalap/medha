@@ -108,9 +108,23 @@ Licensed under the terms in the project repository.</string>
 
     <!-- drawer additions -->
     <string name="nav_clients">API clients</string>
-    <string name="nav_sms">SMS connector</string>
+    <string name="nav_pair_web">Pair a web app</string>
+
+    <!-- web app pairing -->
+    <string name="pair_title">Pair a web app</string>
+    <string name="pair_intro">Enter this code in the web app within 5 minutes:</string>
+    <string name="pair_code_hint">The web app sends it to POST /pair. It works once, then expires.</string>
+    <string name="pair_expires">Expires at %1$s · one use · 5 wrong tries cancels it</string>
+    <string name="pair_caps_title">The web app will be granted</string>
+    <string name="pair_choose_caps">Choose what to grant</string>
+    <string name="pair_cancel_code">Cancel code</string>
+    <string name="pair_cancelled">Pairing code cancelled</string>
+    <string name="pair_notifications_off">Notifications are turned off for Medha, so a paired app cannot post to the shade. Grant the notification permission first.</string>
+    <string name="pair_grant_notifications">Turn on notifications</string>
+    <string name="pair_server_off">Start Medha first — a web app cannot reach the server while it is stopped.</string>
+    <string name="pair_url">Server: http://127.0.0.1:%1$d</string>
+
     <string name="nav_scheduler">Scheduler status</string>
-    <string name="nav_group_connectors">Connectors</string>
 
     <!-- clients -->
     <string name="clients_title">API clients</string>
@@ -129,19 +143,33 @@ Licensed under the terms in the project repository.</string>
     <string name="client_used_days_ago">used %1$d days ago</string>
     <string name="clients_empty">No clients yet. Tap Add client to create one.</string>
     <string name="client_new_title">New API client</string>
-    <string name="client_id_hint">id (e.g. sms-organizer)</string>
+    <string name="client_id_hint">id (e.g. journal)</string>
     <string name="create">Create</string>
     <string name="revoke">Revoke</string>
     <string name="rotate">Rotate token</string>
 
-    <!-- sms -->
-    <string name="sms_title">SMS connector</string>
-    <string name="sms_grant">Grant SMS permission</string>
-    <string name="sms_denied">SMS permission not granted. The connector endpoints will return 403.</string>
-    <string name="sms_granted">SMS read permission granted.</string>
+    <!-- widget -->
+    <string name="widget_header">Brief</string>
     <string name="widget_empty">No updates yet. Apps using Medha can post here.</string>
+    <string name="widget_count">%1$d app(s)</string>
+    <string name="widget_footer">%1$s · %2$d items · tap for all</string>
+
+    <!-- full brief screen -->
+    <string name="brief_title">Brief</string>
+    <string name="brief_empty">Nothing in the brief.\n\nApps you have paired with Medha can post here, and it shows on the home-screen widget.</string>
+    <string name="brief_refresh">Refresh</string>
+    <string name="brief_clear_all">Clear everything</string>
+    <string name="brief_clear_all_body">Removes every app\'s section from the brief. The apps are not revoked and can post again.</string>
+    <string name="brief_clear_all_confirm">Clear</string>
+
+    <!-- brief rotation -->
+    <string name="brief_rotate_title">Brief rotation</string>
+    <string name="brief_rotate_body">The widget shows 3 lines at a time. When there are more, it cycles through them while the screen is on.</string>
+    <string name="brief_rotate_interval">Every %1$d seconds</string>
+    <string name="brief_rotate_off">Don\'t rotate — show the first 3 only</string>
+    <string name="brief_rotate_saved">Brief rotation: %1$s</string>
+    <string name="nav_brief">Brief</string>
     <string name="widget_description">Cards pushed by apps using Medha</string>
-    <string name="sms_unsupported">This is the “core” build, which ships without SMS permissions so that it installs without a Google Play Protect block.\n\nTo use the SMS connector, install the “full” build (medha-…-full-…apk). Play Protect will warn about it; that warning is caused by the SMS permission itself, not by anything the app does with it.</string>
     <string name="client_edit">Edit permissions</string>
     <string name="save">Save</string>
     <string name="caps_saved">Permissions updated for %1$s</string>
@@ -158,8 +186,6 @@ Licensed under the terms in the project repository.</string>
     <string name="cap_memory">Chat memory / sessions</string>
     <string name="cap_rag">Knowledge (RAG)</string>
     <string name="cap_store">Store its own data</string>
-    <string name="cap_sms_read">Read SMS</string>
-    <string name="cap_sms_send">Send SMS</string>
     <string name="cap_notify">Post notifications</string>
 
     <!-- primary status line, shown on the main screen -->
@@ -185,4 +211,9 @@ Licensed under the terms in the project repository.</string>
     <string name="diagnostics_none">No diagnostics files yet. A crash writes one automatically; \"Export current logs now\" writes one on demand.</string>
     <string name="diagnostics_export_failed">Could not write a diagnostics file</string>
     <string name="diagnostics_exported">Diagnostics saved</string>
+
+    <plurals name="brief_subtitle">
+        <item quantity="one">%1$d app · %2$d items</item>
+        <item quantity="other">%1$d apps · %2$d items</item>
+    </plurals>
 </resources>

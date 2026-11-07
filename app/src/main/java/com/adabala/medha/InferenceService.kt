@@ -15,7 +15,8 @@ import androidx.core.app.NotificationCompat
 import androidx.preference.PreferenceManager
 import com.adabala.medha.data.MedhaDatabase
 import com.adabala.medha.auth.ClientRegistry
-import com.adabala.medha.connectors.SmsConnector
+import com.adabala.medha.auth.PairingManager
+import com.adabala.medha.notify.BriefRotator
 import com.adabala.medha.notify.NotificationHub
 import com.adabala.medha.sched.InferenceScheduler
 import com.adabala.medha.sched.SchedulerConfig
@@ -41,8 +42,8 @@ class InferenceService : Service() {
     private var embedder: Embedder = NoEmbedder
     private lateinit var scheduler: InferenceScheduler
     private lateinit var registry: ClientRegistry
-    private lateinit var sms: SmsConnector
     private lateinit var notifier: NotificationHub
+    private lateinit var rotator: BriefRotator
     private var wakeLock: PowerManager.WakeLock? = null
 
     private var currentPort: Int = -1
@@ -52,8 +53,12 @@ class InferenceService : Service() {
         super.onCreate()
         engine = LlmEngine(applicationContext)
         registry = ClientRegistry.get(applicationContext)
-        sms = SmsConnector(applicationContext)
         notifier = NotificationHub(applicationContext)
+        rotator = BriefRotator(applicationContext, notifier)
+        // So a write that pushes the brief past one page starts rotation at
+        // once, instead of the user wondering why it is not scrolling until
+        // they next lock and unlock the phone.
+        notifier.onBriefChanged = { rotator.onBriefChanged() }
         scheduler = InferenceScheduler(applicationContext, loadSchedulerConfig())
         startForeground(NOTIF_ID, buildNotification("Starting Medha…"))
         acquireWakeLock()
@@ -83,6 +88,13 @@ class InferenceService : Service() {
         // Scheduler settings are re-read on every start so the UI sliders take
         // effect without needing a full service restart.
         scheduler.config = loadSchedulerConfig()
+        // Re-read on every start so a changed interval takes effect
+        // without the service needing to be stopped, same as the
+        // scheduler sliders above.
+        rotator.configure(
+            prefs.getString(KEY_BRIEF_ROTATE, null)?.toLongOrNull()
+                ?: BriefRotator.DEFAULT_INTERVAL_SECONDS
+        )
         val requireAuth = prefs.getBoolean(KEY_REQUIRE_AUTH, true)
         val db = MedhaDatabase.get(applicationContext)
 
@@ -99,7 +111,7 @@ class InferenceService : Service() {
             server?.stop()
             server = LocalServer(
                 applicationContext, engine, port, db, requireAuth, embedder,
-                registry, scheduler, sms, notifier
+                registry, scheduler, notifier, PairingManager.shared()
             )
                 .also { runCatching { it.start() }.onFailure { e -> onServerFailed(e, port) } }
             currentPort = port
@@ -154,6 +166,9 @@ class InferenceService : Service() {
     }
 
     override fun onDestroy() {
+        // Before anything else: this unregisters a receiver and cancels a
+        // posted Runnable, and leaking either outlives the service.
+        rotator.stop()
         loadJob?.cancel()
         server?.stop()
         server = null
@@ -251,6 +266,7 @@ class InferenceService : Service() {
         const val KEY_BATCH_CHARGING = "batch_charging"
         const val KEY_BATCH_MIN_BATTERY = "batch_min_battery"
         const val KEY_QUEUE_DEPTH = "queue_depth"
+        const val KEY_BRIEF_ROTATE = "brief_rotate_seconds"
 
         const val DEFAULT_PORT = "8080"
 

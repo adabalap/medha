@@ -8,17 +8,13 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!--
-      NOTE: SMS and contacts permissions are NOT declared here. They live in the
-      "full" product flavour (app/src/full/AndroidManifest.xml).
+      Medha declares no sensitive-data permissions. There is no SMS, contacts,
+      location, camera or storage access anywhere in this manifest, which is
+      what keeps a sideloaded build clear of the Play Protect warning about
+      apps that "can request access to sensitive data".
 
-      Google Play Protect blocks sideloaded APKs that declare SMS permissions,
-      with "This app can request access to sensitive data." That block applies
-      to the whole APK regardless of whether the user ever enables the
-      connector, so declaring them unconditionally made the CORE service
-      un-installable for people who only wanted inference.
-
-      Build "core" for a clean install; build "full" only if you need the SMS
-      connector, and expect to bypass Play Protect deliberately.
+      POST_NOTIFICATIONS is the one user-facing permission, and it is requested
+      at runtime so clients of the /notify API can reach the shade.
     -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
@@ -73,6 +69,19 @@
           list, where it would otherwise linger as a confusing Medha entry
           with no content behind it.
         -->
+        <!--
+          Opened by tapping the brief widget. Not exported: nothing outside
+          Medha has any reason to launch it, and the brief is the user's
+          content. excludeFromRecents because it is a glance at a widget's
+          overflow, not a place to come back to.
+        -->
+        <activity
+            android:name=".BriefActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:label="@string/brief_title"
+            android:launchMode="singleTop" />
+
         <activity
             android:name=".auth.AccessRequestActivity"
             android:exported="true"

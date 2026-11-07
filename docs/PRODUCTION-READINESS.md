@@ -153,14 +153,14 @@ There is no retention policy and no quota.
 11. **Accessibility — partially addressed.** An audit found the main screen
     already clean (every `ImageView` has a `contentDescription`, the drawer's
     nav icon does too, no undersized touch targets). Not yet audited: the
-    dialog-heavy secondary flows (SMS, thermal, scheduler, about) and no
+    dialog-heavy secondary flows (thermal, scheduler, pairing, about) and no
     TalkBack pass or large-font layout test has actually been run on device.
 12. **Localisation.** Strings are extracted now, which is the hard part, but
     only `values/` exists. The Telugu name deserves a Telugu locale. A
     meaningful chunk of the main screen's remaining hardcoded strings were
     externalized this session (capability labels, primary status text, all
     static button/section labels); the technical diagnostic-panel text
-    (thermal, scheduler, SMS, about dialogs) deliberately was not, as a lower
+    (thermal, scheduler, pairing, about dialogs) deliberately was not, as a lower
     ROI / higher-risk-of-invisible-mistake tradeoff given no device to
     visually verify against — flagged here rather than silently left undone.
 13. **~~No dark theme~~ — RESOLVED.** The four non-brand cards hardcoded

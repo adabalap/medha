@@ -72,15 +72,25 @@ wants access" is not informed consent.
 | `memory` | `/sessions/*` — server-side conversation history |
 | `rag` | `/rag/*`, `/v1/embeddings`, and the `collection` field on chat calls |
 | `store` | `/store/*` — a small key-value scratch space |
+| `notify` | `/notify/*`, `/widget/content` — post to the notification shade |
 
 Ask for the narrowest set you actually need; the consent screen shows the user
 every item, and a long list is a good reason for them to decline.
 
-`admin` cannot be obtained through this flow, and neither can SMS or
-notification access. Those are filtered out even if requested — admin bypasses
-every namespace check server-side, and SMS/notifications are personal enough
-that granting them should mean a deliberate trip through Medha's own UI, not a
-dialog your app triggered.
+`notify` is grantable but **off by default**: it is not in the default set and
+its box starts unticked, so you have to ask for it by name and the user has to
+agree. It was not grantable before v0.9.0, on the reasoning that the
+notification shade deserved a deliberate trip through Medha's own UI. What
+changed is that web apps can now obtain it by pairing — the user reads a code
+off Medha's screen and types it into a page. Refusing the same capability to
+an installed app whose identity the *system* verifies, while granting it to a
+web page identified only by a typed code, was backwards. See
+[NOTIFICATIONS.md](NOTIFICATIONS.md) for the API.
+
+`admin` cannot be obtained through this flow and is filtered out even if
+requested. It bypasses every namespace check server-side, so an app that could
+obtain it by asking could read every other app's sessions and collections — no
+matter how the consent screen were worded.
 
 ### Errors
 

@@ -135,13 +135,18 @@ class MainActivity : AppCompatActivity() {
     /**
      * Finds whichever Medha variant is actually installed.
      *
-     * Medha ships under several package names depending on build variant
-     * (`com.adabala.medha` plus optional `.full` and `.debug` suffixes), so
-     * targeting one hardcoded name reports "not installed" against a working
-     * debug build -- which is exactly what happened the first time this
-     * sample ran. Resolving the action finds whatever is really there; the
-     * prefix check then makes the intent explicit again so an unrelated app
-     * declaring the same filter cannot intercept the request.
+     * Up to v0.8.x, Medha shipped under four package names depending on
+     * build variant -- `com.adabala.medha` plus optional `.full` and
+     * `.debug` suffixes -- so targeting one hardcoded name reported "not
+     * installed" against a working debug build, which is exactly what
+     * happened the first time this sample ran.
+     *
+     * v0.9.0 collapsed that to one `applicationId` for every variant, so a
+     * literal name would work now. This resolution is kept anyway: it costs
+     * one PackageManager query, it keeps working against an older install,
+     * and it would survive the package being changed again. The prefix check
+     * then makes the intent explicit so an unrelated app declaring the same
+     * filter cannot intercept the request.
      *
      * For production, compare the resolved package's signing certificate
      * against Medha's. A prefix is a sanity check, not authentication.

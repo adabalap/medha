@@ -1,4 +1,8 @@
-# Play Protect blocked the install — what to do
+# Play Protect
+
+## As of v0.9.0, the warning this document was written about no longer applies
+
+The warning was:
 
 ```
 App blocked to protect your device
@@ -6,99 +10,56 @@ This app can request access to sensitive data.
 This can increase the risk of identity theft or financial fraud.
 ```
 
-**Nothing is wrong with the APK.** This is Play Protect's standard response to a
-**sideloaded** app that **declares SMS permissions**. It fires on the manifest
-alone — before the app runs, and regardless of whether you ever enable the
-connector.
+Play Protect shows that on a **sideloaded** app whose manifest declares SMS
+permissions. It fires on the manifest alone — before the app runs, and
+regardless of whether the feature is ever used.
 
-Two things made it trigger, and one of them was a mistake:
+Medha declared `READ_SMS`, `SEND_SMS` and `READ_CONTACTS` for its SMS
+connector, which tripped it. The whole `core`/`full` product-flavour split
+existed to quarantine those permissions into a build you only installed if
+you wanted the connector.
 
-1. `READ_SMS` / `SEND_SMS` were added for the connector. This is the main cause,
-   and it is unavoidable for a build that reads SMS.
-2. **`RECEIVE_SMS` was declared but never used.** The connector detects new
-   messages with a `ContentObserver`, which needs only `READ_SMS`. That
-   permission bought nothing and is the one Play Protect treats most harshly.
-   **Removed in v0.7.0.**
+**The SMS connector was removed in v0.9.0, along with the flavour split.**
+Medha's manifest now declares no sensitive-data permissions at all:
 
-A debug-signed APK makes it worse: the Android debug key is publicly known and
-shared by every debug build in the world, so Play Protect has no reason to trust
-it.
-
----
-
-## The fix: two builds
-
-From v0.7.0 CI produces **two APKs per build type**:
-
-| APK | SMS permissions | Play Protect |
-|---|---|---|
-| `medha-0.7.0-core-debug-<sha>.apk` | **none** | installs cleanly |
-| `medha-0.7.0-full-debug-<sha>.apk` | `READ_SMS`, `READ_CONTACTS`, `SEND_SMS` | will warn |
-
-**Install `core` unless you actually need the SMS connector.** Everything else —
-inference, chat memory, RAG, `/store`, notifications, the widget — is identical.
-
-They carry different application ids (`com.adabala.medha` and
-`com.adabala.medha.full`), so both can sit on the device at once and installing
-`full` never silently replaces a clean `core` install.
-
-`GET /connectors/sms/status` reports `supported: false` on `core`, so a PWA can
-detect it and show a useful message instead of failing.
-
----
-
-## Installing the `full` build anyway
-
-### Best option: adb (no Play Protect prompt)
-
-```bash
-adb install -r medha-0.7.0-full-debug-<sha>.apk
+```
+FOREGROUND_SERVICE
+FOREGROUND_SERVICE_DATA_SYNC
+POST_NOTIFICATIONS
+WAKE_LOCK
+INTERNET
+REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
 ```
 
-The install goes through the shell rather than the package installer UI, so the
-warning dialog never appears. Nothing is disabled and nothing stays weakened.
+No SMS, no contacts, no location, no camera, no external storage. There is
+nothing left for that particular warning to fire on, and `verify.sh` has an
+absence guard that fails the build if an SMS permission or capability is
+reintroduced.
 
-### If you only have the phone
+## What you may still see
 
-The dialog you saw has a single **OK** button — this is the hard-block variant,
-with no "install anyway". You have to turn scanning off for the moment:
+Sideloading an APK is still sideloading. Android may show either of these,
+and neither is the warning above:
 
-1. **Play Store** → profile icon → **Play Protect** → gear icon
-2. Turn off **Scan apps with Play Protect**
-3. Install the APK
-4. **Turn it back on.** Leaving it off removes scanning for every app you ever
-   install, which is a much worse trade than one deliberate sideload.
+- **"Unknown app"** / install-from-this-source prompts, the first time you
+  install from a browser or file manager. Normal for any APK not from Play.
+- **"Play Protect doesn't recognise this app"**, with Install anyway. This is
+  about the signature being unknown to Google, not about permissions. It
+  appears for every self-signed build and there is no way to avoid it short
+  of publishing through Play.
 
-Play Protect may still show a "harmful app" notification afterwards. Choosing to
-keep the app is fine; it will not uninstall it behind you.
+If you ever see the *sensitive data* wording again on a Medha build, something
+has been added back that should not have been — check the manifest and run
+`./verify.sh`.
 
-### Making it stop for good
+## Why `INTERNET` is declared
 
-Sign a release build with your own keystore (see the README section on debug vs
-release). A consistently-signed release APK from a stable key attracts far less
-suspicion than a debug-key build, though an SMS-permission sideload may still be
-flagged.
+It looks wrong on an app whose entire point is that nothing leaves the device.
+It is required anyway: Android gates the `socket()` syscall on
+`android.permission.INTERNET`, and **loopback is not exempt**. Without it,
+binding to `127.0.0.1` fails at runtime with `socket failed: EPERM`.
 
----
-
-## Is the warning legitimate?
-
-Yes, as a category. An app that can read your SMS can read bank OTPs. Play
-Protect cannot tell Medha apart from something malicious, so it warns about the
-capability rather than the intent — which is the correct default for a system
-protecting millions of people who did not read the source.
-
-What Medha actually does with it:
-
-- SMS is **read on demand** from the system provider. **Message bodies are never
-  copied into Medha's database.** Clients store derived labels against message
-  IDs.
-- The connector requires the `sms.read` capability on a per-client token; a PWA
-  without it gets `403`.
-- Nothing leaves the device. The server binds to `127.0.0.1` only.
-- Reading requires you to grant the runtime permission inside Medha, separately
-  from installing.
-
-You are choosing to trust code you can read. That is a different decision from
-the one Play Protect is defending against — but it is your decision to make
-consciously, not one to click past.
+This cost real debugging time once, in the hello-medha sample, where a code
+comment had confidently asserted the opposite. The server binds to
+`127.0.0.1` and nothing else; `verify.sh` checks the permission is present
+for exactly this reason.

@@ -13,8 +13,8 @@ HTML/JS — **no backend, no server, no build step required**.
 
 - Base URL: `http://127.0.0.1:8080` (port configurable in the Medha app)
 - Nothing leaves the device. No cloud, no telemetry.
-- Medha also owns the permissioned data sources (SMS, contacts) and the
-  notification surfaces, because a browser page cannot reach those.
+- Medha also brokers the **notification shade**, because a browser page
+  cannot post to it. That is the one platform capability it hands over.
 
 **Do not write a Flask/Node/Python backend for your app.** Medha *is* the
 backend. A second server on the phone means a second runtime, a second wake
@@ -30,17 +30,29 @@ Every request except `/health` needs:
 Authorization: Bearer <token>
 ```
 
-Each app gets **its own token** from the Medha app: burger menu → **API
-clients** → **Add client**. Give it an id like `sms-organizer`. The token is
-shown once and copied to the clipboard.
+There are three ways to get a token, depending on what you are:
+
+| You are | How you get a token |
+|---|---|
+| A **web app on another origin** | Pair: Medha → **Pair a web app** → six digits → `POST /pair` |
+| An **installed Android app** | The intent handshake — see [INTEGRATION.md](INTEGRATION.md) |
+| A **script, or the bundled demo** | Medha → **API clients** → **Add client**, copy the token |
+
+Pairing is the one to use if you are a page in a browser. You cannot use the
+intent handshake: it identifies callers by `getCallingPackage()`, which for a
+web page would name the browser. See [NOTIFICATIONS.md](NOTIFICATIONS.md).
+
+A paired token is **bound to the origin that paired it** and is refused from
+any other, with `origin_mismatch`. Copying it into another site's page does
+not work.
 
 ### Namespacing is automatic and mandatory
 
-A client with id `sms-organizer` operates in namespace `sms-organizer:*`.
+A client with id `journal` operates in namespace `journal:*`.
 
 - Session ids, RAG collections and store keys are **transparently prefixed**.
-- You send `inbox`, Medha stores `sms-organizer:inbox`, and you read back
-  `inbox`. The prefixing is invisible.
+- You send `inbox`, Medha stores `journal:inbox`, and you read back `inbox`.
+  The prefixing is invisible.
 - **You cannot read another client's data**, and you cannot escape by sending a
   prefixed key. The namespace comes from the token, never from the request.
 
@@ -52,13 +64,12 @@ A client with id `sms-organizer` operates in namespace `sms-organizer:*`.
 | `memory` | `/chat`, `/sessions/*` |
 | `rag` | `/rag/*`, `/v1/embeddings` |
 | `store` | `/store/*` |
-| `sms.read` | `/connectors/sms/*` reads |
-| `sms.send` | `/connectors/sms/send` |
 | `notify` | `/notify/*`, `/widget/content` |
 | `admin` | everything, plus cross-namespace access |
 
-New clients get `generate, memory, rag, store` by default. SMS and notify must
-be granted deliberately.
+New clients get `generate, memory, rag, store` by default. `notify` must be
+granted deliberately — it is grantable, but off by default and never implied.
+`admin` cannot be obtained by asking at all.
 
 ### Boilerplate
 
@@ -227,60 +238,41 @@ const page = await api("/store?prefix=msg/&limit=100");
 
 Use `/store/bulk` for batch results — one transaction instead of N.
 
-### SMS connector
-
-Requires `sms.read`. The user must also grant Medha the Android SMS permission
-(Medha app → burger → SMS connector → Grant). Endpoints return `403` with code
-`sms_denied` until then — surface that clearly rather than looking broken.
-
-```
-GET  /connectors/sms/status
-       -> {canRead, canSend, isDefaultSmsApp, totalMessages}
-
-GET  /connectors/sms/conversations?limit=&offset=
-       -> {conversations:[{threadId, address, displayName, snippet,
-                           messageCount, unreadCount, lastAt}]}
-
-GET  /connectors/sms/messages?threadId=&since=&before=&unreadOnly=&limit=
-       -> {messages:[{id, threadId, address, body, date, read, inbound}],
-           nextBefore, count}
-
-GET  /connectors/sms/messages/{id}
-GET  /connectors/sms/contacts/{address}
-POST /connectors/sms/mark-read      {threadId} or {ids:[...]}
-POST /connectors/sms/send           {address, body}      needs sms.send
-GET  /connectors/sms/events         SSE, fires on any change
-```
-
-**Paginate with `before`, never with `offset`.** Pass the `nextBefore` you got
-back as the next `before`. New messages arriving during a backlog scan shift
-every offset and cause duplicates or gaps; timestamps are stable.
-
-```js
-let before = null;
-for (;;) {
-  const q = new URLSearchParams({ limit: "100" });
-  if (before) q.set("before", before);
-  const page = await api("/connectors/sms/messages?" + q);
-  if (!page.messages.length) break;
-  await handle(page.messages);
-  before = page.nextBefore;
-}
-```
-
-**Do not copy message bodies into `/store`.** Store the message `id` plus what
-you derived. The system SMS provider is the source of truth; a second copy is
-another thing to secure and to keep in sync.
-
 ### Notifications and the home screen
 
+Full guide, with the browser rules that will cost you an hour:
+[NOTIFICATIONS.md](NOTIFICATIONS.md).
+
 ```
+POST   /pair     {code}   no auth, returns {token, clientId, namespace, capabilities}
 GET    /notify/capabilities
          -> {sdk, liveUpdates, nowBarLikely, notifications, widget, nowBrief}
 POST   /notify   {id, title, text, ongoing?, progressCurrent?, progressMax?, silent?}
 DELETE /notify/{id}
-PUT    /widget/content   {items:[{title, text}]}   up to 5
+
+PUT    /widget/content   {items:[{title, text}], ttlSeconds?}   your section of the brief
+GET    /widget/content                                          read it back
+DELETE /widget/content                                          withdraw it
 ```
+
+**Samsung's Now Brief has no third-party API.** The One UI 9 custom cards are
+authored by the user in Settings and generated by Samsung's own AI; no field
+is writable by an app. `capabilities.nowBrief` is always `false` and carries a
+`nowBriefReason`. Medha's brief — the home-screen widget above — is the
+writable equivalent: each client owns a section, sections expire after 24h by
+default, and rows fill round-robin so one app cannot crowd out the rest. It
+shows three rows at a time and cycles through the rest while the screen is on;
+tapping it opens every item from every app. The rotation interval is the
+user's setting, not something a client can drive.
+
+Rate limited to **10 in a burst, 30 a minute, per client** — `429` with
+`Retry-After` over that. This is the only endpoint where you make the device
+do something, and it is cheap to call, so a runaway interval is a bug the
+shade has to survive.
+
+`{"posted": false}` is not an error: the call worked and Android refused it,
+which on API 33+ means the user has not granted Medha `POST_NOTIFICATIONS`.
+The `reason` field says so.
 
 Call `/notify/capabilities` first — it tells you what this device can actually
 do rather than making you branch on OS version.
@@ -294,66 +286,53 @@ do rather than making you branch on OS version.
 
 ---
 
-## 5. Worked example: SMS organizer
+## 5. Worked example: a batch classifier
+
+The shape below is the one to copy for any bulk pass: **BATCH priority, and
+resumable by checking `/store` before spending inference**, because the user
+will close the tab halfway through.
 
 ```js
 // 1. wait for the service
 const h = await fetch(MEDHA + "/health").then(r => r.json());
 if (!h.modelLoaded) return showBanner("Start Medha and load a model");
 
-// 2. check SMS access
-const sms = await api("/connectors/sms/status");
-if (!sms.canRead) return showBanner("Grant SMS permission in the Medha app");
+// 2. backlog pass -- BATCH, gated and resumable
+for (const item of itemsToClassify) {
+  // Skip anything already done. This single line is what makes the pass
+  // resumable, and it is the difference between a pass that survives being
+  // interrupted and one that starts from zero every time.
+  const seen = await api("/store/label/" + item.id).catch(() => null);
+  if (seen) continue;
 
-// 3. backlog pass — BATCH, gated and resumable
-let before = null, done = 0;
-for (;;) {
-  const q = new URLSearchParams({ limit: "50" });
-  if (before) q.set("before", before);
-  const page = await api("/connectors/sms/messages?" + q);
-  if (!page.messages.length) break;
-
-  const results = [];
-  for (const m of page.messages) {
-    // skip anything already classified — makes the pass resumable
-    const seen = await api("/store/msg/" + m.id).catch(() => null);
-    if (seen) continue;
-
-    const r = await batchCall("/generate", {
-      system: "Reply with exactly one word: otp, bank, promo, personal, or other.",
-      prompt: m.body.slice(0, 400)
-    });
-    results.push({
-      key: "msg/" + m.id,
-      value: JSON.stringify({ label: r.text.trim().toLowerCase(), at: m.date })
-    });
-  }
-  if (results.length) await api("/store/bulk", {
-    method: "POST", body: JSON.stringify({ items: results })
-  });
-
-  done += page.messages.length;
-  before = page.nextBefore;
-
-  await api("/notify", {                       // progress in the Now Bar
+  const r = await api("/generate", {
     method: "POST",
+    headers: { "X-Medha-Priority": "batch" },   // <- without this you heat the phone
     body: JSON.stringify({
-      id: "backlog", title: "Organising messages",
-      text: done + " processed", ongoing: true,
-      progressCurrent: done, progressMax: sms.totalMessages
+      // Truncate. A long document overflows a small model's context and
+      // 400-800 characters is plenty for a label.
+      prompt: `Classify in one word: ${item.text.slice(0, 600)}`,
+      maxTokens: 8
     })
   });
-}
-await api("/notify/backlog", { method: "DELETE" });
 
-// 4. steady state — new messages, INTERACTIVE (no header)
-const es = new EventSource(MEDHA + "/connectors/sms/events");  // see note below
-es.onmessage = () => refreshInbox();
+  await api("/store/label/" + item.id, {
+    method: "PUT",
+    body: JSON.stringify({ label: r.text.trim(), at: Date.now() })
+  });
+}
+
+// 3. tell the user it finished, even if they switched away
+await api("/notify", {
+  method: "POST",
+  body: JSON.stringify({ id: "backlog", title: "Classification finished",
+                         text: `${itemsToClassify.length} items labelled` })
+});
 ```
 
-> `EventSource` cannot set an `Authorization` header. Either use `fetch` +
-> `ReadableStream` for SSE, or poll `/connectors/sms/messages?since=<lastDate>`
-> every 30s. Polling is fine at that interval and much simpler.
+Handle `429` by honouring `Retry-After` rather than retrying immediately: it
+means either the inference queue is full or batch work is thermally gated, and
+both resolve on their own.
 
 ---
 
@@ -367,7 +346,7 @@ es.onmessage = () => refreshInbox();
 4. **Persist to `/store`, not IndexedDB.**
 5. **Idempotent batch passes.** Check `/store` before spending inference; the
    user will close the tab mid-run.
-6. **Truncate prompts.** Long SMS threads overflow a small model's context.
+6. **Truncate prompts.** Long documents overflow a small model's context.
    400–800 characters per classification is plenty.
 7. **Degrade visibly.** If `/health` fails, say "Medha isn't running" rather
    than showing an empty screen.
@@ -381,10 +360,13 @@ es.onmessage = () => refreshInbox();
 |---|---|---|
 | 401 | `unauthorized` | missing/unknown token |
 | 403 | `forbidden` | client lacks the capability |
-| 403 | `sms_denied` | Medha lacks the Android SMS permission |
+| 403 | `origin_mismatch` | a paired token used from a different web origin |
+| 403 | `wrong_code` / `code_burned` / `code_expired` / `no_pending_code` | pairing — see NOTIFICATIONS.md |
+| 400 | `no_origin` | pairing attempted with no usable `Origin` (a `file://` page) |
 | 404 | `not_found` | no such key/session/message |
 | 413 | `too_large` | body over 16 MB, or value over 512 KB |
 | 429 | `rejected` | queue full or batch gated — honour `Retry-After` |
+| 429 | `rate_limited` | `/notify` budget spent — honour `Retry-After` |
 | 500 | `internal_error` | unexpected |
 | 501 | `not_implemented` | no embedding model loaded |
 | 503 | `model_not_loaded` | model still loading, or none selected |

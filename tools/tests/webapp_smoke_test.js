@@ -88,6 +88,11 @@ setTimeout(() => {
   expectHandler("ingest", "onclick");
   expectHandler("refreshColls", "onclick");
   expectHandler("copySnippet", "onclick");
+  expectHandler("notifPost", "onclick");
+  expectHandler("notifCancel", "onclick");
+  expectHandler("briefPut", "onclick");
+  expectHandler("briefGet", "onclick");
+  expectHandler("briefClear", "onclick");
 
   const tabs = doc.querySelectorAll("#apiTabs .tab");
   if (tabs.length !== 4) {

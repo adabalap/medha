@@ -27,8 +27,10 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.core.app.NotificationManagerCompat
 import com.adabala.medha.auth.ClientRegistry
-import com.adabala.medha.connectors.SmsConnector
+import com.adabala.medha.auth.PairingManager
+import com.adabala.medha.notify.BriefRotator
 import com.adabala.medha.diag.Diagnostics
 import com.adabala.medha.sched.InferenceScheduler
 import com.adabala.medha.ui.ClientListAdapter
@@ -76,14 +78,6 @@ class MainActivity : AppCompatActivity() {
     private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(this) }
 
     private val registry by lazy { ClientRegistry.get(this) }
-    private val sms by lazy { SmsConnector(this) }
-
-    private val smsPerm =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { res ->
-            val granted = res[Manifest.permission.READ_SMS] == true
-            toast(getString(if (granted) R.string.sms_granted else R.string.sms_denied))
-        }
-
     private val notifPerm =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
@@ -183,7 +177,9 @@ class MainActivity : AppCompatActivity() {
             when (item.itemId) {
                 R.id.nav_open_pwa -> openDemo()
                 R.id.nav_clients -> showClientsDialog()
-                R.id.nav_sms -> showSmsDialog()
+                R.id.nav_pair_web -> showPairWebDialog()
+                R.id.nav_brief -> openBrief()
+                R.id.nav_brief_rotate -> showBriefRotationDialog()
                 R.id.nav_scheduler -> showSchedulerDialog()
                 R.id.nav_thermal -> showThermalDialog()
                 R.id.nav_copy_token -> copyToken()
@@ -484,9 +480,9 @@ class MainActivity : AppCompatActivity() {
      * `attachBaseContext()`. `lazy` defers evaluation to first access, which
      * only happens from [showCapabilitiesDialog], well after `onCreate`.
      *
-     * SMS and notify are deliberately absent from the default set: most
-     * consumers should not have them, and a grant that broad should be a
-     * decision rather than a default.
+     * [ClientRegistry.Cap.NOTIFY] is deliberately absent from the default
+     * set: posting to the notification shade is intrusive enough that it
+     * should be a decision rather than a default.
      */
     private val grantable by lazy {
         listOf(
@@ -494,8 +490,6 @@ class MainActivity : AppCompatActivity() {
             ClientRegistry.Cap.MEMORY to getString(R.string.cap_memory),
             ClientRegistry.Cap.RAG to getString(R.string.cap_rag),
             ClientRegistry.Cap.STORE to getString(R.string.cap_store),
-            ClientRegistry.Cap.SMS_READ to getString(R.string.cap_sms_read),
-            ClientRegistry.Cap.SMS_SEND to getString(R.string.cap_sms_send),
             ClientRegistry.Cap.NOTIFY to getString(R.string.cap_notify)
         )
     }
@@ -540,8 +534,8 @@ class MainActivity : AppCompatActivity() {
             setPadding(56, 24, 56, 0)
             addView(input)
         }
-        // Defaults on: everything a normal consumer needs. SMS and notify are
-        // off, because they are the ones worth an explicit decision.
+        // Defaults on: everything a normal consumer needs. Notifications are
+        // off, because that is the one worth an explicit decision.
         val checked = grantable.map { it.first in ClientRegistry.Cap.DEFAULT }.toBooleanArray()
 
         MaterialAlertDialogBuilder(this)
@@ -567,38 +561,120 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun showSmsDialog() {
-        val st = sms.status()
-        if (!st.supported) {
-            MaterialAlertDialogBuilder(this)
-                .setTitle(R.string.sms_title)
-                .setIcon(R.drawable.ic_sms)
-                .setMessage(getString(R.string.sms_unsupported))
-                .setPositiveButton(R.string.close, null)
-                .show()
-            return
-        }
+    /**
+     * Generates a pairing code and shows it.
+     *
+     * This is the web-app half of the access story. An installed Android app
+     * gets a token through [com.adabala.medha.auth.AccessRequestActivity],
+     * where the system tells Medha who is calling. A web app has no package
+     * to report, so the user vouches for it instead by carrying six digits
+     * from this screen to the browser. See PairingManager for why six digits
+     * is sufficient.
+     */
+    private fun showPairWebDialog() {
+        // Capability picker first: "grant something" should never be a
+        // question answered on the user's behalf, and the code embeds the
+        // answer, so it has to be chosen before the code is generated.
+        val offered = grantable
+        val checked = offered.map { it.first == ClientRegistry.Cap.NOTIFY ||
+            it.first in ClientRegistry.Cap.DEFAULT }.toBooleanArray()
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.pair_choose_caps)
+            .setIcon(R.drawable.ic_pair)
+            .setMultiChoiceItems(
+                offered.map { it.second }.toTypedArray(), checked
+            ) { _, which, isChecked -> checked[which] = isChecked }
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.create) { _, _ ->
+                val caps = offered.filterIndexed { i, _ -> checked[i] }.map { it.first }.toSet()
+                issueAndShowPairingCode(caps)
+            }
+            .show()
+    }
+
+    private fun issueAndShowPairingCode(caps: Set<String>) {
+        val pending = PairingManager.shared().issue(caps)
+        val expires = android.text.format.DateFormat.getTimeFormat(this)
+            .format(Date(pending.expiresAt))
+
+        val notificationsOff = caps.contains(ClientRegistry.Cap.NOTIFY) &&
+            !NotificationManagerCompat.from(this).areNotificationsEnabled()
+
         val body = buildString {
-            append("Read permission: ").append(if (st.canRead) "granted" else "NOT granted").append("\n")
-            append("Send permission: ").append(if (st.canSend) "granted" else "not granted").append("\n")
-            append("Default SMS app: ").append(if (st.isDefaultSmsApp) "yes" else "no").append("\n")
-            if (st.canRead) append("Messages visible: ").append(st.totalMessages).append("\n")
-            append("\nPWAs reach SMS through Medha at /connectors/sms/*, because a\n")
-            append("browser page cannot read SMS at all. A client needs the\n")
-            append("'sms.read' capability; sending additionally requires being the\n")
-            append("default SMS app.")
+            append(getString(R.string.pair_intro)).append("\n\n")
+            append("        ").append(pending.display).append("\n\n")
+            append(getString(R.string.pair_expires, expires)).append("\n")
+            append(getString(R.string.pair_url, currentPort())).append("\n\n")
+            append(getString(R.string.pair_caps_title)).append(":\n")
+            caps.sorted().forEach { append("  •  ").append(capLabel(it)).append('\n') }
+            append('\n').append(getString(R.string.pair_code_hint))
+            // Worth saying up front rather than letting the integrator debug
+            // a successful POST /notify that produces no visible card.
+            if (notificationsOff) append("\n\n").append(getString(R.string.pair_notifications_off))
+            if (uiState != UiState.RUNNING) append("\n\n").append(getString(R.string.pair_server_off))
         }
+
         val b = MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.sms_title)
-            .setIcon(R.drawable.ic_sms)
+            .setTitle(R.string.pair_title)
+            .setIcon(R.drawable.ic_pair)
             .setMessage(body)
             .setPositiveButton(R.string.close, null)
-        if (!st.canRead) {
-            b.setNeutralButton(R.string.sms_grant) { _, _ ->
-                smsPerm.launch(SmsConnector.READ_PERMISSIONS)
+            .setNegativeButton(R.string.pair_cancel_code) { _, _ ->
+                PairingManager.shared().cancel()
+                toast(getString(R.string.pair_cancelled))
             }
+        if (notificationsOff) {
+            b.setNeutralButton(R.string.pair_grant_notifications) { _, _ -> ensureNotifPerm() }
         }
         b.show()
+    }
+
+    /** Shared with the consent screen's wording so labels cannot diverge. */
+    private fun capLabel(cap: String): String =
+        grantable.firstOrNull { it.first == cap }?.second ?: cap
+
+    /** The full brief, the same screen the home-screen widget opens. */
+    private fun openBrief() {
+        startActivity(Intent(this, BriefActivity::class.java))
+    }
+
+    /**
+     * Rotation interval for the brief widget.
+     *
+     * A short list of choices rather than a slider: the useful range is a
+     * handful of values, every one of them costs a Binder call into the
+     * launcher on each tick, and a slider invites someone to pick 2 seconds
+     * and then wonder about battery.
+     */
+    private fun showBriefRotationDialog() {
+        val seconds = listOf(0L, 3L, 5L, 10L, 30L)
+        val labels = seconds.map {
+            if (it == 0L) getString(R.string.brief_rotate_off)
+            else getString(R.string.brief_rotate_interval, it.toInt())
+        }.toTypedArray()
+
+        val current = prefs.getString(InferenceService.KEY_BRIEF_ROTATE, null)?.toLongOrNull()
+            ?: BriefRotator.DEFAULT_INTERVAL_SECONDS
+        val checked = seconds.indexOf(current).takeIf { it >= 0 } ?: 1
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.brief_rotate_title)
+            .setIcon(R.drawable.ic_pair)
+            .setMessage(R.string.brief_rotate_body)
+            .setSingleChoiceItems(labels, checked) { dialog, which ->
+                prefs.edit()
+                    .putString(InferenceService.KEY_BRIEF_ROTATE, seconds[which].toString())
+                    .apply()
+                // The service re-reads this on every start, so nudging it is
+                // what makes the choice take effect now rather than next time
+                // Medha is started.
+                restartServiceIfLive()
+                toast(getString(R.string.brief_rotate_saved, labels[which]))
+                dialog.dismiss()
+            }
+            .setNegativeButton(R.string.close, null)
+            .show()
     }
 
     private fun showSchedulerDialog() {
@@ -680,6 +756,18 @@ class MainActivity : AppCompatActivity() {
             POST  /rag/query
             GET   /rag/collections
             DEL   /rag/collections/{name}
+
+            PUT   /store/{key}
+            GET   /store/{key}
+            DEL   /store/{key}
+
+            POST  /pair                {code}   (no auth)
+            GET   /notify/capabilities
+            POST  /notify              {id, title, text, ongoing?}
+            DEL   /notify/{id}
+            PUT   /widget/content      {items:[...], ttlSeconds?}
+            GET   /widget/content
+            DEL   /widget/content
         """.trimIndent()
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.endpoints_title)

@@ -56,15 +56,41 @@ private fun check(label: String, condition: Boolean) {
 }
 
 /**
+ * Locates a file under `app/src/main/java/com/adabala/medha/`, from whatever
+ * directory the test happens to be run in.
+ *
+ * This **throws** rather than returning null, and that is the whole point.
+ * The previous version hardcoded `../../app/...`, which only resolved when
+ * run from `tools/tests/`; run from the repo root it printed a warning,
+ * skipped both drift checks, and reported "0 failed". A guard that reports
+ * green while checking nothing is worse than no guard, because it is
+ * actively trusted. If the layout moves, this must break loudly.
+ */
+private fun sourceFile(relative: String): File {
+    val under = "app/src/main/java/com/adabala/medha/$relative"
+    var dir: File? = File(".").absoluteFile
+    val tried = mutableListOf<String>()
+    // Walk up looking for the repo root. Six levels is far more than the
+    // real depth and terminates on any sane filesystem.
+    repeat(6) {
+        val here = dir ?: return@repeat
+        val candidate = File(here, under)
+        tried += candidate.path
+        if (candidate.exists()) return candidate
+        dir = here.parentFile
+    }
+    error(
+        "cannot locate $under from ${File(".").absolutePath}\n" +
+            tried.joinToString("\n") { "  tried: $it" }
+    )
+}
+
+/**
  * Guards against this test's mirrored copy silently drifting from the real
  * implementation, which would make every assertion below meaningless.
  */
 private fun assertMirrorsSource() {
-    val src = File("../../app/src/main/java/com/adabala/medha/auth/MedhaAccessContract.kt")
-    if (!src.exists()) {
-        println("WARN: could not locate MedhaAccessContract.kt to compare against")
-        return
-    }
+    val src = sourceFile("auth/MedhaAccessContract.kt")
     val text = src.readText()
     listOf(
         "SHA-256",
@@ -89,14 +115,8 @@ private fun assertMirrorsSource() {
  * asked for.
  */
 private fun assertCapabilitiesAgree() {
-    val contract = File("../../app/src/main/java/com/adabala/medha/auth/MedhaAccessContract.kt")
-    val registry = File("../../app/src/main/java/com/adabala/medha/auth/ClientRegistry.kt")
-    if (!contract.exists() || !registry.exists()) {
-        println("WARN: could not locate both sources to compare capability strings")
-        return
-    }
-    val contractText = contract.readText()
-    val registryText = registry.readText()
+    val contractText = sourceFile("auth/MedhaAccessContract.kt").readText()
+    val registryText = sourceFile("auth/ClientRegistry.kt").readText()
 
     // Every CAP_* literal the contract publishes must appear as the value of
     // the matching Cap constant in ClientRegistry.
@@ -104,7 +124,8 @@ private fun assertCapabilitiesAgree() {
         "CAP_GENERATE" to "GENERATE",
         "CAP_MEMORY" to "MEMORY",
         "CAP_RAG" to "RAG",
-        "CAP_STORE" to "STORE"
+        "CAP_STORE" to "STORE",
+        "CAP_NOTIFY" to "NOTIFY"
     )
     pairs.forEach { (contractName, registryName) ->
         val contractValue = Regex("""const val $contractName = "([^"]+)"""")
@@ -120,9 +141,33 @@ private fun assertCapabilitiesAgree() {
     // admin must never become grantable by being added to the contract's set.
     val grantable = Regex("""val GRANTABLE: Set<String> = setOf\(([^)]*)\)""")
         .find(contractText)?.groupValues?.get(1).orEmpty()
+    // admin must never become grantable. This is the one that genuinely
+    // cannot change: admin bypasses every namespace check in the server, so
+    // an app that could obtain it by asking could read every other app's
+    // sessions and collections.
     check("GRANTABLE does not include admin", !grantable.contains("ADMIN", ignoreCase = true))
-    check("GRANTABLE does not include SMS", !grantable.contains("SMS", ignoreCase = true))
-    check("GRANTABLE does not include notify", !grantable.contains("NOTIFY", ignoreCase = true))
+
+    // SMS is gone entirely as of v0.9.0. Asserting its absence from GRANTABLE
+    // would now pass trivially, so assert the stronger thing: no SMS
+    // capability constant exists to be granted in the first place.
+    check(
+        "no SMS capability exists in the contract",
+        !Regex("""CAP_SMS\w*""").containsMatchIn(contractText)
+    )
+    check(
+        "no SMS capability exists in the registry",
+        !Regex("""const val SMS_\w+""").containsMatchIn(registryText)
+    )
+
+    // notify became grantable in v0.9.0 -- see the GRANTABLE doc comment for
+    // why the earlier decision was reversed. It must still be absent from
+    // DEFAULT, which is the property that actually keeps it off by default.
+    check("GRANTABLE includes notify", grantable.contains("NOTIFY", ignoreCase = true))
+    val default = Regex("""val DEFAULT = setOf\(([^)]*)\)""")
+        .find(registryText)?.groupValues?.get(1).orEmpty()
+    check("DEFAULT grant is non-empty (regex still matches)", default.isNotBlank())
+    check("DEFAULT does not include notify", !default.contains("NOTIFY", ignoreCase = true))
+    check("DEFAULT does not include admin", !default.contains("ADMIN", ignoreCase = true))
 }
 
 fun main() {

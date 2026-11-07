@@ -4,7 +4,11 @@ import android.content.Context
 import com.adabala.medha.diag.Diagnostics
 import com.adabala.medha.data.MedhaDatabase
 import com.adabala.medha.auth.ClientRegistry
-import com.adabala.medha.connectors.SmsConnector
+import com.adabala.medha.auth.PairingManager
+import com.adabala.medha.net.CorsPolicy
+import com.adabala.medha.net.RateLimiter
+import com.adabala.medha.net.WebOrigin
+import com.adabala.medha.notify.BriefPolicy
 import com.adabala.medha.notify.NotificationHub
 import com.adabala.medha.sched.InferenceScheduler
 import com.adabala.medha.rag.Embedder
@@ -12,7 +16,6 @@ import com.adabala.medha.rag.NoEmbedder
 import com.adabala.medha.rag.Retriever
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.ApplicationCall
@@ -23,9 +26,9 @@ import io.ktor.server.cio.CIO
 import io.ktor.server.engine.ApplicationEngine
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.server.plugins.cors.routing.CORS
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.request.contentLength
+import io.ktor.server.request.httpMethod
 import io.ktor.server.request.path
 import io.ktor.server.request.receive
 import io.ktor.server.request.receiveText
@@ -120,10 +123,7 @@ data class StoreItem(val key: String, val value: String)
 data class BulkStoreRequest(val items: List<StoreItem>)
 
 @Serializable
-data class MarkReadRequest(val threadId: Long? = null, val ids: List<Long> = emptyList())
-
-@Serializable
-data class SmsSendRequest(val address: String, val body: String)
+data class PairRequest(val code: String)
 
 @Serializable
 data class NotifyRequest(
@@ -140,7 +140,16 @@ data class NotifyRequest(
 data class WidgetItem(val title: String, val text: String = "")
 
 @Serializable
-data class WidgetRequest(val items: List<WidgetItem>)
+data class WidgetRequest(
+    val items: List<WidgetItem>,
+    /**
+     * How long this section should live, in seconds. Clamped server-side to
+     * [com.adabala.medha.notify.BriefPolicy.MIN_TTL_MS]..`MAX_TTL_MS`, so a
+     * client cannot pin content to the home screen indefinitely. Omitted
+     * means the 24-hour default.
+     */
+    val ttlSeconds: Long? = null
+)
 
 @Serializable
 data class ErrorResponse(val error: String, val code: String? = null)
@@ -163,9 +172,9 @@ data class ErrorResponse(val error: String, val code: String? = null)
  *   2. CORS is restricted to the loopback origins Medha itself serves.
  *
  * The bundled demo UI is served unauthenticated and has the token substituted
- * into it, so same-origin PWAs work with no setup. Third-party PWAs (your SMS
- * organizer, hf_agent) send `Authorization: Bearer <token>`; the token is shown
- * and copyable in the Medha app.
+ * into it, so same-origin PWAs work with no setup. A web app served from any
+ * other origin pairs first (see PairingManager) and then sends
+ * `Authorization: Bearer <token>` like any other client.
  */
 class LocalServer(
     private val appContext: Context,
@@ -176,10 +185,26 @@ class LocalServer(
     private val embedder: Embedder = NoEmbedder,
     private val registry: ClientRegistry,
     private val scheduler: InferenceScheduler,
-    private val sms: SmsConnector,
-    private val notifier: NotificationHub
+    private val notifier: NotificationHub,
+    /**
+     * Shared with MainActivity: the user generates a code in the UI and a web
+     * app redeems it here, so both sides must see the same instance. Held by
+     * InferenceService and handed to both.
+     */
+    private val pairing: PairingManager
 ) {
     private var server: ApplicationEngine? = null
+
+    /**
+     * Per-client budget for POST /notify: a burst of [NOTIFY_BURST] then
+     * [NOTIFY_PER_MINUTE] a minute sustained. Sized for an app that posts a
+     * handful of cards when it syncs and then goes quiet, and far below what
+     * a runaway setInterval would want.
+     */
+    private val notifyLimiter = RateLimiter(
+        capacity = NOTIFY_BURST,
+        refillPerMinute = NOTIFY_PER_MINUTE
+    )
     private val memory = MemoryRepository(db)
     private val retriever = Retriever(db, embedder)
     private val jsonFormat = Json { ignoreUnknownKeys = true; encodeDefaults = true }
@@ -206,21 +231,36 @@ class LocalServer(
                 }
             }
 
-            install(CORS) {
-                // Only the origins Medha itself serves. Not anyHost().
-                allowHost("127.0.0.1:$port", schemes = listOf("http"))
-                allowHost("localhost:$port", schemes = listOf("http"))
-                allowHeader(HttpHeaders.ContentType)
-                allowHeader(HttpHeaders.Authorization)
-                allowHeader(HEADER_TOKEN)
-                allowMethod(HttpMethod.Get)
-                allowMethod(HttpMethod.Post)
-                allowMethod(HttpMethod.Delete)
-                allowMethod(HttpMethod.Options)
-            }
+            // NOTE: no install(CORS). Cross-origin handling is done by hand in
+            // the interceptor below, because the allowed set changes as web
+            // apps pair and because Ktor 2.3's CORS plugin cannot emit the
+            // Private Network Access header Chrome requires. See CorsPolicy.
 
             intercept(ApplicationCallPipeline.Plugins) {
                 val path = call.request.path()
+
+                // ---------------------------- CORS ----------------------------
+                // First, before auth: a preflight carries no Authorization
+                // header by definition, so answering it after the auth check
+                // would 401 every cross-origin request before the browser ever
+                // sent the real one.
+                val decision = CorsPolicy.decide(
+                    originHeader = call.request.headers[HttpHeaders.Origin],
+                    method = call.request.httpMethod.value,
+                    // Plain == on a nullable rather than String?.equals(…,
+                    // ignoreCase): the extension-on-nullable form reads as a
+                    // call on a possibly-null receiver and is easy to
+                    // misread when skimming a security check.
+                    requestsPrivateNetwork =
+                        call.request.headers[CorsPolicy.REQUEST_PRIVATE_NETWORK]
+                            ?.trim()?.lowercase() == "true",
+                    allowedOrigins = allowedOrigins()
+                )
+                decision.headers.forEach { (k, v) -> call.response.header(k, v) }
+                decision.shortCircuitStatus?.let { status ->
+                    call.respond(HttpStatusCode.fromValue(status))
+                    return@intercept finish()
+                }
 
                 val len = call.request.contentLength() ?: 0L
                 if (len > MAX_BODY_BYTES) {
@@ -233,6 +273,34 @@ class LocalServer(
 
                 val client = resolveClient(call)
                 if (client != null) {
+                    // ---------------------- origin binding ----------------------
+                    // A token issued to a web app only works from that web
+                    // app's origin. Without this, a token copied out of one
+                    // site's localStorage and pasted into another page would
+                    // work perfectly: CORS alone governs who may *read* the
+                    // reply, and says nothing about who may hold a token.
+                    //
+                    // An absent Origin is allowed through deliberately. curl,
+                    // a native client and the hello-medha sample all send
+                    // none, and the user may legitimately copy a token into
+                    // one of those from the client list.
+                    val presentedOrigin = WebOrigin.canonical(call.request.headers[HttpHeaders.Origin])
+                    val bound = client.webOrigin
+                    if (bound != null && presentedOrigin != null && presentedOrigin != bound) {
+                        Diagnostics.w(
+                            TAG,
+                            "token for '${client.id}' presented from $presentedOrigin, bound to $bound"
+                        )
+                        call.respond(
+                            HttpStatusCode.Forbidden,
+                            ErrorResponse(
+                                "this token is bound to $bound and cannot be used from $presentedOrigin",
+                                "origin_mismatch"
+                            )
+                        )
+                        return@intercept finish()
+                    }
+
                     call.attributes.put(CLIENT_KEY, client)
                     // Throttled internally to at most one write per hour per
                     // client, so this costs a map lookup on the vast majority
@@ -816,124 +884,82 @@ class LocalServer(
                     call.respondJson(buildJsonObject { put("written", n) })
                 }
 
-                // --------------------------- SMS connector ---------------------------
+                // ------------------------------ pairing ------------------------------
+                //
+                // The one unauthenticated write endpoint. A web app cannot use
+                // the intent handshake -- it has no package for Medha to
+                // identify -- so the user vouches for it instead, by reading a
+                // code off Medha's screen and typing it into the web app.
+                //
+                // Three things keep this from being an open door:
+                //   - a code only exists for five minutes after the user taps
+                //     "Pair a web app", and only one is ever live;
+                //   - five wrong guesses destroy it;
+                //   - a request with no usable Origin is refused outright,
+                //     since there would be nothing to bind the token to.
 
-                get("/connectors/sms/status") {
-                    call.requireCap(ClientRegistry.Cap.SMS_READ) ?: return@get
-                    val st = sms.status()
-                    call.respondJson(buildJsonObject {
-                        // False on the "core" build, which ships without SMS
-                        // permissions so it installs without a Play Protect block.
-                        put("supported", st.supported)
-                        put("canRead", st.canRead)
-                        put("canSend", st.canSend)
-                        put("isDefaultSmsApp", st.isDefaultSmsApp)
-                        put("totalMessages", st.totalMessages)
-                    })
-                }
+                post(PAIR_PATH) {
+                    val origin = WebOrigin.canonical(call.request.headers[HttpHeaders.Origin])
+                    val req = runCatching { call.receive<PairRequest>() }.getOrNull()
+                        ?: return@post call.badRequest("expected {\"code\":\"123456\"}")
 
-                get("/connectors/sms/conversations") {
-                    call.requireCap(ClientRegistry.Cap.SMS_READ) ?: return@get
-                    if (!sms.canRead()) return@get call.smsDenied()
-                    val limit = call.intParam("limit", 50).coerceIn(1, 200)
-                    val offset = call.intParam("offset", 0).coerceAtLeast(0)
-                    call.respondJson(buildJsonObject {
-                        putJsonArray("conversations") {
-                            sms.conversations(limit, offset).forEach { t ->
-                                addJsonObject {
-                                    put("threadId", t.threadId)
-                                    put("address", t.address)
-                                    put("displayName", t.displayName ?: "")
-                                    put("snippet", t.snippet)
-                                    put("messageCount", t.messageCount)
-                                    put("unreadCount", t.unreadCount)
-                                    put("lastAt", t.lastAt)
+                    when (val r = pairing.redeem(req.code, origin)) {
+                        is PairingManager.Result.Ok -> {
+                            // origin is non-null here: redeem() returns
+                            // NoOrigin before reaching Ok otherwise.
+                            val client = registry.createForWeb(origin!!, r.capabilities)
+                            Diagnostics.i(TAG, "paired web app '${client.id}' at $origin")
+                            // Rebuild nothing: allowedOrigins() reads the
+                            // registry live, so the new origin works on the
+                            // very next request.
+                            call.respondJson(buildJsonObject {
+                                put("token", client.token)
+                                put("clientId", client.id)
+                                put("namespace", client.namespace)
+                                put("origin", origin)
+                                putJsonArray("capabilities") {
+                                    client.capabilities.sorted().forEach { add(it) }
                                 }
-                            }
+                            })
                         }
-                    })
-                }
 
-                get("/connectors/sms/messages") {
-                    call.requireCap(ClientRegistry.Cap.SMS_READ) ?: return@get
-                    if (!sms.canRead()) return@get call.smsDenied()
-                    val msgs = sms.messages(
-                        threadId = call.request.queryParameters["threadId"]?.toLongOrNull(),
-                        since = call.request.queryParameters["since"]?.toLongOrNull(),
-                        before = call.request.queryParameters["before"]?.toLongOrNull(),
-                        unreadOnly = call.request.queryParameters["unreadOnly"] == "true",
-                        limit = call.intParam("limit", 100)
-                    )
-                    call.respondJson(buildJsonObject {
-                        putJsonArray("messages") { msgs.forEach { add(it.toJson()) } }
-                        // Cursor for the next page. Timestamps, not offsets:
-                        // messages arriving mid-scan shift every offset and
-                        // cause duplicates or gaps during a backlog pass.
-                        put("nextBefore", msgs.minOfOrNull { it.date } ?: 0L)
-                        put("count", msgs.size)
-                    })
-                }
-
-                get("/connectors/sms/messages/{id}") {
-                    call.requireCap(ClientRegistry.Cap.SMS_READ) ?: return@get
-                    if (!sms.canRead()) return@get call.smsDenied()
-                    val id = call.parameters["id"]?.toLongOrNull()
-                        ?: return@get call.badRequest("numeric id required")
-                    val m = sms.message(id)
-                        ?: return@get call.respond(
-                            HttpStatusCode.NotFound, ErrorResponse("no such message", "not_found")
-                        )
-                    call.respondText(m.toJson().toString(), ContentType.Application.Json)
-                }
-
-                get("/connectors/sms/contacts/{address}") {
-                    call.requireCap(ClientRegistry.Cap.SMS_READ) ?: return@get
-                    val addr = call.parameters["address"].orEmpty()
-                    call.respondJson(buildJsonObject {
-                        put("address", addr)
-                        put("displayName", sms.contactName(addr) ?: "")
-                    })
-                }
-
-                post("/connectors/sms/mark-read") {
-                    call.requireCap(ClientRegistry.Cap.SMS_READ) ?: return@post
-                    val req = call.receive<MarkReadRequest>()
-                    val n = when {
-                        req.threadId != null -> sms.markThreadRead(req.threadId)
-                        req.ids.isNotEmpty() -> sms.markRead(req.ids)
-                        else -> return@post call.badRequest("threadId or ids required")
-                    }
-                    call.respondJson(buildJsonObject { put("updated", n) })
-                }
-
-                post("/connectors/sms/send") {
-                    call.requireCap(ClientRegistry.Cap.SMS_SEND) ?: return@post
-                    val req = call.receive<SmsSendRequest>()
-                    sms.send(req.address, req.body).fold(
-                        onSuccess = {
-                            call.respondJson(buildJsonObject { put("sent", true) })
-                        },
-                        onFailure = { e ->
-                            call.respond(
-                                HttpStatusCode.Forbidden,
-                                ErrorResponse(e.message ?: "send failed", "send_failed")
+                        is PairingManager.Result.NoOrigin -> call.respond(
+                            HttpStatusCode.BadRequest,
+                            ErrorResponse(
+                                "pairing requires a browser Origin; a sandboxed frame or " +
+                                    "file:// page cannot pair",
+                                "no_origin"
                             )
-                        }
-                    )
-                }
+                        )
 
-                get("/connectors/sms/events") {
-                    call.requireCap(ClientRegistry.Cap.SMS_READ) ?: return@get
-                    if (!sms.canRead()) return@get call.smsDenied()
-                    call.prepareSse()
-                    call.respondTextWriter(ContentType.Text.EventStream) {
-                        // One held connection instead of a PWA polling a content
-                        // provider through HTTP every few seconds.
-                        write("data: {\"type\":\"connected\"}\n\n"); flush()
-                        sms.changes().collect { at ->
-                            write("data: {\"type\":\"change\",\"at\":$at}\n\n")
-                            flush()
-                        }
+                        is PairingManager.Result.WrongCode -> call.respond(
+                            HttpStatusCode.Forbidden,
+                            ErrorResponse(
+                                "wrong code; ${r.attemptsLeft} attempt(s) left",
+                                "wrong_code"
+                            )
+                        )
+
+                        is PairingManager.Result.Burned -> call.respond(
+                            HttpStatusCode.Forbidden,
+                            ErrorResponse(
+                                "too many wrong attempts; generate a new code in Medha",
+                                "code_burned"
+                            )
+                        )
+
+                        is PairingManager.Result.Expired -> call.respond(
+                            HttpStatusCode.Forbidden,
+                            ErrorResponse("code expired; generate a new one in Medha", "code_expired")
+                        )
+
+                        is PairingManager.Result.NoPendingCode -> call.respond(
+                            HttpStatusCode.Forbidden,
+                            ErrorResponse(
+                                "no pairing code is active; open Medha and tap 'Pair a web app'",
+                                "no_pending_code"
+                            )
+                        )
                     }
                 }
 
@@ -954,8 +980,29 @@ class LocalServer(
 
                 post("/notify") {
                     val client = call.requireCap(ClientRegistry.Cap.NOTIFY) ?: return@post
+                    // Rate limited because this is the one endpoint where a
+                    // client makes the *device* do something, and it is cheap
+                    // to call. Everything else is gated by how slowly the
+                    // model runs. See RateLimiter.
+                    if (!notifyLimiter.allow(client.id)) {
+                        val retry = notifyLimiter.retryAfterSeconds(client.id)
+                        call.response.header(HttpHeaders.RetryAfter, retry.toString())
+                        return@post call.respond(
+                            HttpStatusCode.TooManyRequests,
+                            ErrorResponse(
+                                "notification rate limit reached; retry in ${retry}s",
+                                "rate_limited"
+                            )
+                        )
+                    }
                     val req = call.receive<NotifyRequest>()
                     if (req.title.isBlank()) return@post call.badRequest("title is required")
+                    if (req.title.length > MAX_NOTIFY_TITLE) {
+                        return@post call.badRequest("title exceeds $MAX_NOTIFY_TITLE characters")
+                    }
+                    if (req.text.length > MAX_NOTIFY_TEXT) {
+                        return@post call.badRequest("text exceeds $MAX_NOTIFY_TEXT characters")
+                    }
                     val ok = notifier.post(
                         NotificationHub.Request(
                             id = req.id, title = req.title, text = req.text,
@@ -964,7 +1011,16 @@ class LocalServer(
                             silent = req.silent, clientId = client.id
                         )
                     )
-                    call.respondJson(buildJsonObject { put("posted", ok); put("id", req.id) })
+                    call.respondJson(buildJsonObject {
+                        put("posted", ok)
+                        put("id", req.id)
+                        // False means the post was refused by the platform,
+                        // which on Android 13+ almost always means the user
+                        // has not granted Medha POST_NOTIFICATIONS. Say so,
+                        // because a bare "posted: false" sends integrators
+                        // hunting through their own code.
+                        if (!ok) put("reason", "notifications are disabled for Medha on this device")
+                    })
                 }
 
                 delete("/notify/{id}") {
@@ -973,11 +1029,92 @@ class LocalServer(
                     call.respondJson(buildJsonObject { put("cancelled", true) })
                 }
 
+                // ------------------------------- the brief -------------------------------
+                //
+                // Medha's own digest surface, on the home screen, writable by
+                // every paired client at once.
+                //
+                // This is what the Now Brief request resolves to. Samsung's
+                // Now Brief has no third-party API -- the One UI 9 custom
+                // cards are authored by the user in Settings and generated by
+                // Samsung's AI, with no field an app can write -- so there is
+                // nothing to integrate with. These endpoints are the writable
+                // equivalent. See docs/NOTIFICATIONS.md.
+                //
+                // Each client owns a section. Writing replaces only your own.
+
                 put("/widget/content") {
                     val client = call.requireCap(ClientRegistry.Cap.NOTIFY) ?: return@put
                     val req = call.receive<WidgetRequest>()
-                    notifier.setWidgetContent(client.id, req.items.map { it.title to it.text })
-                    call.respondJson(buildJsonObject { put("ok", true); put("items", req.items.size) })
+                    if (req.items.size > BriefPolicy.MAX_ITEMS_PER_SECTION) {
+                        return@put call.badRequest(
+                            "at most ${BriefPolicy.MAX_ITEMS_PER_SECTION} items per client"
+                        )
+                    }
+                    // Plain `if` at the lambda's top level, not `?.let { return@put }`:
+                    // a non-local return out of a nested lambda is rejected by
+                    // the compiler here, and the rest of this file uses this
+                    // shape anyway.
+                    if (req.items.any { it.title.length > MAX_BRIEF_TITLE }) {
+                        return@put call.badRequest("a title exceeds $MAX_BRIEF_TITLE characters")
+                    }
+                    if (req.items.any { it.text.length > MAX_BRIEF_TEXT }) {
+                        return@put call.badRequest("a text exceeds $MAX_BRIEF_TEXT characters")
+                    }
+                    val stored = notifier.setBrief(
+                        clientId = client.id,
+                        items = req.items.map { it.title to it.text },
+                        ttlMs = req.ttlSeconds?.let { it * 1000 } ?: BriefPolicy.DEFAULT_TTL_MS
+                    )
+                    call.respondJson(buildJsonObject {
+                        put("ok", true)
+                        // What was actually kept, not what was sent. v0.9.0
+                        // echoed the request size while silently rendering
+                        // three of five items, so a client had no way to see
+                        // the loss.
+                        put("items", stored)
+                        put("rows", BriefPolicy.MAX_ROWS)
+                    })
+                }
+
+                get("/widget/content") {
+                    val client = call.requireCap(ClientRegistry.Cap.NOTIFY) ?: return@get
+                    // Namespace discipline, same as everywhere else: a client
+                    // reads back its own section. Admin sees the whole brief,
+                    // which is what the bundled UI uses to show the user what
+                    // is on their home screen.
+                    val all = notifier.brief()
+                    val visible = if (client.isAdmin) all else all.filter { it.clientId == client.id }
+                    val now = System.currentTimeMillis()
+                    call.respondJson(buildJsonObject {
+                        put("rows", BriefPolicy.MAX_ROWS)
+                        put("contributors", all.size)
+                        putJsonArray("sections") {
+                            visible.forEach { s ->
+                                addJsonObject {
+                                    put("clientId", s.clientId)
+                                    put("updatedAt", s.updatedAt)
+                                    put("expiresAt", s.expiresAt)
+                                    put("age", BriefPolicy.age(s.updatedAt, now))
+                                    putJsonArray("items") {
+                                        s.items.forEach { i ->
+                                            addJsonObject {
+                                                put("title", i.title)
+                                                put("text", i.text)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    })
+                }
+
+                delete("/widget/content") {
+                    val client = call.requireCap(ClientRegistry.Cap.NOTIFY) ?: return@delete
+                    call.respondJson(buildJsonObject {
+                        put("cleared", notifier.clearBrief(client.id))
+                    })
                 }
 
                 // ---------------------------- scheduler ----------------------------
@@ -1061,9 +1198,24 @@ class LocalServer(
     private fun isPublic(path: String): Boolean {
         if (path == "/health") return true
         if (path == "/") return true
+        // Pairing has to be reachable without a token: obtaining one is the
+        // entire point. It is not unprotected — it requires a six-digit code
+        // that only exists while the user is looking at Medha's screen, and
+        // burns after five wrong guesses. See PairingManager.
+        if (path == PAIR_PATH) return true
         val lower = path.lowercase()
         return STATIC_SUFFIXES.any { lower.endsWith(it) }
     }
+
+    /**
+     * Origins permitted to read Medha's replies, recomputed per request.
+     *
+     * Not cached: a pairing has to take effect immediately, and more
+     * importantly a revocation has to. A cached set would leave a revoked web
+     * app able to read replies until the next service restart.
+     */
+    private fun allowedOrigins(): Set<String> =
+        CorsPolicy.loopbackOrigins(port) + registry.pairedWebOrigins()
 
     /**
      * Resolves the bearer token to a client. Returns null when absent or
@@ -1078,7 +1230,10 @@ class LocalServer(
         if (presented.isEmpty()) return null
         // Constant-time compare against each known token: a plain map lookup
         // would leak validity through timing on the hash comparison.
-        return registry.all().firstOrNull { constantTimeEquals(presented, it.token) }
+        //
+        // unordered(), not all(): this runs on every authenticated request
+        // and all() sorts by createdAt, which nothing here needs.
+        return registry.unordered().firstOrNull { constantTimeEquals(presented, it.token) }
     }
 
     private fun ApplicationCall.client(): ClientRegistry.Client? =
@@ -1174,21 +1329,6 @@ class LocalServer(
         ErrorResponse("no model loaded", "model_not_loaded")
     )
 
-    private suspend fun ApplicationCall.smsDenied() = respond(
-        HttpStatusCode.Forbidden,
-        ErrorResponse("SMS permission not granted to Medha; grant it in the app", "sms_denied")
-    )
-
-    private fun SmsConnector.Message.toJson() = buildJsonObject {
-        put("id", id)
-        put("threadId", threadId)
-        put("address", address)
-        put("body", body)
-        put("date", date)
-        put("read", read)
-        put("inbound", inbound)
-    }
-
     private suspend fun ApplicationCall.badRequest(msg: String) =
         respond(HttpStatusCode.BadRequest, ErrorResponse(msg, "bad_request"))
 
@@ -1213,6 +1353,19 @@ class LocalServer(
         private const val MAX_EMBED_BATCH = 64
         private const val MAX_VALUE_BYTES = 512 * 1024
         private const val MAX_BULK = 1000
+
+        const val PAIR_PATH = "/pair"
+
+        /** Android truncates well before these; they exist to bound memory. */
+        private const val MAX_NOTIFY_TITLE = 200
+        private const val MAX_NOTIFY_TEXT = 2000
+
+        private const val NOTIFY_BURST = 10
+        private const val NOTIFY_PER_MINUTE = 30
+
+        /** Brief rows are one or two lines on a home screen, not prose. */
+        private const val MAX_BRIEF_TITLE = 80
+        private const val MAX_BRIEF_TEXT = 200
 
         const val TOKEN_PLACEHOLDER = "__MEDHA_TOKEN__"
         const val PORT_PLACEHOLDER = "__MEDHA_PORT__"

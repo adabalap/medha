@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Notify via Medha</title>
+<!--
+  A complete, dependency-free example of a web app pairing with Medha and
+  posting to the Android notification shade.
+
+  Serve it from a real origin -- GitHub Pages, any static host -- and open it
+  on the phone running Medha. A file:// page CANNOT pair: the browser sends
+  `Origin: null` for it, and Medha refuses to bind a token to an origin that
+  every sandboxed frame on the device shares.
+
+  Everything this page does is three HTTP calls. There is no SDK.
+-->
+<style>
+  :root {
+    --indigo:#5B3FA8; --saffron:#F48C2E;
+    --surface:#F3F0FF; --card:#FFFFFF; --line:#E7E0FA;
+    --text:#241261; --text-dim:#7a6fa8;
+    --ok-bg:#d6f5e0; --ok-fg:#1b8a3a;
+    --err-bg:#f7d6d1; --err-fg:#c0392b;
+    --code-bg:#2b2440; --code-fg:#eae3fb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --surface:#15121C; --card:#221D2E; --line:#3a3350;
+      --text:#EDE9F5; --text-dim:#a79bc9;
+      --ok-bg:#123a22; --ok-fg:#5fd889;
+      --err-bg:#3d1712; --err-fg:#f28b7d;
+      --code-bg:#0f0d17; --code-fg:#eae3fb;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin:0; padding:16px; background:var(--surface); color:var(--text);
+    font:15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    max-width:640px; margin-inline:auto;
+  }
+  h1 { font-size:20px; margin:4px 0 2px; }
+  .lede { color:var(--text-dim); font-size:13.5px; margin:0 0 18px; }
+  .card {
+    background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:16px; margin-bottom:14px;
+  }
+  h2 { font-size:15px; margin:0 0 10px; display:flex; align-items:center; gap:8px; }
+  .step { background:var(--indigo); color:#fff; border-radius:999px;
+          width:22px; height:22px; display:grid; place-items:center;
+          font-size:12px; font-weight:600; flex:0 0 auto; }
+  label { display:block; font-size:12px; color:var(--text-dim);
+          text-transform:uppercase; letter-spacing:.04em; margin:10px 0 4px; }
+  input {
+    width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px;
+    background:var(--surface); color:var(--text); font:inherit;
+  }
+  #code { font-size:24px; letter-spacing:.3em; text-align:center; font-variant-numeric:tabular-nums; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+  button {
+    padding:10px 16px; border:0; border-radius:10px; background:var(--indigo);
+    color:#fff; font:inherit; font-weight:600; cursor:pointer;
+  }
+  button.ghost { background:transparent; color:var(--indigo); border:1px solid var(--line); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  .out {
+    margin-top:12px; padding:10px 12px; border-radius:10px; font-size:13px;
+    background:var(--surface); white-space:pre-wrap; word-break:break-word; min-height:20px;
+  }
+  .out.ok { background:var(--ok-bg); color:var(--ok-fg); }
+  .out.err { background:var(--err-bg); color:var(--err-fg); }
+  code { background:var(--code-bg); color:var(--code-fg); padding:1px 5px;
+         border-radius:5px; font-size:12.5px; }
+  .hint { font-size:12.5px; color:var(--text-dim); margin:8px 0 0; }
+  .paired { font-size:12.5px; color:var(--text-dim); }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+
+<h1>Notify via Medha</h1>
+<p class="lede">
+  A web app posting to this phone's notification shade, through the on-device
+  inference server. No SDK, no backend, three HTTP calls.
+</p>
+
+<div class="card">
+  <h2><span class="step">1</span> Where is Medha?</h2>
+  <label for="port">Port</label>
+  <input id="port" type="number" inputmode="numeric" value="8001" />
+  <div class="row">
+    <button id="check" class="ghost">Check connection</button>
+  </div>
+  <div class="out" id="healthOut">Not checked yet.</div>
+</div>
+
+<div class="card" id="pairCard">
+  <h2><span class="step">2</span> Pair</h2>
+  <p class="hint">
+    In Medha: open the drawer, tap <strong>Pair a web app</strong>, tick
+    <strong>Post notifications</strong>, and read off the six digits.
+  </p>
+  <label for="code">Pairing code</label>
+  <input id="code" inputmode="numeric" autocomplete="one-time-code"
+         maxlength="7" placeholder="000000" />
+  <div class="row">
+    <button id="pair">Pair</button>
+    <button id="forget" class="ghost">Forget token</button>
+  </div>
+  <div class="out" id="pairOut">Not paired.</div>
+</div>
+
+<div class="card" id="notifyCard">
+  <h2><span class="step">3</span> Post a notification</h2>
+  <label for="title">Title</label>
+  <input id="title" value="Build finished" />
+  <label for="text">Text</label>
+  <input id="text" value="main → green in 4m 12s" />
+  <div class="row">
+    <button id="post">Post</button>
+    <button id="progress" class="ghost">Post with progress</button>
+    <button id="cancel" class="ghost">Cancel</button>
+  </div>
+  <div class="out" id="notifyOut">Pair first.</div>
+  <p class="hint" id="caps"></p>
+</div>
+
+<div class="card" id="briefCard">
+  <h2><span class="step">4</span> Post to the brief</h2>
+  <p class="hint">
+    Samsung's <strong>Now Brief has no third-party API.</strong> Medha has its own instead:
+    a home-screen widget every paired app can write to. Each app owns a section and they
+    don't overwrite each other. <strong>Add the Medha widget to your home screen</strong>
+    to see this.
+  </p>
+  <label for="brief">Lines (one per line, <code>|</code> splits title from text)</label>
+  <input id="brief" value="Build finished | main &rarr; green" />
+  <div class="row">
+    <button id="briefPut">Post to brief</button>
+    <button id="briefGet" class="ghost">Read back</button>
+    <button id="briefClear" class="ghost">Clear mine</button>
+  </div>
+  <div class="out" id="briefOut">Pair first.</div>
+</div>
+
+<script>
+"use strict";
+
+// Namespaced so two samples served from the same origin do not fight over
+// one key. Note this is per-browser and per-origin: clearing site data means
+// pairing again, which is correct -- the token is a credential.
+var STORE_KEY = "medha.notify-pwa.v1";
+
+var $ = function (id) { return document.getElementById(id); };
+
+function saved() {
+  try { return JSON.parse(localStorage.getItem(STORE_KEY) || "null"); }
+  catch (_) { return null; }   // private mode, blocked storage, corrupt value
+}
+function save(v) {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(v)); } catch (_) {}
+}
+function clearSaved() {
+  try { localStorage.removeItem(STORE_KEY); } catch (_) {}
+}
+
+function base() { return "http://127.0.0.1:" + ($("port").value || "8001"); }
+
+function show(el, msg, kind) {
+  el.textContent = msg;
+  el.className = "out" + (kind ? " " + kind : "");
+}
+
+/**
+ * Turns the handful of ways this can fail into something actionable.
+ *
+ * A bare "Failed to fetch" covers at least four unrelated causes here, and
+ * sending someone to the devtools network tab on a phone is not an option.
+ */
+function explain(err) {
+  var msg = String(err && err.message || err);
+  if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) {
+    return "Could not reach Medha.\n\n" +
+      "• Is Medha running, with the server started?\n" +
+      "• Is the port right?\n" +
+      "• Chrome blocks a public page from calling a private address unless " +
+      "Medha answers the preflight — it does, from v0.9.0, so an older " +
+      "build will fail here.\n" +
+      "• A file:// page cannot pair at all.";
+  }
+  return msg;
+}
+
+async function call(path, opts) {
+  var o = Object.assign({}, opts || {});
+  o.headers = Object.assign({ "Content-Type": "application/json" }, o.headers || {});
+  var s = saved();
+  if (s && s.token) o.headers["Authorization"] = "Bearer " + s.token;
+  var r = await fetch(base() + path, o);
+  var body = null;
+  try { body = await r.json(); } catch (_) {}
+  if (!r.ok) {
+    var detail = (body && body.error) || ("HTTP " + r.status);
+    if (r.status === 429) {
+      detail = "Rate limited. " + detail;
+    }
+    throw new Error(detail);
+  }
+  return body;
+}
+
+// --------------------------------- step 1 ---------------------------------
+
+$("check").onclick = async function () {
+  var out = $("healthOut");
+  show(out, "…");
+  try {
+    // /health needs no token, which is what makes it usable as a probe.
+    var r = await fetch(base() + "/health");
+    var d = await r.json();
+    show(out,
+      "Reachable. Model " + (d.modelLoaded ? "loaded" : "not loaded") +
+      ", backend " + d.backend + ".", "ok");
+  } catch (e) {
+    show(out, explain(e), "err");
+  }
+};
+
+// --------------------------------- step 2 ---------------------------------
+
+$("pair").onclick = async function () {
+  var out = $("pairOut");
+  var code = $("code").value.replace(/\D/g, "");
+  if (code.length !== 6) { show(out, "Enter the six digits shown in Medha.", "err"); return; }
+  show(out, "…");
+  try {
+    // No Authorization header on this one: obtaining a token is the point.
+    var r = await fetch(base() + "/pair", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: code })
+    });
+    var d = await r.json();
+    if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
+    save({ token: d.token, clientId: d.clientId, caps: d.capabilities });
+    $("code").value = "";
+    render();
+    loadCaps();
+  } catch (e) {
+    show(out, explain(e), "err");
+  }
+};
+
+$("forget").onclick = function () {
+  clearSaved();
+  render();
+};
+
+// --------------------------------- step 3 ---------------------------------
+
+var NOTIF_ID = "sample";
+
+async function postNotification(withProgress) {
+  var out = $("notifyOut");
+  show(out, "…");
+  try {
+    var body = {
+      id: NOTIF_ID,
+      title: $("title").value || "Medha",
+      text: $("text").value,
+      silent: true
+    };
+    if (withProgress) {
+      // Progress is what lets the platform promote an ongoing notification
+      // into the status-bar chip (the Now Bar on One UI 8). Without it, an
+      // ongoing notification is just a sticky card.
+      body.ongoing = true;
+      body.progressCurrent = 65;
+      body.progressMax = 100;
+    }
+    var d = await call("/notify", { method: "POST", body: JSON.stringify(body) });
+    if (d.posted) {
+      show(out, "Posted. Pull down the shade." +
+        (withProgress ? " Ongoing, so it stays until cancelled." : ""), "ok");
+    } else {
+      show(out, "Medha accepted the call but the system refused it: " +
+        (d.reason || "unknown") + "\n\nGrant Medha the notification permission.", "err");
+    }
+  } catch (e) {
+    show(out, explain(e), "err");
+  }
+}
+
+$("post").onclick = function () { postNotification(false); };
+$("progress").onclick = function () { postNotification(true); };
+
+$("cancel").onclick = async function () {
+  var out = $("notifyOut");
+  try {
+    await call("/notify/" + encodeURIComponent(NOTIF_ID), { method: "DELETE" });
+    show(out, "Cancelled.", "ok");
+  } catch (e) { show(out, explain(e), "err"); }
+};
+
+// --------------------------------- step 4 ---------------------------------
+
+function briefItems() {
+  return $("brief").value
+    .split("\n")
+    .map(function (l) { return l.trim(); })
+    .filter(function (l) { return l.length > 0; })
+    .map(function (l) {
+      var bar = l.indexOf("|");
+      if (bar < 0) return { title: l, text: "" };
+      return { title: l.slice(0, bar).trim(), text: l.slice(bar + 1).trim() };
+    });
+}
+
+$("briefPut").onclick = async function () {
+  var out = $("briefOut");
+  var items = briefItems();
+  if (!items.length) { show(out, "Add a line first.", "err"); return; }
+  show(out, "\u2026");
+  try {
+    var d = await call("/widget/content", {
+      method: "PUT",
+      // ttlSeconds is optional; the server clamps it and defaults to 24h.
+      body: JSON.stringify({ items: items, ttlSeconds: 6 * 60 * 60 })
+    });
+    show(out, "Stored " + d.items + " item(s). The widget shows up to " +
+      d.rows + " rows across all apps.", "ok");
+  } catch (e) { show(out, explain(e), "err"); }
+};
+
+$("briefGet").onclick = async function () {
+  var out = $("briefOut");
+  show(out, "\u2026");
+  try {
+    var d = await call("/widget/content");
+    if (!d.sections.length) { show(out, "Your section is empty.", "ok"); return; }
+    show(out, d.sections.map(function (sec) {
+      return sec.clientId + " (" + sec.age + ")\n" + sec.items.map(function (i) {
+        return "  \u2022 " + i.title + (i.text ? " \u2014 " + i.text : "");
+      }).join("\n");
+    }).join("\n\n"), "ok");
+  } catch (e) { show(out, explain(e), "err"); }
+};
+
+$("briefClear").onclick = async function () {
+  var out = $("briefOut");
+  try {
+    var d = await call("/widget/content", { method: "DELETE" });
+    show(out, d.cleared ? "Cleared your section." : "Nothing to clear.", "ok");
+  } catch (e) { show(out, explain(e), "err"); }
+};
+
+async function loadCaps() {
+  var el = $("caps");
+  if (!saved()) { el.textContent = ""; return; }
+  try {
+    var c = await call("/notify/capabilities");
+    var bits = ["API " + c.sdk];
+    bits.push(c.notifications ? "notifications allowed" : "NOTIFICATIONS BLOCKED for Medha");
+    if (c.nowBarLikely) bits.push("Now Bar reachable");
+    else if (c.liveUpdates) bits.push("Live Updates supported");
+    el.textContent = "This device: " + bits.join(" · ") + ".";
+  } catch (_) {
+    el.textContent = "";
+  }
+}
+
+// ---------------------------------- view ----------------------------------
+
+function render() {
+  var s = saved();
+  var paired = !!(s && s.token);
+  show($("pairOut"),
+    paired
+      ? "Paired as '" + s.clientId + "'.\nGranted: " + (s.caps || []).join(", ")
+      : "Not paired.",
+    paired ? "ok" : null);
+  ["post", "progress", "cancel", "briefPut", "briefGet", "briefClear"]
+    .forEach(function (id) { $(id).disabled = !paired; });
+  if (!paired) {
+    show($("notifyOut"), "Pair first.");
+    show($("briefOut"), "Pair first.");
+  }
+}
+
+// A file:// page sends Origin: null and can never pair. Say so immediately
+// rather than letting it fail at step 2 with a confusing message.
+if (location.protocol === "file:") {
+  show($("pairOut"),
+    "This page is open from a file:// URL. Browsers send 'Origin: null' for " +
+    "those, which every sandboxed frame also sends, so Medha will not bind a " +
+    "token to it. Serve this file over http(s) instead.", "err");
+  $("pair").disabled = true;
+} else {
+  render();
+  loadCaps();
+}
+</script>
+</body>
+</html>

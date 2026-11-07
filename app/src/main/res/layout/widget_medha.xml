@@ -1,4 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Medha's brief: a home-screen digest several paired apps can write to.
+
+  THREE rows, and the count must equal BriefPolicy.PAGE_ROWS. When the brief
+  holds more than three rows the widget rotates through pages rather than
+  dropping the overflow, and the footer shows which page you are on. Tapping
+  anywhere opens BriefActivity with the whole list.
+
+  v0.9.0 had the server accepting five items against a three-row layout and
+  dropped two in silence, with no error on either side. BriefPolicyTest pins
+  PAGE_ROWS and check_resources.py confirms every id below is referenced, so
+  three independent places disagree if someone changes one.
+
+  Each row carries its own attribution (which app, how long ago) because with
+  several apps contributing, an unattributed line is one the user cannot act on.
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widgetRoot"
     android:layout_width="match_parent"
@@ -11,49 +27,84 @@
         android:orientation="horizontal" android:gravity="center_vertical">
         <ImageView android:layout_width="20dp" android:layout_height="20dp"
             android:src="@drawable/ic_medha_mark" android:contentDescription="@string/app_name" />
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:paddingStart="8dp" android:text="@string/app_name"
+        <TextView android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:paddingStart="8dp" android:text="@string/widget_header"
             android:textColor="#B9A9EC" android:textSize="11sp" android:textStyle="bold" />
+        <TextView android:id="@+id/widgetCount" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:textSize="10sp"
+            android:textColor="#9A8BC8" android:text="" />
     </LinearLayout>
 
     <TextView android:id="@+id/widgetEmpty" android:layout_width="match_parent"
         android:layout_height="wrap_content" android:paddingTop="10dp"
         android:text="@string/widget_empty" android:textColor="#D8CCF4" android:textSize="12sp" />
 
-        <LinearLayout android:id="@+id/widgetRow1"
-            android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="vertical" android:paddingTop="6dp">
-            <TextView android:id="@+id/widgetTitle1" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:textSize="13sp"
-                android:textStyle="bold" android:textColor="#FFFFFF" android:maxLines="1"
-                android:ellipsize="end" android:text="" />
-            <TextView android:id="@+id/widgetText1" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:textSize="12sp"
-                android:textColor="#D8CCF4" android:maxLines="2" android:ellipsize="end"
-                android:text="" />
+    <LinearLayout android:id="@+id/widgetRow1"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:paddingTop="7dp">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:baselineAligned="false">
+            <TextView android:id="@+id/widgetTitle1" android:layout_width="0dp"
+                android:layout_weight="1" android:layout_height="wrap_content"
+                android:textSize="13sp" android:textStyle="bold" android:textColor="#FFFFFF"
+                android:maxLines="1" android:ellipsize="end" android:text="" />
+            <TextView android:id="@+id/widgetMeta1" android:layout_width="wrap_content"
+                android:layout_height="wrap_content" android:paddingStart="8dp"
+                android:textSize="10sp" android:textColor="#9A8BC8"
+                android:maxLines="1" android:ellipsize="end" android:text="" />
         </LinearLayout>
-        <LinearLayout android:id="@+id/widgetRow2"
-            android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="vertical" android:paddingTop="6dp">
-            <TextView android:id="@+id/widgetTitle2" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:textSize="13sp"
-                android:textStyle="bold" android:textColor="#FFFFFF" android:maxLines="1"
-                android:ellipsize="end" android:text="" />
-            <TextView android:id="@+id/widgetText2" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:textSize="12sp"
-                android:textColor="#D8CCF4" android:maxLines="2" android:ellipsize="end"
-                android:text="" />
+        <TextView android:id="@+id/widgetText1" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:textSize="12sp"
+            android:textColor="#D8CCF4" android:maxLines="2" android:ellipsize="end"
+            android:text="" />
+    </LinearLayout>
+    <LinearLayout android:id="@+id/widgetRow2"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:paddingTop="7dp">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:baselineAligned="false">
+            <TextView android:id="@+id/widgetTitle2" android:layout_width="0dp"
+                android:layout_weight="1" android:layout_height="wrap_content"
+                android:textSize="13sp" android:textStyle="bold" android:textColor="#FFFFFF"
+                android:maxLines="1" android:ellipsize="end" android:text="" />
+            <TextView android:id="@+id/widgetMeta2" android:layout_width="wrap_content"
+                android:layout_height="wrap_content" android:paddingStart="8dp"
+                android:textSize="10sp" android:textColor="#9A8BC8"
+                android:maxLines="1" android:ellipsize="end" android:text="" />
         </LinearLayout>
-        <LinearLayout android:id="@+id/widgetRow3"
-            android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="vertical" android:paddingTop="6dp">
-            <TextView android:id="@+id/widgetTitle3" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:textSize="13sp"
-                android:textStyle="bold" android:textColor="#FFFFFF" android:maxLines="1"
-                android:ellipsize="end" android:text="" />
-            <TextView android:id="@+id/widgetText3" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:textSize="12sp"
-                android:textColor="#D8CCF4" android:maxLines="2" android:ellipsize="end"
-                android:text="" />
+        <TextView android:id="@+id/widgetText2" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:textSize="12sp"
+            android:textColor="#D8CCF4" android:maxLines="2" android:ellipsize="end"
+            android:text="" />
+    </LinearLayout>
+    <LinearLayout android:id="@+id/widgetRow3"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:paddingTop="7dp">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:baselineAligned="false">
+            <TextView android:id="@+id/widgetTitle3" android:layout_width="0dp"
+                android:layout_weight="1" android:layout_height="wrap_content"
+                android:textSize="13sp" android:textStyle="bold" android:textColor="#FFFFFF"
+                android:maxLines="1" android:ellipsize="end" android:text="" />
+            <TextView android:id="@+id/widgetMeta3" android:layout_width="wrap_content"
+                android:layout_height="wrap_content" android:paddingStart="8dp"
+                android:textSize="10sp" android:textColor="#9A8BC8"
+                android:maxLines="1" android:ellipsize="end" android:text="" />
         </LinearLayout>
+        <TextView android:id="@+id/widgetText3" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:textSize="12sp"
+            android:textColor="#D8CCF4" android:maxLines="2" android:ellipsize="end"
+            android:text="" />
+    </LinearLayout>
+    <!--
+      Page indicator plus a tap hint. Hidden when the brief fits on one page:
+      a "1/1" that never changes is chrome, and the tap hint matters most to
+      someone who has just noticed there is more than one page.
+    -->
+    <TextView android:id="@+id/widgetFooter" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:paddingTop="8dp"
+        android:textSize="10sp" android:textColor="#9A8BC8"
+        android:maxLines="1" android:ellipsize="end" android:text="" />
+
 </LinearLayout>

@@ -23,7 +23,7 @@ import kotlin.math.sqrt
  * Dense retrieval is strong on paraphrase and weak on *exact tokens*. An
  * embedding of "order AX-99213" and one of "order AX-99871" sit almost on top
  * of each other, because the model encodes "an order reference" and not the
- * digits. For an SMS organizer — OTP codes, tracking numbers, account digits,
+ * digits. For transactional corpora — order numbers, tracking codes, IDs,
  * short names — that is the common case, not an edge case. Lexical search is
  * exact but brittle to phrasing; dense is robust to phrasing but blurry on
  * identifiers. Fusing them recovers both.

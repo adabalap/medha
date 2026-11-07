@@ -181,6 +181,7 @@ class AccessRequestActivity : AppCompatActivity() {
         ClientRegistry.Cap.MEMORY -> getString(R.string.cap_memory)
         ClientRegistry.Cap.RAG -> getString(R.string.cap_rag)
         ClientRegistry.Cap.STORE -> getString(R.string.cap_store)
+        ClientRegistry.Cap.NOTIFY -> getString(R.string.cap_notify)
         else -> cap
     }
 

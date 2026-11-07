@@ -35,19 +35,39 @@ Ship the result as static files.
 
 ---
 
-## AD-3. Medha owns permissioned data sources
+## AD-3. Medha brokers what a browser cannot reach
 
-**Decision: native connectors live in Medha; PWAs consume them over HTTP.**
+**Decision: capabilities a web page cannot have live in Medha; PWAs reach them
+over HTTP.** Reversed once, in v0.9.0, and the reversal is the interesting part.
 
-A browser page cannot read SMS. Android exposes SMS only to native apps holding
-`READ_SMS`/`RECEIVE_SMS`, and Play restricts those to the default SMS handler.
-No API, no workaround.
+The original form of this decision was broader: Medha would own *permissioned
+data sources*, starting with SMS. A browser page cannot read SMS — Android
+exposes it only to native apps holding `READ_SMS`, and Play restricts those to
+the default handler — so Medha read it and served it at `/connectors/sms/*`.
 
-So Medha reads SMS and exposes it at `/connectors/sms/*`. The PWA stays pure UI.
-One APK holds the sensitive permissions instead of three.
+**That connector was removed in v0.9.0.** Two things it cost, both of which
+outlived its usefulness:
 
-This generalises: anything requiring a runtime permission (contacts, calendar,
-notification access) becomes a Medha connector rather than a new app.
+- Declaring SMS permissions makes Play Protect block a sideloaded APK on the
+  manifest alone. Working around that meant a `core`/`full` product-flavour
+  split, which combined with the debug suffix produced four `applicationId`s.
+  A consumer app cannot hardcode a package name it cannot predict, and the
+  hello-medha sample duly reported "Medha is not installed" on a device where
+  it was.
+- The app it existed to serve was built and then scrapped. A broker with no
+  consumer is a permission surface earning nothing.
+
+What survives is the narrower, better version of the claim: **a browser page
+cannot post a notification to the Android shade, and Medha can.** That is now
+the one brokered capability, at `/notify/*`, and it is the shape the decision
+should always have had — broker *capabilities the platform withholds from the
+web*, not *data Medha could usefully hold*. The first is a real asymmetry; the
+second is scope creep with a permission prompt attached.
+
+The generalisation still holds, with a caveat earned the hard way: anything
+requiring a runtime permission *can* become a Medha connector, but each one
+costs install friction for every user who does not want it. Add one when
+something is actually built against it, not in anticipation.
 
 ---
 
@@ -62,7 +82,7 @@ So there are three tiers, and the split matters:
 
 | Data | Where | Why |
 |---|---|---|
-| Raw SMS | **Not stored.** Read live from the system provider | The OS already holds it; a copy is a second thing to secure and to keep in sync |
+| OS-owned data (messages, contacts, calendar) | **Not stored, and no longer read.** | The OS already holds it; a copy is a second thing to secure and to keep in sync. The SMS connector that read it live was removed in v0.9.0 — see AD-3 |
 | Derived results (classifications, summaries, extracted fields) | **Medha `/store`**, namespaced per client | Expensive to recompute — that is the whole point of the batch pass |
 | Chat sessions, RAG chunks | Medha, already | Needs the embedder, which lives with the model |
 | Ephemeral UI state | Browser | Losing it costs nothing |
@@ -70,9 +90,9 @@ So there are three tiers, and the split matters:
 The `/store` API is deliberately generic — key-value with JSON documents and
 prefix listing — so a new PWA needs no schema change in Medha.
 
-**Storing message *IDs* plus derived labels, not message bodies**, keeps the
+**Storing identifiers plus derived labels, not source content**, keeps the
 archive small and means revoking a client destroys derived data without
-touching the user's actual messages.
+touching whatever the client derived it from.
 
 ---
 
@@ -81,18 +101,28 @@ touching the user's actual messages.
 **Decision: `token -> client -> namespace + capabilities`.**
 
 The single token was a root credential: any holder could read every session and
-collection. `sms-organizer` now gets namespace `sms` and cannot see `compose:*`.
+collection. `journal` now gets namespace `journal` and cannot see `compose:*`.
 
 Enforced server-side on every request. **The namespace is derived from the
 token, never read from the request body**, so a client cannot ask for someone
 else's prefix.
 
-Capabilities are coarse (`generate`, `memory`, `rag`, `store`, `sms.read`,
-`sms.send`, `notify`, `admin`). Fine-grained scopes that nobody configures
-correctly are security theatre.
+Capabilities are coarse (`generate`, `memory`, `rag`, `store`, `notify`,
+`admin`). Fine-grained scopes that nobody configures correctly are security
+theatre.
 
-Verified: prefix-confusion is blocked (`smsX:` does not match namespace `sms`),
-admin passthrough works, capability checks hold. 11 assertions.
+Verified: prefix-confusion is blocked (`journalX:` does not match namespace
+`journal`), admin passthrough works, capability checks hold. 11 assertions.
+
+v0.9.0 added a second axis for browser clients: a token issued by pairing is
+bound to the **web origin** that paired, and a request carrying it from a
+different origin is refused. CORS governs who may *read* a reply and says
+nothing about who may hold a token, so without the binding a token copied out
+of one site's `localStorage` into another page would work perfectly. Origin
+matching is exact — not prefix, not suffix, not subdomain — and
+`tools/tests/NetPolicyTest.kt` pins that with the suffix-attack cases, after a
+mutation test showed the earlier assertions passed against a `startsWith`
+implementation.
 
 ---
 
@@ -139,12 +169,13 @@ A bug the exhaustive config sweep caught: clamping both watermarks inside one
 pause value of 0.0 produced an empty coercion range and threw. Now clamped in
 sequence, and verified across 1296 configurations including negatives.
 
-### On the SMS backlog
+### On bulk backlogs
 
-Your instinct — backlog once, then trivial steady state — is right, and it makes
-gating *more* important, not less. The 500-message backlog is precisely the
-sustained decode that heats the phone. Steady state never approaches a limit. So
-gating exists for the backlog and then effectively disappears.
+The instinct — backlog once, then trivial steady state — is right, and it makes
+gating *more* important, not less. A few hundred queued classifications, or a
+RAG corpus being re-embedded, is precisely the sustained decode that heats the
+phone. Steady state never approaches a limit. So gating exists for the backlog
+and then effectively disappears.
 
 ---
 
@@ -176,9 +207,10 @@ the widget provider are already there, and a second APK would fragment both.
 
 ## Planned API surface
 
-> Status: `/store` and the tenancy/scheduler layer are **implemented**.
-> `/connectors/sms/*` and `/notify/*` are **specified but not yet built** —
-> the contracts below are frozen so PWA work can proceed against them.
+> Status: `/store`, the tenancy/scheduler layer and `/notify/*` are all
+> **implemented** as of v0.9.0. `/connectors/sms/*` was specified here, built
+> in v0.8.x, and removed in v0.9.0 — see AD-3 for why. Its contract is left
+> out rather than kept as a ghost.
 
 ### `/store` — per-client persistence *(implemented)*
 
@@ -190,44 +222,35 @@ GET    /store?prefix=&limit=&offset=             list keys
 POST   /store/query          {prefix, filter}    bulk read
 ```
 
-Keys auto-namespace: client `sms-organizer` writing `msg/123` stores `sms:msg/123`.
+Keys auto-namespace: client `journal` writing `note/123` stores `journal:note/123`.
 
-### `/connectors/sms/*` — *specified*
-
-Designed once, so it does not need rebuilding:
+### `/notify/*` — *implemented in v0.9.0*
 
 ```
-GET  /connectors/sms/status                  permission + default-handler state
-GET  /connectors/sms/conversations           threads: id, address, snippet, count, unread
-GET  /connectors/sms/messages                ?threadId= &since= &before= &limit= &offset=
-GET  /connectors/sms/messages/{id}
-GET  /connectors/sms/contacts/{address}      display name resolution
-POST /connectors/sms/send                    {address, body}      needs sms.send
-POST /connectors/sms/mark-read               {threadId|ids[]}
-GET  /connectors/sms/events                  SSE: new message arrives
-```
-
-Design notes worth keeping:
-- **Cursor pagination on `since`/`before` (timestamps), not page numbers.** New
-  messages arriving mid-scan shift page offsets and cause duplicates or gaps.
-- **Read-only by default.** `sms.send` is a separate capability, and sending
-  requires being the default SMS app on modern Android.
-- **Bodies are never copied into Medha's DB.** Clients store derived labels
-  against message IDs in `/store`.
-- **SSE for new messages** so a PWA does not poll a content provider through
-  HTTP every few seconds.
-
-### `/notify/*` — *specified*
-
-```
-POST   /notify                {id, title, text, style, progress?, actions?, ongoing?}
+POST   /pair                  {code}               no auth; returns a token
+POST   /notify                {id, title, text, ongoing?, progressCurrent?, progressMax?, silent?}
 DELETE /notify/{id}
-GET    /notify/capabilities   {liveUpdates: bool, widget: bool, sdk: int}
-PUT    /widget/content        {items:[{title, text, icon}]}
+GET    /notify/capabilities   {sdk, liveUpdates, nowBarLikely, notifications, widget, nowBrief}
+PUT    /widget/content        {items:[{title, text}]}
 ```
 
 `GET /notify/capabilities` first, then the client knows whether a Live Update
-will actually surface in the Now Bar on this device.
+will actually surface in the Now Bar on this device rather than branching on
+OS version itself. `nowBrief` is always `false`: Samsung's digest has no
+public API and this reports that honestly instead of failing silently.
+
+Two things the built version added that the spec did not anticipate:
+
+- **`POST /pair`.** The intent handshake identifies a caller by
+  `getCallingPackage()`, which a web page does not have — it would report the
+  browser. So web apps pair with a six-digit code the user carries from
+  Medha's screen, and the token is bound to the origin that redeemed it.
+- **A rate limit.** This is the first endpoint where a client makes the
+  *device* do something, and it is cheap to call. Every other endpoint is
+  self-limiting because inference is slow and the scheduler queues it. Ten in
+  a burst, thirty a minute, per client.
+
+See [NOTIFICATIONS.md](NOTIFICATIONS.md).
 
 ---
 

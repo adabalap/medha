@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- BriefActivity's toolbar. "Clear all" removes every app's section, not
+     just one: this is the user's home screen, and the brief is the one
+     surface where other apps put content on it. They get a way to empty it
+     without hunting down which app wrote what. Confirmed before it runs. -->
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <item
+        android:id="@+id/brief_refresh"
+        android:icon="@drawable/ic_refresh"
+        android:title="@string/brief_refresh"
+        app:showAsAction="ifRoom" />
+    <item
+        android:id="@+id/brief_clear_all"
+        android:title="@string/brief_clear_all"
+        app:showAsAction="never" />
+</menu>

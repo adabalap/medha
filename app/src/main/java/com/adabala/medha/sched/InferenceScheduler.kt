@@ -27,7 +27,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * ## What it does
  *
  * - **Priority.** [Priority.INTERACTIVE] work (a human is waiting) is admitted
- *   ahead of [Priority.BATCH] work. Classifying an SMS backlog is BATCH.
+ *   ahead of [Priority.BATCH] work. Re-embedding a RAG corpus is BATCH.
  * - **Thermal gating.** BATCH work pauses above a configurable headroom
  *   watermark and resumes below a lower one. Two watermarks, not one, because a
  *   single threshold makes the queue oscillate on and off at the boundary.

@@ -90,12 +90,41 @@ jobs:
           node tools/tests/webapp_sse_test.js
           cd tools/tests && npm install --no-audit --no-fund && cd ../..
           node tools/tests/webapp_smoke_test.js
+          node tools/tests/sample_pwa_smoke_test.js
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+
+      # The Kotlin pure-logic tests (NetPolicyTest, AccessContractTest,
+      # SchedulerConfigTest, EmbedderTest) run against the real sources with
+      # no Android SDK and no Gradle. Until v0.9.0 they existed but CI never
+      # ran them, so "the tests pass" meant "they passed on someone's laptop
+      # at some point". NetPolicyTest covers the origin-matching and pairing
+      # logic that decides which web apps can drive the device, which is not
+      # something to leave unrun.
+      - name: Cache kotlinc
+        id: kotlinc-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/kotlinc
+          key: kotlinc-2.0.21
+
+      - name: Install kotlinc
+        if: steps.kotlinc-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          curl -sSL -o /tmp/kotlin.zip \
+            https://github.com/JetBrains/kotlin/releases/download/v2.0.21/kotlin-compiler-2.0.21.zip
+          unzip -q /tmp/kotlin.zip -d "$HOME"
+          "$HOME/kotlinc/bin/kotlinc" -version
+
+      - name: Pure-logic tests
+        run: |
+          export PATH="$HOME/kotlinc/bin:$PATH"
+          ./tools/tests/run.sh
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -150,7 +179,7 @@ jobs:
           echo "available=true" >> "$GITHUB_OUTPUT"
 
       - name: Build debug APK
-        run: ./gradlew assembleCoreDebug assembleFullDebug --stacktrace --no-daemon
+        run: ./gradlew assembleDebug --stacktrace --no-daemon
 
       - name: Build release APK
         if: steps.signing.outputs.available == 'true'
@@ -159,7 +188,7 @@ jobs:
           MEDHA_KEYSTORE_PASSWORD: ${{ secrets.MEDHA_KEYSTORE_PASSWORD }}
           MEDHA_KEY_ALIAS: ${{ secrets.MEDHA_KEY_ALIAS }}
           MEDHA_KEY_PASSWORD: ${{ secrets.MEDHA_KEY_PASSWORD }}
-        run: ./gradlew assembleCoreRelease assembleFullRelease --stacktrace --no-daemon
+        run: ./gradlew assembleRelease --stacktrace --no-daemon
 
       # AGP always writes app-<buildType>.apk. Renaming here rather than via the
       # Variant API keeps the build script free of AGP-version-specific plumbing.
@@ -169,18 +198,25 @@ jobs:
           mkdir -p dist
           V="${{ steps.ver.outputs.version }}"
           SHA=$(git rev-parse --short HEAD)
-          # Flavour builds land in apk/<flavour>/<buildType>/.
-          for FLAV in core full; do
-            for BT in debug release; do
-              APK=$(ls app/build/outputs/apk/$FLAV/$BT/*.apk 2>/dev/null | head -1 || true)
-              [ -n "$APK" ] && cp "$APK" "dist/medha-$V-$FLAV-$BT-$SHA.apk"
-            done
+          # Single variant since v0.9.0: APKs land in apk/<buildType>/ with no
+          # flavour directory in the path. Previously this loop walked
+          # apk/<flavour>/<buildType>/ for core and full.
+          for BT in debug release; do
+            APK=$(ls app/build/outputs/apk/$BT/*.apk 2>/dev/null | head -1 || true)
+            [ -n "$APK" ] && cp "$APK" "dist/medha-$V-$BT-$SHA.apk"
           done
           ls -la dist/
+          # The upload step is set to fail on an empty dist/, but failing here
+          # names the actual cause instead of blaming the uploader.
+          if [ -z "$(ls -A dist/ 2>/dev/null)" ]; then
+            echo "::error::no APKs found under app/build/outputs/apk/ -- did the variant layout change?"
+            find app/build/outputs/apk -name '*.apk' 2>/dev/null || true
+            exit 1
+          fi
 
       - name: Lint
         continue-on-error: true
-        run: ./gradlew lintCoreDebug --no-daemon
+        run: ./gradlew lintDebug --no-daemon
 
       - name: Upload APKs
         uses: actions/upload-artifact@v4
@@ -195,7 +231,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lint-report
-          path: app/build/reports/lint-results-coreDebug.html
+          path: app/build/reports/lint-results-debug.html
           if-no-files-found: ignore
 
       - name: Publish release (tags only)

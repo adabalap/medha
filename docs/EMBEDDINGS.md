@@ -45,7 +45,7 @@ Dense retrieval is strong on paraphrase and weak on **exact tokens**. Embeddings
 of `order AX-99213` and `order AX-99871` sit almost on top of each other,
 because the model encodes *"an order reference"* and not the digits.
 
-For your SMS organizer that is the common case, not an edge case: OTP codes,
+For transactional corpora that is the common case, not an edge case: order codes,
 tracking numbers, account digits, short names. So Medha runs both and fuses them
 with **Reciprocal Rank Fusion**:
 
