@@ -78,6 +78,12 @@ jobs:
       - name: Check resource references
         run: python3 tools/check_resources.py
 
+      # Catches workflow config that breaks the build before anything is
+      # compiled -- e.g. setup-android requesting the removed legacy
+      # `tools` SDK package, which kills the job during provisioning.
+      - name: Check workflow configuration
+        run: python3 tools/check_workflows.py
+
       # GitHub-hosted runners ship Node.js already; no setup-node step needed.
       # These test the bundled demo webapp's actual shipped JS (markdown
       # rendering, SSE frame parsing, and a full jsdom-driven smoke test that
@@ -133,6 +139,28 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # MUST be set explicitly. The action's default for this input is
+          # "tools platform-tools", and Google has removed the deprecated
+          # legacy `tools` package from the SDK repository index. sdkmanager
+          # then reports
+          #
+          #     Warning: Failed to find package 'tools'
+          #     Error: ... sdkmanager failed with exit code 1
+          #
+          # and the job dies during provisioning, before anything is compiled
+          # -- so the log looks nothing like a build problem. Overriding the
+          # input drops `tools` from the request.
+          #
+          # Do NOT "tidy this up" by removing the `with:` block, and do not
+          # set it to an empty string: it has to be a non-empty list that
+          # simply excludes `tools`. platform-tools is enough here because AGP
+          # downloads the platform and build-tools it needs itself, and this
+          # action has already accepted the licences.
+          #
+          # Upstream: android-actions/setup-android#537. Once their default
+          # drops `tools`, this block becomes redundant rather than wrong.
+          packages: "platform-tools"
 
       # The wrapper is committed, so this normally does nothing.
       #

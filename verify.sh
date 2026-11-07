@@ -48,6 +48,7 @@ need "app/src/main/java/com/adabala/medha/BriefActivity.kt"
 need "app/src/main/java/com/adabala/medha/notify/BriefRotator.kt"
 need "app/src/main/res/layout/activity_brief.xml"
 need "tools/tests/stubs/org/json/Stubs.kt"
+need "tools/check_workflows.py"
 need "tools/tests/sample_pwa_smoke_test.js"
 need "samples/hello-medha/README.md"
 need "samples/hello-medha/app/src/main/java/com/example/hellomedha/MainActivity.kt"
@@ -161,3 +162,8 @@ echo "Pure-logic tests (SchedulerConfig, Embedder — no Android SDK needed)"
 
 echo
 python3 tools/check_resources.py || { echo "Resource reference check failed."; exit 1; }
+
+# CI is the only way this project gets built, so a broken workflow means no
+# APK at all -- and these failures happen during provisioning, before
+# anything compiles, so the logs look nothing like a build problem.
+python3 tools/check_workflows.py || { echo "Workflow check failed."; exit 1; }

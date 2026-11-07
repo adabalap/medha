@@ -25,6 +25,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Runs before provisioning: this is the check that would have caught
+      # the setup-android `tools` failure below without burning a full SDK
+      # install first. Cheap, and needs nothing but python.
+      - name: Check workflow configuration
+        working-directory: .
+        run: python3 tools/check_workflows.py
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -41,6 +48,28 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # MUST be set explicitly. The action's default for this input is
+          # "tools platform-tools", and Google has removed the deprecated
+          # legacy `tools` package from the SDK repository index. sdkmanager
+          # then reports
+          #
+          #     Warning: Failed to find package 'tools'
+          #     Error: ... sdkmanager failed with exit code 1
+          #
+          # and the job dies during provisioning, before anything is compiled
+          # -- so the log looks nothing like a build problem. Overriding the
+          # input drops `tools` from the request.
+          #
+          # Do NOT "tidy this up" by removing the `with:` block, and do not
+          # set it to an empty string: it has to be a non-empty list that
+          # simply excludes `tools`. platform-tools is enough here because AGP
+          # downloads the platform and build-tools it needs itself, and this
+          # action has already accepted the licences.
+          #
+          # Upstream: android-actions/setup-android#537. Once their default
+          # drops `tools`, this block becomes redundant rather than wrong.
+          packages: "platform-tools"
 
       - name: Make gradlew executable
         run: chmod +x gradlew
