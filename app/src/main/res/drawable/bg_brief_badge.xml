@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Circular tint behind the Medha mark in the widget header, mirroring the
+     small round icon the system brief card leads with. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+    <solid android:color="@color/brief_accent" />
+</shape>

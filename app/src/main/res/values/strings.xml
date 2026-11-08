@@ -156,11 +156,15 @@ Licensed under the terms in the project repository.</string>
 
     <!-- full brief screen -->
     <string name="brief_title">Brief</string>
-    <string name="brief_empty">Nothing in the brief.\n\nApps you have paired with Medha can post here, and it shows on the home-screen widget.</string>
+    <string name="brief_empty">Nothing in the brief right now.\n\nApps you have paired with Medha post here, and whatever they post shows on the home-screen widget. Nothing has in the last day.</string>
     <string name="brief_refresh">Refresh</string>
     <string name="brief_clear_all">Clear everything</string>
     <string name="brief_clear_all_body">Removes every app\'s section from the brief. The apps are not revoked and can post again.</string>
     <string name="brief_clear_all_confirm">Clear</string>
+    <string name="brief_section_lead">From %1$s, %2$s ago.</string>
+    <string name="brief_item_meta">Posted by %1$s · %2$s ago</string>
+    <string name="brief_item_open">Open</string>
+    <string name="brief_item_open_app">Open the app</string>
 
     <!-- brief rotation -->
     <string name="brief_rotate_title">Brief rotation</string>

@@ -92,7 +92,12 @@ object BriefJson {
             val o = arr.optJSONObject(i) ?: continue
             val title = o.optString("title", "")
             if (title.isBlank()) continue
-            out += BriefPolicy.Item(title, o.optString("text", ""))
+            // Only http(s) links are kept. An item is written by a remote
+            // client and opened by a tap on the user's home screen, so a
+            // `intent:` or `file:` URL here would be a way for one app to
+            // aim the user at something Medha never intended to launch.
+            val link = o.optString("link", "").takeIf { isSafeLink(it) }
+            out += BriefPolicy.Item(title, o.optString("text", ""), link)
         }
         return out
     }
@@ -103,7 +108,9 @@ object BriefJson {
         sections.forEach { s ->
             val items = JSONArray()
             s.items.forEach { i ->
-                items.put(JSONObject().put("title", i.title).put("text", i.text))
+                val o = JSONObject().put("title", i.title).put("text", i.text)
+                if (i.link != null) o.put("link", i.link)
+                items.put(o)
             }
             arr.put(
                 JSONObject()
@@ -115,6 +122,28 @@ object BriefJson {
         }
         return JSONObject().put("sections", arr).toString()
     }
+
+    /**
+     * True for a link the brief is willing to open.
+     *
+     * http and https only, and nothing else -- not `intent:`, which can
+     * target an arbitrary component, nor `file:`, `content:` or any custom
+     * scheme. The brief is written by remote clients and tapped on the
+     * user's home screen, so the set of things a tap can launch has to be
+     * the boring one. Case-insensitive because a client may send `HTTPS:`.
+     */
+    fun isSafeLink(raw: String?): Boolean {
+        val s = raw?.trim().orEmpty()
+        if (s.isEmpty() || s.length > MAX_LINK_LENGTH) return false
+        val lower = s.lowercase()
+        if (!lower.startsWith("http://") && !lower.startsWith("https://")) return false
+        // Reject anything with whitespace or control characters: a URL with
+        // a newline in it is not a URL, and some parsers will silently take
+        // only the first line.
+        return s.none { it.isWhitespace() || it.code < 0x20 }
+    }
+
+    const val MAX_LINK_LENGTH = 2000
 
     /**
      * Shown when a stored section has no client id — only reachable from a

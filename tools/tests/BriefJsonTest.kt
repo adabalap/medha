@@ -170,6 +170,61 @@ fun main() {
     check("so it renders rather than being silently expired",
         BriefPolicy.rows(BriefJson.parse(noTimes, NOW), NOW).isNotEmpty())
 
+    println("\nBriefJson.isSafeLink — a tap on the home screen must not launch anything")
+    // An item is written by a remote client and opened by a tap on the
+    // user's home screen. `intent:` URLs can target an arbitrary component,
+    // so the accepted scheme list has to be the boring one.
+    for (good in listOf(
+        "https://notes.example.com/item/1",
+        "http://127.0.0.1:8001/x",
+        "HTTPS://Example.com/Path?q=1#frag",
+        "https://x.com/a%20b"
+    )) check("accepts $good", BriefJson.isSafeLink(good))
+
+    for (bad in listOf(
+        null, "", "   ",
+        "intent://scan/#Intent;scheme=zxing;end",
+        "file:///sdcard/x.txt",
+        "content://media/external/images/1",
+        "javascript:alert(1)",
+        "market://details?id=com.x",
+        "tel:+911234567890",
+        "example.com/no-scheme",
+        "https://x.com/a b",                 // raw space
+        "https://x.com/a\nb",                // embedded newline
+        "https://x.com/" + "y".repeat(3000)  // absurd length
+    )) check("rejects ${bad?.take(40) ?: "null"}", !BriefJson.isSafeLink(bad))
+
+    println("\nBriefJson — links survive a round trip")
+    val linked = listOf(Section("app", NOW, NOW + DAY, listOf(
+        Item("With link", "body", "https://notes.example.com/1"),
+        Item("Without link", "body", null)
+    )))
+    val back = BriefJson.parse(BriefJson.encode(linked), NOW).firstOrNull()
+    eq("link preserved", back?.items?.get(0)?.link, "https://notes.example.com/1")
+    eq("absent link stays null", back?.items?.get(1)?.link, null)
+    // A stored item predating links must not acquire one.
+    eq("an item with no link key parses as null",
+        BriefJson.parse(
+            """{"sections":[{"clientId":"a","updatedAt":$NOW,"expiresAt":${NOW + DAY},
+               "items":[{"title":"t","text":"x"}]}]}""".replace("\n", ""), NOW
+        ).firstOrNull()?.items?.firstOrNull()?.link, null)
+
+    println("\nBriefJson — an unsafe stored link is dropped on read")
+    // Belt and braces: the API filters on write, but a value already on disk
+    // from an older build, or hand-edited, must not become tappable.
+    val hostile = """{"sections":[{"clientId":"a","updatedAt":$NOW,"expiresAt":${NOW + DAY},
+        "items":[{"title":"t","text":"x","link":"intent://evil#Intent;end"}]}]}"""
+        .replace("\n", "")
+    eq("intent: link stripped at parse time",
+        BriefJson.parse(hostile, NOW).firstOrNull()?.items?.firstOrNull()?.link, null)
+    check("but the item itself survives",
+        BriefJson.parse(hostile, NOW).firstOrNull()?.items?.size == 1)
+
+    println("\nBriefJson — rows carry the link through to the widget")
+    eq("BriefPolicy.rows exposes it",
+        BriefPolicy.rows(linked, NOW).firstOrNull()?.link, "https://notes.example.com/1")
+
     println("\nBriefJson — empty brief encodes and re-parses as empty")
     eq("no sections round-trips to no sections",
         BriefJson.parse(BriefJson.encode(emptyList()), NOW).size, 0)

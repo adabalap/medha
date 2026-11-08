@@ -8,6 +8,9 @@ import com.adabala.medha.auth.PairingManager
 import com.adabala.medha.net.CorsPolicy
 import com.adabala.medha.net.RateLimiter
 import com.adabala.medha.net.WebOrigin
+import com.adabala.medha.notify.BriefJson
+import com.adabala.medha.oai.ChatRequestParser
+import com.adabala.medha.oai.MultimodalProbe
 import com.adabala.medha.notify.BriefPolicy
 import com.adabala.medha.notify.NotificationHub
 import com.adabala.medha.sched.InferenceScheduler
@@ -49,11 +52,22 @@ import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 
 // ------------------------------ request DTOs ------------------------------
 
 @Serializable
-data class GenerateRequest(val prompt: String, val system: String? = null)
+data class GenerateRequest(
+    val prompt: String,
+    val system: String? = null,
+    /**
+     * Hard cap on output tokens. Previously absent, which made every
+     * client's output limit advisory. Enforced by stopping generation
+     * early rather than truncating after the fact, so the tokens past the
+     * cap are never produced — see LlmEngine.generateCapped.
+     */
+    @kotlinx.serialization.SerialName("max_tokens") val maxTokens: Int? = null
+)
 
 @Serializable
 data class GenerateResponse(
@@ -63,7 +77,9 @@ data class GenerateResponse(
     val tokens: Int,
     val ms: Long,
     val tokensPerSec: Double,
-    val sessionId: String? = null
+    val sessionId: String? = null,
+    /** "stop" normally, "length" when max_tokens ended it. */
+    @kotlinx.serialization.SerialName("finish_reason") val finishReason: String = "stop"
 )
 
 @Serializable
@@ -137,7 +153,17 @@ data class NotifyRequest(
 )
 
 @Serializable
-data class WidgetItem(val title: String, val text: String = "")
+data class WidgetItem(
+    val title: String,
+    val text: String = "",
+    /**
+     * Optional http(s) URL for the item. Tapping the line in Medha's brief
+     * opens it. Anything that is not http(s) is dropped rather than
+     * rejected, so one bad item does not fail a whole post -- see
+     * BriefJson.isSafeLink for why the scheme list is deliberately boring.
+     */
+    val link: String? = null
+)
 
 @Serializable
 data class WidgetRequest(
@@ -328,6 +354,7 @@ class LocalServer(
                 // Public by design so the launcher UI and a PWA splash screen can
                 // tell whether the service is up before they hold a token.
                 get("/health") {
+                    val mm = multimodal()
                     call.respondJson(buildJsonObject {
                         put("status", "ok")
                         put("modelLoaded", engine.isLoaded)
@@ -335,6 +362,21 @@ class LocalServer(
                         put("busy", engine.isBusy)
                         put("authRequired", requireAuth)
                         put("error", engine.lastError ?: "")
+                        // Capability block so a client can switch multimodal
+                        // on by itself instead of being configured by hand.
+                        // vision/audio come from an actual reflection probe
+                        // of the installed AAR, not from a flag: claiming a
+                        // capability Medha does not have would stop the
+                        // client falling back and make it fail instead.
+                        putJsonObject("capabilities") {
+                            put("text", true)
+                            put("vision", mm.vision)
+                            put("audio", mm.audio)
+                        }
+                        put("max_context", MAX_CONTEXT_TOKENS)
+                        put("max_audio_seconds", ChatRequestParser.MAX_AUDIO_SECONDS.toInt())
+                        put("max_image_bytes", ChatRequestParser.MAX_IMAGE_BYTES)
+                        put("queue_depth", engine.queueDepth)
                     })
                 }
 
@@ -356,6 +398,19 @@ class LocalServer(
                         put("dbSizeBytes", db.sizeBytes(appContext))
                         put("fullTextIndex", db.hasFullTextIndex)
                         put("embeddingModel", retriever.embeddingId)
+                        // The probe's own findings, so a build that does
+                        // support multimodal can be identified from one call
+                        // rather than from guesswork. imageMethods /
+                        // audioMethods carry real signatures.
+                        putJsonObject("multimodal") {
+                            val mm = multimodal()
+                            put("vision", mm.vision)
+                            put("audio", mm.audio)
+                            put("summary", MultimodalProbe.summary(mm))
+                            putJsonArray("imageMethods") { mm.imageMethods.forEach { add(it) } }
+                            putJsonArray("audioMethods") { mm.audioMethods.forEach { add(it) } }
+                            put("sdkMethodCount", mm.allMethods.size)
+                        }
                         put("vectorSearch", retriever.vectorEnabled)
                         put("embeddedChunks", db.countEmbedded(retriever.embeddingId))
                         SystemInfo.deviceInfo().forEach { (k, v) -> put(k, v) }
@@ -392,7 +447,9 @@ class LocalServer(
                     val req = call.receive<GenerateRequest>()
                     if (req.prompt.isBlank()) return@post call.badRequest("prompt must not be blank")
                     val r = try {
-                        scheduler.submit(priorityOf(call)) { engine.generate(req.prompt, req.system) }
+                        scheduler.submit(priorityOf(call)) {
+                            engine.generateCapped(req.prompt, req.system, req.maxTokens)
+                        }
                     } catch (e: InferenceScheduler.Rejected) {
                         return@post call.rejected(e)
                     } catch (e: InferenceScheduler.TimedOut) {
@@ -405,7 +462,8 @@ class LocalServer(
                             promptTokens = r.promptTokens,
                             tokens = r.tokens,
                             ms = r.ms,
-                            tokensPerSec = r.tokensPerSec
+                            tokensPerSec = r.tokensPerSec,
+                            finishReason = if (r.hitCap) "length" else "stop"
                         )
                     )
                 }
@@ -578,10 +636,59 @@ class LocalServer(
                     // third-party OpenAI clients actually hit, so it cannot be
                     // the one that skips authorization.
                     call.requireCap(ClientRegistry.Cap.GENERATE) ?: return@post
-                    val req = call.receive<OAChatRequest>()
-                    if (req.messages.isEmpty()) return@post call.badRequest("messages must not be empty")
+                    // Parsed from the raw body, not via OAChatRequest.
+                    //
+                    // OpenAI allows `content` to be a string OR an array of
+                    // typed parts, and multimodal clients send the array.
+                    // Against the String-typed field this used to throw, and
+                    // StatusPages turned that into a 500 -- the worst answer
+                    // available, because a client whose documented fallback
+                    // is "4xx means no vision/audio here" reads a 500 as a
+                    // broken server and cannot degrade. See ChatRequestParser.
+                    val req = try {
+                        ChatRequestParser.parse(call.receiveText())
+                    } catch (e: ChatRequestParser.Invalid) {
+                        return@post call.respond(
+                            HttpStatusCode.fromValue(e.status),
+                            ErrorResponse(e.message, e.code)
+                        )
+                    }
 
-                    val system = req.messages.firstOrNull { it.role == "system" }?.content
+                    // Multimodal: answer truthfully about this build.
+                    //
+                    // 501 and not 500: the request was understood and is
+                    // well-formed, this build just cannot serve it. The
+                    // capability block in /health says the same thing ahead
+                    // of time, so a client should not get here at all --
+                    // but one that ignores /health still gets an answer it
+                    // can act on rather than a crash.
+                    if (req.isMultimodal) {
+                        val mm = multimodal()
+                        val needVision = req.hasImages && !mm.vision
+                        val needAudio = req.hasAudio && !mm.audio
+                        if (needVision || needAudio) {
+                            val missing = listOfNotNull(
+                                if (needVision) "images" else null,
+                                if (needAudio) "audio" else null
+                            ).joinToString(" and ")
+                            Diagnostics.i(
+                                TAG,
+                                "rejected multimodal request ($missing): " +
+                                    MultimodalProbe.summary(mm)
+                            )
+                            return@post call.respond(
+                                HttpStatusCode.NotImplemented,
+                                ErrorResponse(
+                                    "this build cannot process $missing: " +
+                                        MultimodalProbe.summary(mm) +
+                                        ". GET /health reports capabilities ahead of time.",
+                                    "multimodal_unsupported"
+                                )
+                            )
+                        }
+                    }
+
+                    val system = ChatRequestParser.systemText(req)
 
                     // Non-standard RAG extension (see OAChatRequest). A second,
                     // separate capability check: GENERATE lets a client run the
@@ -590,7 +697,7 @@ class LocalServer(
                     val collection = req.collection?.takeIf { it.isNotBlank() }
                     val ragContext: List<String> = if (collection != null) {
                         val ragClient = call.requireCap(ClientRegistry.Cap.RAG) ?: return@post
-                        val lastUser = req.messages.lastOrNull { it.role == "user" }?.content.orEmpty()
+                        val lastUser = req.messages.lastOrNull { it.role == "user" }?.text.orEmpty()
                         retriever.retrieve(ragClient.scope(collection), lastUser, req.ragTopK)
                             .map { it.text }
                     } else {
@@ -609,11 +716,22 @@ class LocalServer(
                             }
                             append("\n")
                         }
-                        req.messages.filter { it.role != "system" }.forEach { m ->
-                            append(m.role.replaceFirstChar { c -> c.uppercase() })
-                            append(": ").append(m.content).append("\n")
-                        }
-                        append("Assistant:")
+                        append(ChatRequestParser.promptText(req))
+                    }
+
+                    // 413 rather than letting the model silently drop the
+                    // front of the prompt, which looks like the model
+                    // ignoring instructions.
+                    val promptTokens = SystemInfo.estimateTokens(prompt)
+                    if (promptTokens > MAX_CONTEXT_TOKENS) {
+                        return@post call.respond(
+                            HttpStatusCode.PayloadTooLarge,
+                            ErrorResponse(
+                                "prompt is about $promptTokens tokens; the context is " +
+                                    "$MAX_CONTEXT_TOKENS",
+                                "context_overflow"
+                            )
+                        )
                     }
 
                     val id = "chatcmpl-" + java.util.UUID.randomUUID().toString().take(24)
@@ -653,8 +771,16 @@ class LocalServer(
                             }
                         }
                     } else {
+                        // generateCapped, not generate: max_tokens used
+                        // to be advisory, so a client asking for 300 could
+                        // get a thousand. The cap stops generation rather
+                        // than truncating after the fact, so the phone never
+                        // spends the compute -- which matters most for
+                        // Telugu, roughly 2.2x the tokens for the same text.
                         val r = try {
-                            scheduler.submit(priorityOf(call)) { engine.generate(prompt, system) }
+                            scheduler.submit(priorityOf(call)) {
+                                engine.generateCapped(prompt, system, req.maxTokens)
+                            }
                         } catch (e: InferenceScheduler.Rejected) {
                             return@post call.rejected(e)
                         } catch (e: InferenceScheduler.TimedOut) {
@@ -668,7 +794,10 @@ class LocalServer(
                             putJsonArray("choices") {
                                 addJsonObject {
                                     put("index", 0)
-                                    put("finish_reason", "stop")
+                                    // Reported from what actually happened,
+                                    // not assumed: "length" only when the
+                                    // cap is what ended it.
+                                    put("finish_reason", if (r.hitCap) "length" else "stop")
                                     put("message", buildJsonObject {
                                         put("role", "assistant")
                                         put("content", r.text)
@@ -1063,7 +1192,11 @@ class LocalServer(
                     }
                     val stored = notifier.setBrief(
                         clientId = client.id,
-                        items = req.items.map { it.title to it.text },
+                        items = req.items.map {
+                            BriefPolicy.Item(it.title, it.text, it.link?.takeIf { l ->
+                                BriefJson.isSafeLink(l)
+                            })
+                        },
                         ttlMs = req.ttlSeconds?.let { it * 1000 } ?: BriefPolicy.DEFAULT_TTL_MS
                     )
                     call.respondJson(buildJsonObject {
@@ -1110,6 +1243,10 @@ class LocalServer(
                                             addJsonObject {
                                                 put("title", i.title)
                                                 put("text", i.text)
+                                                // Echoed back so a client can
+                                                // tell a dropped link from a
+                                                // kept one.
+                                                if (i.link != null) put("link", i.link)
                                             }
                                         }
                                     }
@@ -1223,6 +1360,23 @@ class LocalServer(
      * importantly a revocation has to. A cached set would leave a revoked web
      * app able to read replies until the next service restart.
      */
+    /**
+     * The multimodal probe, run once and cached.
+     *
+     * Reflection over every method of five classes is not something to do
+     * per request, and the answer cannot change while the process lives —
+     * the AAR is fixed at install time.
+     */
+    private val multimodalProbe by lazy {
+        MultimodalProbe.probeInstalled().also {
+            Diagnostics.i(TAG, "multimodal probe: " + MultimodalProbe.summary(it))
+            it.imageMethods.forEach { m -> Diagnostics.i(TAG, "  image candidate: $m") }
+            it.audioMethods.forEach { m -> Diagnostics.i(TAG, "  audio candidate: $m") }
+        }
+    }
+
+    private fun multimodal() = multimodalProbe
+
     private fun allowedOrigins(): Set<String> =
         CorsPolicy.loopbackOrigins(port) + registry.pairedWebOrigins()
 
@@ -1373,6 +1527,15 @@ class LocalServer(
         private const val NOTIFY_PER_MINUTE = 30
 
         /** Brief rows are one or two lines on a home screen, not prose. */
+        /**
+         * Advertised in /health as max_context. An estimate, because the
+         * LiteRT-LM surface exposes no context length and the real figure
+         * depends on the model file. Stated so a client can size prompts
+         * and so the 413 below has a threshold; not a value to trust to the
+         * token.
+         */
+        const val MAX_CONTEXT_TOKENS = 4096
+
         private const val MAX_BRIEF_TITLE = 80
         private const val MAX_BRIEF_TEXT = 200
 

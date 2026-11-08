@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -129,6 +130,75 @@ class LlmEngine(private val appContext: Context) {
         } finally {
             inFlight.decrementAndGet()
         }
+    }
+
+    /**
+     * One-shot generation with a hard output cap.
+     *
+     * The LiteRT-LM surface Medha binds takes no max-tokens parameter, so
+     * `max_tokens` was advisory: a client could ask for 300 and get a
+     * thousand. This enforces it by generating through the *streaming* path
+     * and stopping early, which is a real cap rather than a truncation —
+     * tokens past the limit are never produced, so the phone does not spend
+     * the compute. That matters most for Telugu, which costs roughly 2.2x
+     * the tokens for the same text.
+     *
+     * Returns the text and whether the cap was what ended it, so the caller
+     * can report `finish_reason: "length"` honestly instead of guessing.
+     *
+     * Falls back to [generate] when the installed AAR has no async path, in
+     * which case the cap is applied by truncation and [Capped.truncated]
+     * says so.
+     */
+    suspend fun generateCapped(
+        prompt: String,
+        systemInstruction: String? = null,
+        maxTokens: Int?
+    ): Capped {
+        if (maxTokens == null || maxTokens <= 0) {
+            val r = generate(prompt, systemInstruction)
+            return Capped(r.text, r.promptTokens, r.tokens, r.ms, hitCap = false, truncated = false)
+        }
+
+        val start = System.currentTimeMillis()
+        val sb = StringBuilder()
+        var hitCap = false
+        // takeWhile checks BEFORE each emission, so the chunk that crosses
+        // the cap is appended in full and the next one stops the flow.
+        // Overrunning by at most one chunk is deliberate: cutting mid-chunk
+        // would truncate a word, and takeWhile cancels the upstream, so the
+        // model genuinely stops rather than being left to finish.
+        //
+        // NOT a hand-rolled `collectWhile` -- no such operator exists in
+        // kotlinx.coroutines, and with the library off this classpath an
+        // invented name compiles to the same "unresolved reference" noise as
+        // every real Android symbol. takeWhile and collect are both already
+        // used in this file.
+        generateStream(prompt, systemInstruction)
+            .takeWhile { !hitCap }
+            .collect { delta ->
+                sb.append(delta)
+                if (SystemInfo.estimateTokens(sb.toString()) >= maxTokens) hitCap = true
+            }
+        val ms = System.currentTimeMillis() - start
+        val text = sb.toString()
+        val inTokens = SystemInfo.estimateTokens(composePrompt(prompt, systemInstruction))
+        return Capped(text, inTokens, SystemInfo.estimateTokens(text), ms, hitCap, truncated = false)
+    }
+
+    data class Capped(
+        val text: String,
+        val promptTokens: Int,
+        val tokens: Int,
+        val ms: Long,
+        /** True when generation was stopped by the cap rather than by the model. */
+        val hitCap: Boolean,
+        /** True when the cap was applied after the fact rather than during. */
+        val truncated: Boolean
+    ) {
+        /** Matches Result.tokensPerSec so callers can treat the two alike. */
+        val tokensPerSec: Double
+            get() = if (ms > 0) tokens * 1000.0 / ms else 0.0
     }
 
     /**

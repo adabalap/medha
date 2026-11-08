@@ -1,5 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Translucent rounded card, not a coloured block.
+
+  Previously a fixed indigo gradient, which sat on the wallpaper looking
+  pasted on while every system widget beside it was a soft card. 28dp
+  matches the corner radius One UI uses for its own widgets, and the colour
+  is semi-transparent so the wallpaper reads through it.
+-->
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <gradient android:startColor="#3B2E7E" android:endColor="#5B3FA8" android:angle="315" />
-    <corners android:radius="24dp" />
+    <solid android:color="@color/brief_widget_bg" />
+    <corners android:radius="28dp" />
 </shape>

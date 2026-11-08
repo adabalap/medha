@@ -65,6 +65,23 @@ kotlinc stubs/org/json/Stubs.kt "$SRC/notify/BriefPolicy.kt" "$SRC/notify/BriefJ
 java -jar "$WORK/briefjson.jar"
 
 echo
+echo "== ChatRequestParserTest =="
+# The OpenAI-shaped request parser, including the multimodal content-part
+# form. Before it, an image part threw and became a 500 -- the one answer a
+# client built to fall back on 4xx cannot act on.
+kotlinc stubs/org/json/Stubs.kt "$SRC/oai/ChatRequestParser.kt" ChatRequestParserTest.kt \
+  -include-runtime -d "$WORK/chatreq.jar"
+java -jar "$WORK/chatreq.jar"
+
+echo
+echo "== MultimodalProbeTest =="
+# Decides what /health advertises. Claiming a capability this build does not
+# have would stop clients falling back and make them fail instead.
+kotlinc "$SRC/oai/MultimodalProbe.kt" MultimodalProbeTest.kt \
+  -include-runtime -d "$WORK/probe.jar"
+java -jar "$WORK/probe.jar"
+
+echo
 echo "== NetPolicyTest =="
 # Origin matching, the CORS decision, the Private Network Access preflight,
 # the notify rate limiter and the pairing-code state machine. This is the

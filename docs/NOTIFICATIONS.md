@@ -197,13 +197,28 @@ await fetch("http://127.0.0.1:8001/widget/content", {
   headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
   body: JSON.stringify({
     items: [
-      { title: "Standup at 10", text: "with the platform team" },
+      { title: "Standup at 10", text: "with the platform team",
+        link: "https://notes.example.com/today" },   // optional
       { title: "Rent due",      text: "Friday" }
     ],
     ttlSeconds: 21600          // optional; 24h default, clamped 60s..7d
   })
 });
 ```
+
+**`link` is optional and http(s) only.** Tapping that line in the brief
+opens it; an item without one opens a detail sheet showing the full text,
+which app posted it and when. Anything that is not http(s) — `intent:`,
+`file:`, a custom scheme — is dropped rather than rejected, so one bad link
+does not fail a whole post. The restriction is not cosmetic: items are
+written by remote clients and tapped on the user's home screen, so the set
+of things a tap can launch has to be the boring one. Medha filters on write
+and again on read, and `GET /widget/content` echoes back what it kept.
+
+Medha cannot open the posting app itself for you: it stores a hashed
+namespace rather than the caller's package name, deliberately, so it has
+nothing to launch and will not guess. A paired web app is the exception —
+its origin is known, and the detail sheet offers it.
 
 ```
 GET    /widget/content   -> your section (admin sees every section)

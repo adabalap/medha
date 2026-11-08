@@ -43,6 +43,10 @@ from medha_brief import Medha, MedhaError  # noqa: E402
 # runit service names under termux-services. Adjust to yours.
 SERVICES = ["hg_agent", "hg_ui", "nginx"]
 
+#: Where a tapped brief line should take you. Your nginx HTTPS origin for
+#: hg_ui. Leave blank and the lines open a detail sheet instead.
+HG_UI_URL = os.environ.get("HG_UI_URL", "")
+
 
 def service_down():
     """Names of supervised services that are not up.
@@ -90,7 +94,13 @@ def update_brief(medha, stats):
         text = f"{stats['requests']} requests"
         if stats.get("p50_ms"):
             text += f" · p50 {stats['p50_ms']}ms"
-        lines.append({"title": "hg_agent today", "text": text})
+        line = {"title": "hg_agent today", "text": text}
+        # Tapping the line in Medha's brief opens hg_ui. Only the posting
+        # app knows where its own line points -- Medha stores a hashed
+        # namespace rather than a package and will not guess.
+        if HG_UI_URL:
+            line["link"] = HG_UI_URL
+        lines.append(line)
 
     # Only worth a line when it is actually doing something. A compression
     # ratio of 1.0x is the absence of a result, not a result.

@@ -156,7 +156,9 @@ export class Medha {
    * Replace, not append: you are stating your whole current contribution.
    * Other apps' sections are untouched. An empty array withdraws yours.
    *
-   * @param {{title: string, text?: string}[]} items  at most 5.
+   * @param {{title: string, text?: string, link?: string}[]} items  at most
+   *   5. `link` is an optional http(s) URL; tapping that line in Medha's
+   *   brief opens it. Anything else is dropped, here and again server-side.
    * @param {object} [opts]
    * @param {number} [opts.ttlSeconds] 60..604800, default 24h. Clamped
    *   server-side, so a long value is capped rather than rejected.
@@ -277,10 +279,21 @@ function normaliseItems(items) {
   return items
     .filter((i) => i && i.title && String(i.title).trim())
     .slice(0, 5) // the server caps at 5 per client; fail here, visibly
-    .map((i) => ({
-      title: String(i.title).trim().slice(0, 80),
-      text: String(i.text || "").trim().slice(0, 200)
-    }));
+    .map((i) => {
+      const out = {
+        title: String(i.title).trim().slice(0, 80),
+        text: String(i.text || "").trim().slice(0, 200)
+      };
+      // Optional per-item link: tapping the line in Medha's brief opens it.
+      // http(s) only, and dropped rather than throwing so one bad link does
+      // not fail a whole post. Medha filters again server-side -- a tap on
+      // someone's home screen must not be able to launch an `intent:` URL.
+      const link = i.link == null ? "" : String(i.link).trim();
+      if (/^https?:\/\//i.test(link) && link.length <= 2000 && !/\s/.test(link)) {
+        out.link = link;
+      }
+      return out;
+    });
 }
 
 /**

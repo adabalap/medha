@@ -191,6 +191,28 @@ async function run() {
     await throws("a non-array is rejected locally", () => m.postBrief("nope"), "bad_request");
   }
 
+  console.log("\nMedha — per-item links are filtered before sending");
+  {
+    const store = fakeStorage();
+    store.setItem("medha.token.a", JSON.stringify({ token: "T" }));
+    const m = new Medha({ appKey: "a", storage: store });
+    const calls = stubFetch([{ body: { ok: true, items: 4 } }]);
+    await m.postBrief([
+      { title: "good", link: "https://notes.example.com/1" },
+      { title: "hostile", link: "intent://evil#Intent;end" },
+      { title: "spaced", link: "https://x.com/a b" },
+      { title: "none" }
+    ]);
+    const sent = calls[0].body.items;
+    eq("http(s) link kept", sent[0].link, "https://notes.example.com/1");
+    // The one that matters: a tap on the user's home screen must not be
+    // able to launch an intent: URL chosen by a remote client.
+    eq("intent: link dropped, item kept", sent[1].link, undefined);
+    eq("and the item itself survives", sent[1].title, "hostile");
+    eq("link with whitespace dropped", sent[2].link, undefined);
+    eq("absent link stays absent", sent[3].link, undefined);
+  }
+
   // -------------------------------------------------------- notifications
   console.log("\nMedha — notify");
   {

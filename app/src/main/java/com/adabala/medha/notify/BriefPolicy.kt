@@ -50,8 +50,16 @@ package com.adabala.medha.notify
  */
 object BriefPolicy {
 
-    /** One line in the brief. */
-    data class Item(val title: String, val text: String)
+    /**
+      * One line in the brief.
+      *
+      * [link] is where tapping the line should go, and is optional. Only the
+      * app that posted an item knows what it refers to -- Medha stores a
+      * hashed namespace rather than the caller's package, so it cannot
+      * launch the posting app and will not guess. With no link, tapping
+      * opens a detail sheet instead of doing nothing.
+      */
+     data class Item(val title: String, val text: String, val link: String? = null)
 
     /** One client's contribution, replaced wholesale when it writes again. */
     data class Section(
@@ -66,7 +74,8 @@ object BriefPolicy {
         val title: String,
         val text: String,
         val clientId: String,
-        val updatedAt: Long
+        val updatedAt: Long,
+        val link: String? = null
     )
 
     /**
@@ -155,7 +164,8 @@ object BriefPolicy {
                     title = item.title,
                     text = item.text,
                     clientId = s.clientId,
-                    updatedAt = s.updatedAt
+                    updatedAt = s.updatedAt,
+                    link = item.link
                 )
                 if (out.size == maxRows) return out
             }

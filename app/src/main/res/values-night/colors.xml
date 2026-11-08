@@ -32,4 +32,16 @@
          directly. -->
     <color name="indigo_container">#746890</color>
     <color name="on_indigo_container">#EAE3FB</color>
+
+    <!-- See the light variant for why these follow the system theme. -->
+    <color name="brief_widget_bg">#D11C1630</color>
+    <color name="brief_widget_title">#F4F0FF</color>
+    <color name="brief_widget_body">#CFC5EA</color>
+    <color name="brief_widget_meta">#9A8BC8</color>
+    <color name="brief_widget_brand">#B9A9EC</color>
+    <color name="brief_accent">#B9A9EC</color>
+
+    <color name="brief_screen_bg">#14111C</color>
+    <color name="brief_card_bg">#221D2E</color>
+    <color name="brief_headline">#F4F0FF</color>
 </resources>

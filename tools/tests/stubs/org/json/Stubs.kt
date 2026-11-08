@@ -90,6 +90,25 @@ class JSONObject {
         return if (v is String) v else v.toString()
     }
 
+    fun optInt(name: String, fallback: Int): Int {
+        val v = map[name]
+        return when (v) {
+            is Int -> v
+            is Long -> v.toInt()
+            is Double -> v.toInt()
+            else -> fallback
+        }
+    }
+
+    fun optBoolean(name: String, fallback: Boolean): Boolean {
+        val v = map[name]
+        return when (v) {
+            is Boolean -> v
+            is String -> v.equals("true", ignoreCase = true)
+            else -> fallback
+        }
+    }
+
     fun isNull(name: String): Boolean = !map.containsKey(name) || map[name] == null
 
     override fun toString(): String {

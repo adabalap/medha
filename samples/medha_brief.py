@@ -70,6 +70,7 @@ DEFAULT_TIMEOUT = 5.0
 #: Server-side caps, mirrored here so overflow is visible locally rather than
 #: silently dropped. See BriefPolicy.
 MAX_ITEMS = 5
+MAX_LINK = 2000
 MAX_TITLE = 80
 MAX_TEXT = 200
 
@@ -277,9 +278,23 @@ def _normalise(items) -> list:
         title = str(i.get("title") or "").strip()
         if not title:
             continue
-        out.append(
-            {"title": title[:MAX_TITLE], "text": str(i.get("text") or "").strip()[:MAX_TEXT]}
-        )
+        item = {
+            "title": title[:MAX_TITLE],
+            "text": str(i.get("text") or "").strip()[:MAX_TEXT],
+        }
+        # Optional per-item link: tapping the line in Medha's brief opens
+        # it. http(s) only, dropped rather than raised so one bad link does
+        # not fail a whole post. Medha filters again server-side, because a
+        # tap on someone's home screen must not launch an `intent:` URL.
+        link = str(i.get("link") or "").strip()
+        if (
+            link
+            and len(link) <= MAX_LINK
+            and link.lower().startswith(("http://", "https://"))
+            and not any(c.isspace() for c in link)
+        ):
+            item["link"] = link
+        out.append(item)
         if len(out) == MAX_ITEMS:
             break
     return out

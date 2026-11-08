@@ -193,13 +193,13 @@ class NotificationHub(private val appContext: Context) {
      */
     fun setBrief(
         clientId: String,
-        items: List<Pair<String, String>>,
+        items: List<BriefPolicy.Item>,
         ttlMs: Long = BriefPolicy.DEFAULT_TTL_MS
     ): Int = synchronized(briefLock) {
         val merged = BriefPolicy.put(
             existing = readSections(),
             clientId = clientId,
-            items = items.map { (t, x) -> BriefPolicy.Item(t, x) },
+            items = items,
             now = System.currentTimeMillis(),
             ttlMs = ttlMs
         )

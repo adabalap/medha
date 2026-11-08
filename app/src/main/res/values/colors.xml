@@ -27,4 +27,29 @@
     <color name="card_surface">#FFFFFF</color>
     <color name="text_primary">#333333</color>
     <color name="text_secondary">#555555</color>
+
+    <!--
+      Brief surfaces.
+
+      The widget used to be a fixed indigo gradient with hex literals in the
+      layout, which read as a coloured block sitting on the wallpaper while
+      every system widget around it was a soft translucent card. These follow
+      the system theme via values-night, the way Samsung's own Now Brief card
+      does, so Medha's widget belongs on the same home screen rather than
+      competing with it.
+
+      Alpha is deliberate: the widget background is translucent so the
+      wallpaper shows through, which is most of what makes a card read as
+      part of the launcher rather than pasted on top.
+    -->
+    <color name="brief_widget_bg">#E8FFFFFF</color>
+    <color name="brief_widget_title">#1A1033</color>
+    <color name="brief_widget_body">#4A4060</color>
+    <color name="brief_widget_meta">#7A6FA8</color>
+    <color name="brief_widget_brand">#5B3FA8</color>
+    <color name="brief_accent">#5B3FA8</color>
+
+    <color name="brief_screen_bg">#F7F4FF</color>
+    <color name="brief_card_bg">#FFFFFF</color>
+    <color name="brief_headline">#1A1033</color>
 </resources>

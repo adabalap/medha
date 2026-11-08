@@ -202,6 +202,23 @@ def main():
 
         raises("a non-list is refused locally", lambda: m.post_brief("nope"), "bad_request")
 
+        print("\nmedha_brief.py -- per-item links are filtered before sending")
+        script({"body": {"ok": True, "items": 4}})
+        m.post_brief([
+            {"title": "good", "link": "https://notes.example.com/1"},
+            {"title": "hostile", "link": "intent://evil#Intent;end"},
+            {"title": "spaced", "link": "https://x.com/a b"},
+            {"title": "none"},
+        ])
+        sent = State.calls[0]["body"]["items"]
+        eq("http(s) link kept", sent[0].get("link"), "https://notes.example.com/1")
+        # A tap on the user's home screen must not launch an intent: URL
+        # chosen by a remote client.
+        eq("intent: link dropped", sent[1].get("link"), None)
+        eq("but the item survives", sent[1]["title"], "hostile")
+        eq("link with whitespace dropped", sent[2].get("link"), None)
+        eq("absent link stays absent", sent[3].get("link"), None)
+
         print("\nmedha_brief.py -- read and clear")
         script({"body": {"pageRows": 3, "maxRows": 12, "contributors": 2, "sections": []}})
         got = m.read_brief()
