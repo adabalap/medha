@@ -41,6 +41,9 @@ import io.ktor.server.request.path
 import io.ktor.server.request.receive
 import io.ktor.server.request.receiveMultipart
 import io.ktor.server.request.receiveText
+// Input.readBytes(), for reading a multipart FileItem's provider().
+// ktor-io comes in transitively with ktor-server-core.
+import io.ktor.utils.io.core.readBytes
 import io.ktor.server.response.header
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytes
@@ -725,10 +728,29 @@ class LocalServer(
                         call.receiveMultipart().forEachPart { part ->
                             try {
                                 when (part) {
+                                    // provider(), not streamProvider().
+                                    //
+                                    // `streamProvider` is a Ktor 1.x name.
+                                    // It does still exist at 2.3.12, but
+                                    // only as a JVM-only EXTENSION PROPERTY
+                                    // in ktor-http/jvm's MultipartJvm.kt,
+                                    // so it needs its own import and
+                                    // otherwise fails to resolve with a
+                                    // message that reads like a missing
+                                    // API. `provider(): Input` is the
+                                    // member, and provider().readBytes() is
+                                    // the idiom Ktor's own server code uses
+                                    // (see TestApplicationRequest.kt).
+                                    //
+                                    // No close() here: PartData.dispose is
+                                    // a lambda invoked in the finally
+                                    // below, and CIO's implementation of it
+                                    // releases the part's buffers. Ktor's
+                                    // own call sites close nothing either.
                                     is PartData.FileItem ->
                                         if (fileBytes == null) {
                                             fileName = part.originalFileName
-                                            fileBytes = part.streamProvider().readBytes()
+                                            fileBytes = part.provider().readBytes()
                                         }
                                     is PartData.FormItem -> fields[part.name.orEmpty()] = part.value
                                     else -> Unit

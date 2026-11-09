@@ -115,6 +115,15 @@ jobs:
       - name: Check route authorization
         run: python3 tools/check_route_auth.py
 
+      # This sandbox has no Maven access, so nothing here compiles against
+      # Ktor and every Ktor call is written from reading the library source.
+      # v0.11.0 spent a build on `part.streamProvider()`, a Ktor 1.x name
+      # that still exists at 2.3.12 as a jvm-only extension property -- so
+      # the error read as a removed API rather than a missing import. A
+      # blacklist, not a type checker; CI is still the real verifier.
+      - name: Check for Ktor 1.x API names
+        run: python3 tools/check_ktor_api.py
+
       # Real HTTP round trips against a stdlib server standing in for
       # Medha. Needs no Android SDK, no Gradle and no network.
       - name: Test the Python clients
