@@ -86,6 +86,17 @@ kotlinc "$SRC/oai/MultimodalProbe.kt" MultimodalProbeTest.kt \
 java -jar "$WORK/probe.jar"
 
 echo
+echo "== MultimodalLadderTest =="
+# The order the engine tries vision/audio backends in. Every rung costs a
+# full model load (~8.6s on an SM8850), and the first real device to run
+# this refused audio-on-GPU while accepting audio-on-CPU -- so the ladder
+# is the difference between "this model has no audio encoder" and audio
+# working. Ordering, de-duplication and the cached-rung hint.
+kotlinc "$SRC/oai/MultimodalLadder.kt" MultimodalLadderTest.kt \
+  -include-runtime -d "$WORK/ladder.jar"
+java -jar "$WORK/ladder.jar"
+
+echo
 echo "== WavTest =="
 # InputData.Audio takes WAV only, and AudioRecord produces headerless PCM,
 # so every audio request goes through this file. Two silent killers: the

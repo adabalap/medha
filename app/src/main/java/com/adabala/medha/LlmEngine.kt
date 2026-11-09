@@ -2,6 +2,7 @@ package com.adabala.medha
 
 import android.content.Context
 import com.adabala.medha.diag.Diagnostics
+import com.adabala.medha.oai.MultimodalLadder
 import com.adabala.medha.oai.MultimodalProbe
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Engine
@@ -97,7 +98,17 @@ class LlmEngine(private val appContext: Context) {
         modelPath: String,
         backend: ConfiguredBackend,
         force: Boolean = false,
-        enableMultimodal: Boolean = true
+        enableMultimodal: Boolean = true,
+        /**
+         * The [MultimodalLadder.Rung] label that worked last time, if any.
+         *
+         * Which rung a given (model, device) pair accepts does not change
+         * between starts, and each rung it has to walk past costs a full
+         * model load — about 8.6s on an SM8850. The first real device to
+         * run this rejected audio-on-GPU, so without a hint every single
+         * start would pay for that discovery again.
+         */
+        rungHint: String? = null
     ) {
         synchronized(lifecycle) {
             if (!force && engine != null &&
@@ -123,37 +134,28 @@ class LlmEngine(private val appContext: Context) {
             val wantAudio = enableMultimodal && caps.audio
             val start = System.currentTimeMillis()
 
-            // Init ladder. Each rung costs a full model load (~8s on a
-            // flagship), so this only ever descends on failure — the happy
-            // path is one attempt.
-            //
-            // Rung 2 exists because the media encoders and the language
-            // model do not have to run on the same accelerator, and a GPU
-            // that happily runs the decoder can still lack a kernel the
-            // vision tower needs. Retrying the encoders on CPU costs a few
-            // hundred ms per request and is strictly better than silently
-            // dropping to text-only.
-            val rungs = buildList {
-                if (wantVision || wantAudio) {
-                    add(Triple("media on ${backend.name}", wantVision, wantAudio) to backend)
-                    if (backend != ConfiguredBackend.CPU) {
-                        add(Triple("media on CPU", wantVision, wantAudio) to ConfiguredBackend.CPU)
-                    }
-                }
-                add(Triple("text-only", false, false) to backend)
-            }
+            // Init ladder, ordered by MultimodalLadder (which is where the
+            // reasoning and the tests live). Each rung costs a full model
+            // load, so this only ever descends on failure, and [rungHint]
+            // normally makes the first attempt the right one.
+            val rungs = MultimodalLadder.order(
+                backend = backend.name,
+                wantVision = wantVision,
+                wantAudio = wantAudio,
+                hint = rungHint
+            )
 
             var live: Engine? = null
-            for ((spec, mediaBackend) in rungs) {
-                val (label, v, a) = spec
+            for (rung in rungs) {
                 val attempt = runCatching {
                     val e = Engine(
                         EngineConfig(
                             modelPath = modelPath,
                             backend = backendOf(backend),
-                            visionBackend = if (v) backendOf(mediaBackend) else null,
-                            audioBackend = if (a) backendOf(mediaBackend) else null,
-                            maxNumImages = if (v) MAX_IMAGES_PER_REQUEST else null,
+                            visionBackend = rung.visionBackend?.let { backendOf(parseBackend(it)) },
+                            audioBackend = rung.audioBackend?.let { backendOf(parseBackend(it)) },
+                            maxNumImages =
+                                if (rung.visionBackend != null) MAX_IMAGES_PER_REQUEST else null,
                             cacheDir = appContext.cacheDir.path
                         )
                     )
@@ -169,19 +171,19 @@ class LlmEngine(private val appContext: Context) {
 
                 attempt.onSuccess {
                     live = it
-                    visionActive = v
-                    audioActive = a
-                    multimodalMode = label
+                    visionActive = rung.visionBackend != null
+                    audioActive = rung.audioBackend != null
+                    multimodalMode = rung.label
                 }
                 if (live != null) break
 
                 val why = attempt.exceptionOrNull()?.let { "${it.javaClass.simpleName}: ${it.message}" }
                     ?: "unknown"
-                // Only the first failure is worth reporting to clients: it
-                // is the one that says "this model has no encoder", which is
-                // the fact a caller can act on.
+                // The first failure is the one worth keeping: it is the
+                // most capable configuration this model refused, so its
+                // message is the one that explains the final mode.
                 if (multimodalError == null) multimodalError = why
-                Diagnostics.w(TAG, "Engine init rung '$label' failed -- $why")
+                Diagnostics.w(TAG, "Engine init rung '${rung.label}' failed -- $why")
             }
 
             val e = live ?: error("Engine failed to initialize on every configuration")
@@ -211,6 +213,34 @@ class LlmEngine(private val appContext: Context) {
         ConfiguredBackend.NPU ->
             Backend.NPU(nativeLibraryDir = appContext.applicationInfo.nativeLibraryDir)
     }
+
+    /**
+     * MultimodalLadder works in plain strings so it stays Android-free and
+     * testable; this turns one back into an enum. Falls back to CPU rather
+     * than throwing, because the ladder's own names are the only values
+     * that reach here and CPU is the safe one if that ever stops being
+     * true.
+     */
+    private fun parseBackend(name: String): ConfiguredBackend =
+        runCatching { ConfiguredBackend.valueOf(name) }.getOrDefault(ConfiguredBackend.CPU)
+
+    /**
+     * True when the engine came up on a less capable rung than the AAR
+     * could have supported.
+     *
+     * Distinct from [multimodalError] being set: on the first device to
+     * run this, audio-on-GPU was refused and audio-on-CPU succeeded, so
+     * there IS a recorded error and audio works perfectly well. Reporting
+     * that error as a fault would tell every client something is broken
+     * when nothing is.
+     */
+    val multimodalDegraded: Boolean
+        get() = isLoaded && multimodalError != null &&
+            multimodalMode != MultimodalLadder.preferredLabel(configuredBackend.name)
+
+    /** The rung label worth persisting for the next start, or null. */
+    val cacheableRung: String?
+        get() = multimodalMode.takeIf { isLoaded && MultimodalLadder.worthCaching(it) }
 
     /**
      * One-shot generation. Suspends (never blocks the caller's thread) while

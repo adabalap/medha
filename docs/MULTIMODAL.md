@@ -80,29 +80,98 @@ engine** can do:
   AAR supports the modality *and* this engine initialized with that backend
   — which additionally proves the loaded `.litertlm` carries the encoder.
 - **`aar_supports`** is the build's ceiling. When this is `true` and
-  `capabilities` is `false`, the model is the limitation, not Medha, and
-  `multimodal_error` says what initialization reported.
+  `capabilities` is `false`, the model is the limitation, not Medha.
 
 **Clients should branch on `capabilities`.** `aar_supports` is for working
 out whether to change the model or change the APK.
+
+### `multimodal_error` vs `multimodal_note`
+
+Only one of these appears, and the distinction is load-bearing:
+
+- **`multimodal_error`** — a capability the AAR supports is not available.
+  Something you may need to act on.
+- **`multimodal_note`** — the ladder fell back a rung but everything
+  advertised in `capabilities` works. Informational.
+
+v0.11.1 got this wrong and emitted `multimodal_error` alongside
+`audio: true`, because the GPU rung's failure was recorded and never
+cleared when the CPU rung succeeded. Both facts were true and the pair read
+as a broken server. A recovered failure is a note; only an unmet capability
+is an error.
 
 ---
 
 ## The init ladder
 
-`Engine.initialize()` is where a model without an encoder fails, so
-`LlmEngine.load()` tries in order and keeps the first that comes up:
+`Engine.initialize()` is the only thing that can tell you whether a given
+`.litertlm` will run its encoders on a given accelerator. Nothing readable
+from the file or the AAR says so in advance. So `LlmEngine.load()` tries in
+order and keeps the first that comes up:
 
 | Rung | `multimodal_mode` | When it is used |
 |---|---|---|
-| 1 | `media on GPU` (or CPU/NPU) | Media encoders on the configured backend |
-| 2 | `media on CPU` | A GPU that runs the decoder but lacks a kernel the vision or audio tower needs |
-| 3 | `text-only` | The model has no encoders |
+| 1 | `all on GPU` (or CPU/NPU) | Both encoders on the configured backend |
+| 2 | `GPU, audio on CPU` | The audio tower is refused on the GPU but the vision tower is not |
+| 3 | `GPU, media on CPU` | Neither tower runs on the configured backend |
+| 4 | `text-only` | The model has no encoders |
 
-Each failed rung costs a full model load — about 8.6s on a Snapdragon
-SM8850 — so a cold start on a text-only model pays roughly 25s to discover
-that. Once you know, **drawer → Multimodal support → Turn off** skips the
-ladder and makes starts fast again.
+**The language model stays on the configured backend in every rung except
+the last.** Only the encoders move. The labels lead with the accelerator
+running the LLM for exactly that reason: an earlier scheme named only what
+moved, and `media on CPU` was read — reasonably — as the whole model
+dropping to CPU.
+
+**Rung 2 exists because of a real device.** The first Snapdragon SM8850 to
+run this, with `gemma-4-E4B-it`, reported:
+
+```
+LiteRtLmJniException: Model requires one of [cpu] but Audio backend is GPU
+```
+
+### That constraint comes from the model file, not from the GPU
+
+Worth being exact, because it determines who can fix it. In LiteRT-LM's
+source, `schema/model_info/model_info.cc` parses a `backend_constraint`
+key/value pair out of each section of the `.litertlm` container — one per
+modality — and `ValidateBackendConstraint` in
+`runtime/engine/engine_settings.cc` splits it on commas and rejects any
+backend not in the list:
+
+```cpp
+return absl::InvalidArgumentError(absl::StrCat(
+    modality_name, " backend constraint mismatch. Model requires one of [",
+    backend_constraint_str, "] but ", modality_name, " backend is ", backend));
+```
+
+So whoever packaged `gemma-4-E4B-it.litertlm` wrote `cpu` into the audio
+section's constraint. It is a declaration baked into the weights file by
+its publisher — not a limitation of the Snapdragon, not of Android, and not
+of Medha. No setting on this side can override it; the check runs before
+any kernel is ever selected. A differently packaged build of the same model
+could lift it.
+
+That model supports audio perfectly well — just not on the GPU. A single
+attempt would have fallen back to text-only, and the obvious conclusion
+would have been "these weights have no audio encoder", which is wrong and
+would have sent a team back to shipping whisper.cpp. The error names
+**Audio** specifically, so demoting only audio is the targeted response and
+keeps image encoding — the heavier of the two — on the GPU.
+
+### The winning rung is cached
+
+Each rung costs a full model load, about 8.6s on an SM8850, and which rung
+a given (model, device) pair accepts does not change between starts. So the
+label that worked is stored, keyed by model path and backend, and tried
+first next time. Steady state is one load, not three.
+
+The hint only reorders — it never prunes. Swap the model or change the
+backend and every rung is still reachable, so an engine that once fell back
+can climb back up. `text-only` is deliberately never cached: hinted first it
+would succeed immediately, and the media rungs would never run again.
+
+If you would rather skip the ladder entirely — on a model you know has no
+encoders — **drawer → Multimodal support → Turn off**.
 
 ---
 
@@ -263,16 +332,27 @@ so every client does not write that cleanup slightly differently.
 
 ## What is still unverified
 
-Honest list, as of this writing:
+Honest list, as of this writing.
 
-- **Whether `gemma-4-E4B-it.litertlm` carries the encoders.** The AAR
-  accepts them; whether these weights have them is answered by loading the
-  model and reading `/health`. If `aar_supports` is true and `capabilities`
-  is false, they are not there.
+**Settled on a real device** (SM8850, `gemma-4-E4B-it.litertlm`, v0.11.1):
+
+- The weights **do** carry both encoders. `/health` reported
+  `vision: true, audio: true`.
+- The audio tower will not run on the GPU on this model; it runs on CPU.
+  Vision was demoted along with it in v0.11.1, which is what rung 2 now
+  exists to avoid.
+
+**Still open:**
+
+- **Whether vision runs on the GPU here.** Rung 2 is new and untested on
+  hardware. If it takes, `multimodal_mode` reads
+  `vision on GPU, audio on CPU` and image encoding gets the GPU back.
 - **Real transcription quality in Telugu.** Unknown, and not something this
   side can estimate.
-- **GPU vs CPU for the encoders.** The ladder will find something that
-  works; which rung is faster for a given clip has not been measured.
+- **Encoder throughput.** No measurement of how long a 30s clip actually
+  takes through the CPU audio path, which is the number that decides
+  whether this beats the 3.5x-realtime whisper setup it replaces. It
+  should, comfortably, but "should" is not a measurement.
 - **Thermal behaviour under sustained transcription.** The scheduler gates
   batch work on thermal headroom, but no one has run a long transcription
   session on a warm device.

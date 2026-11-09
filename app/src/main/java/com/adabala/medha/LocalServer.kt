@@ -399,7 +399,38 @@ class LocalServer(
                             put("audio", mm.audio)
                         }
                         put("multimodal_mode", engine.multimodalMode)
-                        engine.multimodalError?.let { put("multimodal_error", it) }
+                        // An error is only an error if something is
+                        // actually unavailable.
+                        //
+                        // The first device to run v0.11.x reported
+                        // audio: true alongside a multimodal_error reading
+                        // "Model requires one of [cpu] but Audio backend is
+                        // GPU". Both were true — the GPU rung was refused
+                        // and the CPU rung succeeded — but a client reading
+                        // them together would conclude the server was
+                        // broken while audio worked perfectly. So a
+                        // recorded failure that the ladder recovered from
+                        // is a NOTE, and only an unmet capability is an
+                        // error.
+                        val visionMissing = mm.vision && !visionLive()
+                        val audioMissing = mm.audio && !audioLive()
+                        when {
+                            visionMissing || audioMissing -> put(
+                                "multimodal_error",
+                                listOfNotNull(
+                                    if (visionMissing) engine.visionUnavailableReason() else null,
+                                    if (audioMissing) engine.audioUnavailableReason() else null
+                                ).distinct().joinToString("; ")
+                            )
+
+                            engine.multimodalDegraded -> put(
+                                "multimodal_note",
+                                "running on '${engine.multimodalMode}' rather than the " +
+                                    "configured backend; everything advertised above works. " +
+                                    "The more capable configuration was refused: " +
+                                    (engine.multimodalError ?: "reason not recorded")
+                            )
+                        }
                         put("max_context", MAX_CONTEXT_TOKENS)
                         put("max_audio_seconds", ChatRequestParser.MAX_AUDIO_SECONDS.toInt())
                         put("max_image_bytes", ChatRequestParser.MAX_IMAGE_BYTES)

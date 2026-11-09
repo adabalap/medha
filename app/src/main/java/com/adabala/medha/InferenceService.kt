@@ -124,11 +124,22 @@ class InferenceService : Service() {
             loadJob = scope.launch {
                 try {
                     if (!engine.isLoaded) updateNotification("Loading model…")
+                    // The hint is keyed by model path and backend: a
+                    // different model, or the same model on another
+                    // accelerator, is a different question and must be
+                    // rediscovered rather than inheriting an answer.
+                    val hintKey = rungHintKey(modelPath, backend.name)
                     engine.load(
                         modelPath,
                         backend,
-                        enableMultimodal = prefs.getBoolean(KEY_MULTIMODAL, true)
+                        enableMultimodal = prefs.getBoolean(KEY_MULTIMODAL, true),
+                        rungHint = prefs.getString(hintKey, null)
                     )
+                    // Persist only on success, and only a rung worth
+                    // caching -- storing "text-only" would put it first
+                    // next time, where it succeeds immediately and the
+                    // media rungs never run again.
+                    engine.cacheableRung?.let { prefs.edit().putString(hintKey, it).apply() }
                     updateNotification(readyText(port))
                 } catch (t: Throwable) {
                     Diagnostics.e(TAG, "Model load failed", t)
@@ -288,6 +299,21 @@ class InferenceService : Service() {
          * every subsequent start fast again.
          */
         const val KEY_MULTIMODAL = "multimodal_enabled"
+
+        /**
+         * Prefix for the cached init-ladder rung.
+         *
+         * Keyed by model path and backend because the answer belongs to
+         * that pair: the first device to run this rejected audio-on-GPU
+         * for one model, which says nothing about the next model or about
+         * the same model on CPU. A single global key would carry a stale
+         * answer across a model swap, and the ladder would spend a rung
+         * discovering that — the exact cost the cache exists to avoid.
+         */
+        const val KEY_RUNG_PREFIX = "multimodal_rung:"
+
+        fun rungHintKey(modelPath: String, backend: String): String =
+            "$KEY_RUNG_PREFIX$backend:$modelPath"
 
         const val DEFAULT_PORT = "8080"
 
