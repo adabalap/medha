@@ -144,16 +144,65 @@ fun main() {
         TranscriptionRequest.validateAudio(ByteArray(TranscriptionRequest.MAX_UPLOAD_BYTES + 1), 30.0)
     }
 
+    println("\nTranscriptionRequest — the encoder's format is enforced at the edge")
+    // LiteRT-LM's Gemma4DataProcessor builds its AudioPreprocessorMiniAudio
+    // for 16000 Hz / 1 channel. Anything else reached the native layer and
+    // came back as a bare INTERNAL naming neither figure -- which is what a
+    // real device actually hit. Caught here, the message can say what to do.
+    invalid("44.1 kHz stereo", 415, "audio_format_unsupported") {
+        TranscriptionRequest.validateAudio(
+            Wav.wrapPcm(ByteArray(176400), sampleRate = 44100, channels = 2), 30.0)
+    }
+    invalid("44.1 kHz mono", 415, "audio_format_unsupported") {
+        TranscriptionRequest.validateAudio(
+            Wav.wrapPcm(ByteArray(88200), sampleRate = 44100, channels = 1), 30.0)
+    }
+    invalid("16 kHz stereo", 415, "audio_format_unsupported") {
+        TranscriptionRequest.validateAudio(
+            Wav.wrapPcm(ByteArray(64000), sampleRate = 16000, channels = 2), 30.0)
+    }
+    invalid("8 kHz mono", 415, "audio_format_unsupported") {
+        TranscriptionRequest.validateAudio(
+            Wav.wrapPcm(ByteArray(16000), sampleRate = 8000, channels = 1), 30.0)
+    }
+    eq("16 kHz mono is accepted",
+        TranscriptionRequest.validateAudio(Wav.wrapPcm(ByteArray(32000)), 30.0), 1.0)
+
+    println("\nTranscriptionRequest — the format error tells you how to fix it")
+    val fmtErr = runCatching {
+        TranscriptionRequest.validateAudio(
+            Wav.wrapPcm(ByteArray(176400), sampleRate = 44100, channels = 2), 30.0)
+    }.exceptionOrNull() as Invalid
+    check("names what was sent", fmtErr.message.contains("44100"))
+    check("names what is required", fmtErr.message.contains("16000"))
+    check("gives the ffmpeg line", fmtErr.message.contains("ffmpeg"))
+    check("mentions -ar", fmtErr.message.contains("-ar 16000"))
+    check("mentions -ac", fmtErr.message.contains("-ac 1"))
+    // The on-device path needs no conversion at all, and saying so stops
+    // someone building an ffmpeg step they never needed.
+    check("says AudioRecord can capture it directly", fmtErr.message.contains("AudioRecord"))
+
+    println("\nTranscriptionRequest — raw PCM is still wrapped as 16 kHz mono")
+    // ensureWav's defaults have to match what the encoder wants, or the
+    // headerless-PCM path this endpoint advertises would fail validation.
+    val wrapped = Wav.ensureWav(ByteArray(32000))
+    eq("wrapped PCM passes", TranscriptionRequest.validateAudio(wrapped, 30.0), 1.0)
+    eq("at the required rate", Wav.parse(wrapped)?.sampleRate, TranscriptionRequest.REQUIRED_SAMPLE_RATE)
+    eq("and mono", Wav.parse(wrapped)?.channels, TranscriptionRequest.REQUIRED_CHANNELS)
+
     // THE case for parsing over estimating. 1.5 MB of 44.1 kHz stereo is
     // about 8.7 real seconds. ChatRequestParser's 16k-mono estimate would
     // call the same bytes 46 seconds and reject it.
     println("\nTranscriptionRequest — parsing beats estimating on a non-16k clip")
+    // Duration is read from the header, not guessed from the byte count.
+    // Measured directly here rather than through validateAudio, because a
+    // 44.1k stereo clip is now rejected on FORMAT before duration is ever
+    // reached -- which is correct, and would hide the point of this test.
     val stereo = Wav.wrapPcm(ByteArray(176400 * 9), sampleRate = 44100, channels = 2)
-    val realSeconds = TranscriptionRequest.validateAudio(stereo, 30.0)
-    eq("real duration is 9s", realSeconds, 9.0)
+    eq("real duration is 9s", Wav.durationSeconds(stereo), 9.0)
     val estimate = (stereo.size - 44) / 32000.0
-    check("the estimate would have said ~49s", estimate > 45.0)
-    check("and would therefore have wrongly rejected it", estimate > 30.0)
+    check("the 16k-mono estimate would have said ~49s", estimate > 45.0)
+    check("and would therefore have been wrong by 5x", estimate > 30.0)
 
     println("\nTranscriptionRequest — the instruction steers toward transcription")
     val plain = TranscriptionRequest.instruction(null, null)

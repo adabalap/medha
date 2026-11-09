@@ -54,6 +54,14 @@ object TranscriptionRequest {
      */
     const val MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
+    /**
+     * What the model's audio encoder is built for, read from LiteRT-LM's
+     * `Gemma4DataProcessor::Create`. Not a Medha preference — changing
+     * these would just move the failure to the native layer.
+     */
+    const val REQUIRED_SAMPLE_RATE = 16000
+    const val REQUIRED_CHANNELS = 1
+
     data class Parsed(
         val responseFormat: String,
         /** ISO-639-1 hint, lowercased, or null for autodetect. */
@@ -138,6 +146,32 @@ object TranscriptionRequest {
                 "Content-Type audio/pcm. Compressed formats (mp3, m4a, ogg, flac) " +
                 "are not decoded on device"
         )
+
+        // The engine's audio preprocessor is constructed for exactly this
+        // shape. In LiteRT-LM's Gemma4DataProcessor:
+        //
+        //     AudioPreprocessorMiniAudio::Create(AudioPreprocessorConfig::Create(
+        //         /* sample_rate_hz= */ 16000,
+        //         /* num_channels= */  1, ...
+        //
+        // Anything else reaches the native layer and fails with a bare
+        // INTERNAL that names neither the rate nor the channel count. A
+        // 44.1 kHz stereo clip is the common case — it is what a phone's
+        // voice recorder app produces — so this has to be caught here,
+        // where the message can say what to do about it.
+        if (format.sampleRate != REQUIRED_SAMPLE_RATE || format.channels != REQUIRED_CHANNELS) {
+            throw Invalid(
+                415, "audio_format_unsupported",
+                "audio is ${format.sampleRate} Hz / ${format.channels} channel" +
+                    (if (format.channels == 1) "" else "s") +
+                    "; the model's audio encoder requires " +
+                    "$REQUIRED_SAMPLE_RATE Hz mono. Convert with: " +
+                    "ffmpeg -i in.wav -ar $REQUIRED_SAMPLE_RATE -ac $REQUIRED_CHANNELS " +
+                    "-c:a pcm_s16le out.wav  (AudioRecord can capture at " +
+                    "$REQUIRED_SAMPLE_RATE Hz mono directly, with no conversion step)"
+            )
+        }
+
         if (format.seconds > maxSeconds) {
             throw Invalid(
                 413, "audio_too_long",

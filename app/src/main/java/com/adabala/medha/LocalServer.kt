@@ -972,11 +972,29 @@ class LocalServer(
                         // trusted, so a caller that mislabels a WAV as pcm16
                         // does not get a second header stapled on.
                         val audio = try {
-                            req.audio.map { Wav.ensureWav(decodeBase64(it.base64)) }
+                            req.audio.map { part ->
+                                val wav = Wav.ensureWav(decodeBase64(part.base64))
+                                // The same validation the transcription
+                                // endpoint runs: sample rate and channel
+                                // count are checked against what the
+                                // model's encoder is built for. Skipping it
+                                // here would mean a 44.1k stereo clip sails
+                                // past and fails natively with a bare
+                                // INTERNAL.
+                                TranscriptionRequest.validateAudio(
+                                    wav, ChatRequestParser.MAX_AUDIO_SECONDS
+                                )
+                                wav
+                            }
                         } catch (e: IllegalArgumentException) {
                             return@post call.respond(
                                 HttpStatusCode.BadRequest,
                                 ErrorResponse("audio payload is not valid base64", "bad_request")
+                            )
+                        } catch (e: TranscriptionRequest.Invalid) {
+                            return@post call.respond(
+                                HttpStatusCode.fromValue(e.status),
+                                ErrorResponse(e.message, e.code)
                             )
                         }
 

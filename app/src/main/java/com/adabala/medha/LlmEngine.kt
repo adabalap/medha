@@ -8,7 +8,8 @@ import com.adabala.medha.oai.MultimodalProbe
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
-import com.google.ai.edge.litertlm.InputData
+import com.google.ai.edge.litertlm.Content
+import com.google.ai.edge.litertlm.Contents
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -386,16 +387,35 @@ class LlmEngine(private val appContext: Context) {
     /**
      * One-shot generation over mixed text, image and audio input.
      *
-     * Runs through [com.google.ai.edge.litertlm.Session] rather than
-     * `Conversation`, deliberately: a transcription or an image question is
-     * stateless, and a Conversation would carry a KV cache and chat
-     * formatting that the caller neither asked for nor can reuse. Session's
-     * `generateContent(List<InputData>)` is the SDK's own stateless path.
+     * ## Why Conversation and not Session
      *
-     * Media comes before the text instruction in the input list. These
-     * models are trained with the media tokens preceding the question, and
-     * the reverse order measurably degrades the answer — the model has
-     * already started composing a reply to a question about nothing.
+     * v0.11.0 through v0.11.4 used `Session.generateContent(List<InputData>)`
+     * on the reasoning that a transcription is stateless and a Conversation
+     * would carry a KV cache and chat formatting nobody asked for. That
+     * reasoning is fine and the conclusion was wrong: on a real device every
+     * audio request failed with
+     *
+     *     INTERNAL: Audio must be preprocessed before being used in
+     *     SessionAdvanced.
+     *
+     * The JNI layer wraps `InputData.Audio(bytes)` as a raw
+     * `InputAudio(std::string)`, and `PreprocessContents` in
+     * runtime/core/session_utils.cc accepts audio only when it is already a
+     * TensorBuffer or embeddings — it rejects raw bytes rather than
+     * converting them. The same is true of images. So the Session path
+     * cannot take media at all unless the caller has already produced
+     * tensors, which no Kotlin API exposes.
+     *
+     * `Conversation.sendMessage(Contents)` goes through
+     * runtime/conversation/, whose `Gemma4DataProcessor` constructs an
+     * `AudioPreprocessorMiniAudio` (16 kHz, mono, mel-spectrogram) and does
+     * the conversion. That is the path that works, and the KV cache is
+     * discarded with the conversation immediately afterwards.
+     *
+     * Media comes before the text instruction. These models are trained
+     * with the media tokens preceding the question, and the reverse order
+     * measurably degrades the answer — the model has already started
+     * composing a reply to a question about nothing.
      */
     suspend fun generateMultimodal(
         text: String,
@@ -416,10 +436,10 @@ class LlmEngine(private val appContext: Context) {
         }
 
         val prompt = composePrompt(text, systemInstruction)
-        val parts = buildList<InputData> {
-            images.forEach { add(InputData.Image(it)) }
-            audio.forEach { add(InputData.Audio(it)) }
-            if (prompt.isNotBlank()) add(InputData.Text(prompt))
+        val parts = buildList<Content> {
+            images.forEach { add(Content.ImageBytes(it)) }
+            audio.forEach { add(Content.AudioBytes(it)) }
+            if (prompt.isNotBlank()) add(Content.Text(prompt))
         }
         if (parts.isEmpty()) return Result("", 0, 0, 0)
 
@@ -428,7 +448,9 @@ class LlmEngine(private val appContext: Context) {
             return gate.withLock {
                 withContext(Dispatchers.IO) {
                     val start = System.currentTimeMillis()
-                    val out = e.createSession().use { s -> s.generateContent(parts) }
+                    val out = e.createConversation().use { conv ->
+                        extractText(conv.sendMessage(Contents.of(parts)))
+                    }
                     val ms = System.currentTimeMillis() - start
                     val outTokens = SystemInfo.estimateTokens(out)
                     // Media tokens are not text tokens and estimateTokens

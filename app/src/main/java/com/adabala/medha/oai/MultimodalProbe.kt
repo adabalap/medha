@@ -108,9 +108,26 @@ object MultimodalProbe {
         val classesFound: List<String>,
         /** Probed class names that did not resolve. */
         val classesMissing: List<String>,
-        /** True when a stateless `Session.generateContent(List)` exists. */
+        /**
+         * True when `Session.generateContent(List<InputData>)` exists.
+         *
+         * Informational only — **do not route media through it.** The JNI
+         * layer hands raw bytes to the native side as `InputAudio(string)`,
+         * and `PreprocessContents` (runtime/core/session_utils.cc) accepts
+         * audio and images only when they are already TensorBuffers or
+         * embeddings. Raw bytes come back as
+         * "Audio must be preprocessed before being used in SessionAdvanced",
+         * which is what every audio request did on a real device in
+         * v0.11.0–v0.11.4.
+         */
         val hasSessionPath: Boolean,
-        /** True when `Conversation.sendMessage(Contents)` exists. */
+        /**
+         * True when `Conversation.sendMessage(Contents)` exists. **This is
+         * the path media must take.** It runs the model's data processor —
+         * for Gemma 4, an `AudioPreprocessorMiniAudio` at 16 kHz mono with
+         * mel-spectrogram extraction — which is what turns raw bytes into
+         * something the encoder accepts.
+         */
         val hasConversationPath: Boolean,
         /** Every public method on the resolved classes, for diagnostics. */
         val allMethods: List<String>,

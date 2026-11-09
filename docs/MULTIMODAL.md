@@ -264,6 +264,44 @@ Media is placed **before** the text in the input list. These models are
 trained with media tokens preceding the question, and the reverse order
 measurably degrades the answer.
 
+### Audio must be 16 kHz mono
+
+Not a Medha preference. LiteRT-LM's `Gemma4DataProcessor` constructs its
+audio preprocessor for exactly one shape:
+
+```cpp
+AudioPreprocessorMiniAudio::Create(AudioPreprocessorConfig::Create(
+    /* sample_rate_hz= */ 16000,
+    /* num_channels= */  1, ...
+```
+
+Anything else is refused at the edge with a 415 and the `ffmpeg` line to
+fix it. It used to reach the native layer and come back as a bare
+`INTERNAL` naming neither the rate nor the channel count.
+
+`AudioRecord` captures 16 kHz mono directly, so the on-device path needs no
+conversion at all — this only bites on files from a voice-recorder app,
+which are typically 44.1 kHz stereo.
+
+### Media goes through Conversation, not Session
+
+Worth recording, because the opposite choice looks more natural and is
+wrong. A transcription is stateless, so `Session.generateContent(List<InputData>)`
+seems like the right call. It is not:
+
+- the JNI layer wraps `InputData.Audio(bytes)` as a raw `InputAudio(std::string)`
+- `PreprocessContents` in `runtime/core/session_utils.cc` accepts audio and
+  images **only** when they are already TensorBuffers or embeddings
+- raw bytes get `INTERNAL: Audio must be preprocessed before being used in
+  SessionAdvanced`, and no Kotlin API exposes a way to produce those tensors
+
+`Conversation.sendMessage(Contents)` routes through `runtime/conversation/`,
+whose per-model data processor does the preprocessing. That is the only
+path that takes raw media. The conversation is created and closed per
+request, so its KV cache costs nothing.
+
+v0.11.0–v0.11.4 shipped the Session version. Every audio request failed.
+
 ### Two differences from the text path
 
 **Streaming is not token-by-token.** `Session` exposes
