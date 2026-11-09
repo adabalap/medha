@@ -129,17 +129,29 @@ class InferenceService : Service() {
                     // accelerator, is a different question and must be
                     // rediscovered rather than inheriting an answer.
                     val hintKey = rungHintKey(modelPath, backend.name)
+                    val whyKey = hintKey + WHY_SUFFIX
                     engine.load(
                         modelPath,
                         backend,
                         enableMultimodal = prefs.getBoolean(KEY_MULTIMODAL, true),
-                        rungHint = prefs.getString(hintKey, null)
+                        rungHint = prefs.getString(hintKey, null),
+                        // Handed back so a cached start reports the same
+                        // thing a cold one does. Without it the rung that
+                        // would have failed is never tried, nothing is
+                        // recorded, and /health silently drops a
+                        // diagnostic it showed on the previous boot.
+                        constraintHint = prefs.getString(whyKey, null)
                     )
                     // Persist only on success, and only a rung worth
                     // caching -- storing "text-only" would put it first
                     // next time, where it succeeds immediately and the
                     // media rungs never run again.
-                    engine.cacheableRung?.let { prefs.edit().putString(hintKey, it).apply() }
+                    engine.cacheableRung?.let { rung ->
+                        prefs.edit()
+                            .putString(hintKey, rung)
+                            .putString(whyKey, engine.multimodalError)
+                            .apply()
+                    }
                     updateNotification(readyText(port))
                 } catch (t: Throwable) {
                     Diagnostics.e(TAG, "Model load failed", t)
@@ -314,6 +326,9 @@ class InferenceService : Service() {
 
         fun rungHintKey(modelPath: String, backend: String): String =
             "$KEY_RUNG_PREFIX$backend:$modelPath"
+
+        /** Suffix for the reason stored beside a cached rung. */
+        const val WHY_SUFFIX = "#why"
 
         const val DEFAULT_PORT = "8080"
 

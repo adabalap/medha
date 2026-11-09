@@ -2,6 +2,7 @@ package com.adabala.medha
 
 import android.content.Context
 import com.adabala.medha.diag.Diagnostics
+import com.adabala.medha.oai.BackendConstraint
 import com.adabala.medha.oai.MultimodalLadder
 import com.adabala.medha.oai.MultimodalProbe
 import com.google.ai.edge.litertlm.Backend
@@ -76,6 +77,17 @@ class LlmEngine(private val appContext: Context) {
     /** Why multimodal is off when the AAR supports it; null when it is on. */
     @Volatile var multimodalError: String? = null; private set
 
+    /**
+     * Set when [multimodalError] is the model declaring a backend
+     * requirement rather than something going wrong.
+     *
+     * These mean opposite things and v0.11.3 reported them identically.
+     * `gemma-4-E4B-it` declares its audio encoder requires CPU, so running
+     * audio on CPU is the only configuration those weights permit — not a
+     * degradation, and not something anyone can fix from this side.
+     */
+    @Volatile var multimodalConstraint: BackendConstraint.Mismatch? = null; private set
+
     /** Which rung of the init ladder the live engine came up on. */
     @Volatile var multimodalMode: String = "text-only"; private set
 
@@ -108,7 +120,21 @@ class LlmEngine(private val appContext: Context) {
          * run this rejected audio-on-GPU, so without a hint every single
          * start would pay for that discovery again.
          */
-        rungHint: String? = null
+        rungHint: String? = null,
+        /**
+         * The constraint message recorded alongside [rungHint], if any.
+         *
+         * Without this, `/health` is non-deterministic across restarts for
+         * an identical configuration: a cold start walks rung 1, records
+         * why it failed, and reports it; the next start goes straight to
+         * the cached rung, never fails anything, and reports nothing. Same
+         * model, same device, same capabilities, two different answers —
+         * and a client polling /health would watch a diagnostic appear and
+         * vanish with nothing having changed.
+         *
+         * So the reason is persisted with the rung and handed back here.
+         */
+        constraintHint: String? = null
     ) {
         synchronized(lifecycle) {
             if (!force && engine != null &&
@@ -124,6 +150,7 @@ class LlmEngine(private val appContext: Context) {
             closeLocked()
             lastError = null
             multimodalError = null
+            multimodalConstraint = null
             visionActive = false
             audioActive = false
             multimodalMode = "text-only"
@@ -186,6 +213,16 @@ class LlmEngine(private val appContext: Context) {
                 Diagnostics.w(TAG, "Engine init rung '${rung.label}' failed -- $why")
             }
 
+            // A cached hint means the rung that would have failed was never
+            // tried, so nothing was recorded this time. Restore the reason
+            // from the cache so /health answers the same way either way.
+            if (multimodalError == null && !constraintHint.isNullOrBlank() &&
+                multimodalMode != MultimodalLadder.preferredLabel(backend.name)
+            ) {
+                multimodalError = constraintHint
+            }
+            multimodalConstraint = BackendConstraint.parse(multimodalError)
+
             val e = live ?: error("Engine failed to initialize on every configuration")
             loadMs = System.currentTimeMillis() - start
             engine = e
@@ -236,6 +273,15 @@ class LlmEngine(private val appContext: Context) {
      */
     val multimodalDegraded: Boolean
         get() = isLoaded && multimodalError != null &&
+            multimodalConstraint == null &&
+            multimodalMode != MultimodalLadder.preferredLabel(configuredBackend.name)
+
+    /**
+     * True when the engine is on a non-preferred rung because the MODEL
+     * said so. Not a fault, and not resolvable from here.
+     */
+    val multimodalConstrained: Boolean
+        get() = isLoaded && multimodalConstraint != null &&
             multimodalMode != MultimodalLadder.preferredLabel(configuredBackend.name)
 
     /** The rung label worth persisting for the next start, or null. */

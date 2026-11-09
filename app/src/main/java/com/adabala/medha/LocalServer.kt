@@ -423,6 +423,17 @@ class LocalServer(
                                 ).distinct().joinToString("; ")
                             )
 
+                            // The model declared a requirement. Not a
+                            // fallback, not a fault, and nothing anyone can
+                            // change from here — so it is stated as a fact
+                            // about the weights rather than as a warning
+                            // about a more capable configuration we failed
+                            // to reach. There was none.
+                            engine.multimodalConstrained -> put(
+                                "multimodal_note",
+                                engine.multimodalConstraint!!.explain()
+                            )
+
                             engine.multimodalDegraded -> put(
                                 "multimodal_note",
                                 "running on '${engine.multimodalMode}' rather than the " +

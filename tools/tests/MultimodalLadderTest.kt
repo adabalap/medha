@@ -19,6 +19,7 @@
 // key and reported as /health's multimodal_mode, so rewording one silently
 // invalidates every stored hint.
 
+import com.adabala.medha.oai.BackendConstraint
 import com.adabala.medha.oai.MultimodalLadder
 import com.adabala.medha.oai.MultimodalLadder.Rung
 
@@ -169,6 +170,55 @@ fun main() {
             }
         }
     }
+
+    println("\nBackendConstraint — the exact message a real device produced")
+    // Verbatim from an SM8850 running gemma-4-E4B-it, wrapper and all.
+    // If LiteRT-LM reworks this string the parse falls through to the
+    // pessimistic path, which is the pre-v0.11.4 behaviour -- but this
+    // test is how we find out rather than silently losing the distinction.
+    val real = "LiteRtLmJniException: Failed to create engine: INVALID_ARGUMENT: " +
+        "Audio backend constraint mismatch. Model requires one of [cpu] but Audio backend is GPU"
+    val m = BackendConstraint.parse(real)
+    check("parses", m != null)
+    eq("modality", m?.modality, "Audio")
+    eq("allowed list", m?.allowed, listOf("cpu"))
+    eq("requested", m?.requested, "GPU")
+    check("does not permit GPU", m?.permits("GPU") == false)
+    check("permits CPU", m?.permits("CPU") == true)
+    check("permits cpu case-insensitively", m?.permits("cpu") == true)
+
+    println("\nBackendConstraint — the explanation names whose decision it is")
+    val why = m!!.explain()
+    check("names the modality", why.contains("audio"))
+    check("names the required backend", why.contains("CPU"))
+    // The whole point: this is not a degradation, and the sentence has to
+    // say so or it reads as a warning about a non-problem forever.
+    check("says it is not a fallback", why.contains("not a fallback"))
+    check("says it lives in the model file", why.contains(".litertlm"))
+    check("says this side cannot change it", why.contains("no setting on this side"))
+
+    println("\nBackendConstraint — multi-backend and vision constraints")
+    val multi = BackendConstraint.parse(
+        "Vision backend constraint mismatch. Model requires one of [cpu, gpu] but Vision backend is NPU")
+    eq("modality", multi?.modality, "Vision")
+    eq("both backends", multi?.allowed, listOf("cpu", "gpu"))
+    check("permits GPU", multi?.permits("GPU") == true)
+    check("does not permit NPU", multi?.permits("NPU") == false)
+
+    println("\nBackendConstraint — anything else is NOT a constraint")
+    // Must fall through to the pessimistic path rather than inventing a
+    // reassuring explanation for a real failure.
+    for ((what, msg) in listOf(
+        "an OOM" to "java.lang.OutOfMemoryError: Failed to allocate 2147483648 bytes",
+        "a missing file" to "INVALID_ARGUMENT: could not open model",
+        "a generic JNI failure" to "LiteRtLmJniException: Failed to create engine",
+        "empty" to "",
+        "a truncated constraint message" to "Audio backend constraint mismatch. Model requires",
+        "an empty allow-list" to "Audio backend constraint mismatch. Model requires one of [] but Audio backend is GPU"
+    )) {
+        check("$what is not parsed as a constraint", BackendConstraint.parse(msg) == null)
+    }
+    check("null is not parsed", BackendConstraint.parse(null) == null)
 
     println("\n--------------------------------------------------")
     if (failures == 0) {

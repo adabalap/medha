@@ -91,9 +91,12 @@ echo "== MultimodalLadderTest =="
 # full model load (~8.6s on an SM8850), and the first real device to run
 # this refused audio-on-GPU while accepting audio-on-CPU -- so the ladder
 # is the difference between "this model has no audio encoder" and audio
-# working. Ordering, de-duplication and the cached-rung hint.
-kotlinc "$SRC/oai/MultimodalLadder.kt" MultimodalLadderTest.kt \
-  -include-runtime -d "$WORK/ladder.jar"
+# working. Ordering, de-duplication, the cached-rung hint, and the
+# constraint parser that tells "the model declares it requires CPU" apart
+# from "something went wrong" -- opposite meanings, reported identically
+# until v0.11.4.
+kotlinc "$SRC/oai/MultimodalLadder.kt" "$SRC/oai/BackendConstraint.kt" \
+  MultimodalLadderTest.kt -include-runtime -d "$WORK/ladder.jar"
 java -jar "$WORK/ladder.jar"
 
 echo
