@@ -54,6 +54,7 @@ need "app/src/main/java/com/adabala/medha/notify/BriefRotator.kt"
 need "app/src/main/res/layout/activity_brief.xml"
 need "tools/tests/stubs/org/json/Stubs.kt"
 need "tools/check_workflows.py"
+need "tools/check_widget_layouts.py"
 need "samples/medha-brief.js"
 need "samples/INTEGRATING.md"
 need "samples/medha_brief.py"
@@ -178,6 +179,12 @@ python3 tools/check_resources.py || { echo "Resource reference check failed."; e
 # APK at all -- and these failures happen during provisioning, before
 # anything compiles, so the logs look nothing like a build problem.
 python3 tools/check_workflows.py || { echo "Workflow check failed."; exit 1; }
+
+# A widget layout using a non-@RemoteView class is valid XML, compiles,
+# lints clean, and simply cannot be placed -- the launcher says
+# "Couldn't add widget." and the app logs nothing. v0.9.7 shipped exactly
+# that. Nothing else here can see it.
+python3 tools/check_widget_layouts.py || { echo "Widget layout check failed."; exit 1; }
 
 # The Python client is the only thing here that can be exercised over a
 # REAL HTTP round trip -- a stdlib http.server stands in for Medha -- so

@@ -1,5 +1,28 @@
 # Response to the Quicksilver multimodal spec
 
+> **SUPERSEDED — read [MULTIMODAL.md](MULTIMODAL.md) instead.**
+>
+> This document is from v0.10.0 and its central claim is wrong. It says the
+> model work is not done and that `/health` will honestly report `false`
+> until it is. In fact litertlm-android 0.13.1 — the version Medha was
+> already pinned to when this was written — fully supports image and audio
+> input. The probe behind that `false` matched **method names** against a
+> guessed hint list, while the SDK expresses media as **types**
+> (`InputData.Audio`) and **constructor parameters**
+> (`EngineConfig.audioBackend`). It could not have found the binding.
+> Separately, `LlmEngine` was constructing the engine with no media
+> backends at all, so the capability would have failed even if advertised.
+>
+> Both are fixed in v0.11.0, which also ships
+> `POST /v1/audio/transcriptions`. **Do not plan around whisper.cpp on the
+> strength of this document.**
+>
+> Kept rather than deleted: the request-contract sections below are still
+> accurate, and the reasoning that led to a confidently wrong answer is
+> worth being able to re-read.
+
+---
+
 Medha v0.10.0. Point by point, with what is built, what is not, and what
 cannot be answered from this side.
 

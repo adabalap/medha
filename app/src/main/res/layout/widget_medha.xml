@@ -66,9 +66,10 @@
 
         <!-- The accent bar the system's event rows use. A left edge for the
              eye to run down when three unrelated lines share one card. -->
-        <View android:layout_width="3dp" android:layout_height="match_parent"
+        <ImageView android:layout_width="3dp" android:layout_height="match_parent"
             android:layout_marginEnd="11dp" android:layout_marginTop="3dp"
             android:layout_marginBottom="3dp"
+            android:contentDescription="@null"
             android:background="@drawable/bg_brief_accent" />
 
         <LinearLayout android:layout_width="0dp" android:layout_weight="1"
@@ -95,9 +96,10 @@
 
         <!-- The accent bar the system's event rows use. A left edge for the
              eye to run down when three unrelated lines share one card. -->
-        <View android:layout_width="3dp" android:layout_height="match_parent"
+        <ImageView android:layout_width="3dp" android:layout_height="match_parent"
             android:layout_marginEnd="11dp" android:layout_marginTop="3dp"
             android:layout_marginBottom="3dp"
+            android:contentDescription="@null"
             android:background="@drawable/bg_brief_accent" />
 
         <LinearLayout android:layout_width="0dp" android:layout_weight="1"
@@ -124,9 +126,10 @@
 
         <!-- The accent bar the system's event rows use. A left edge for the
              eye to run down when three unrelated lines share one card. -->
-        <View android:layout_width="3dp" android:layout_height="match_parent"
+        <ImageView android:layout_width="3dp" android:layout_height="match_parent"
             android:layout_marginEnd="11dp" android:layout_marginTop="3dp"
             android:layout_marginBottom="3dp"
+            android:contentDescription="@null"
             android:background="@drawable/bg_brief_accent" />
 
         <LinearLayout android:layout_width="0dp" android:layout_weight="1"

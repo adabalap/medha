@@ -9,6 +9,13 @@ Five minutes per app. No SDK, no build step, no backend.
 > at once. It is the one digest surface on the device that accepts
 > third-party content. Full reasoning in [../docs/NOTIFICATIONS.md](../docs/NOTIFICATIONS.md).
 
+> **Looking for speech-to-text or image input?** Different document:
+> [../docs/MULTIMODAL.md](../docs/MULTIMODAL.md), and
+> [hg-agent-transcribe.py](hg-agent-transcribe.py) for a working client.
+> Since v0.11.0 Medha serves `POST /v1/audio/transcriptions` through the
+> model already in memory, which is what replaces running whisper.cpp
+> beside it.
+
 ---
 
 ## Which client do you want?

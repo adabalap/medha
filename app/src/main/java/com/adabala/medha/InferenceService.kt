@@ -124,7 +124,11 @@ class InferenceService : Service() {
             loadJob = scope.launch {
                 try {
                     if (!engine.isLoaded) updateNotification("Loading model…")
-                    engine.load(modelPath, backend)
+                    engine.load(
+                        modelPath,
+                        backend,
+                        enableMultimodal = prefs.getBoolean(KEY_MULTIMODAL, true)
+                    )
                     updateNotification(readyText(port))
                 } catch (t: Throwable) {
                     Diagnostics.e(TAG, "Model load failed", t)
@@ -267,6 +271,23 @@ class InferenceService : Service() {
         const val KEY_BATCH_MIN_BATTERY = "batch_min_battery"
         const val KEY_QUEUE_DEPTH = "queue_depth"
         const val KEY_BRIEF_ROTATE = "brief_rotate_seconds"
+
+        /**
+         * Whether to initialize the engine with vision and audio backends.
+         *
+         * On by default: with a model that carries the encoders this is the
+         * difference between Medha transcribing audio itself and a client
+         * shipping its own ASR stack beside it.
+         *
+         * The escape hatch exists because enabling it is not free on a
+         * model that lacks them. LlmEngine's init ladder tries the media
+         * backends, then media-on-CPU, then text-only, and each failed rung
+         * costs a full model load — about 8s on a flagship, so a cold start
+         * can take 25s before settling on text-only. Once the probe or a
+         * load has shown this model has no encoders, turning this off makes
+         * every subsequent start fast again.
+         */
+        const val KEY_MULTIMODAL = "multimodal_enabled"
 
         const val DEFAULT_PORT = "8080"
 

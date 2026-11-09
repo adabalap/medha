@@ -9,8 +9,11 @@ import com.adabala.medha.net.CorsPolicy
 import com.adabala.medha.net.RateLimiter
 import com.adabala.medha.net.WebOrigin
 import com.adabala.medha.notify.BriefJson
+import com.adabala.medha.audio.Wav
 import com.adabala.medha.oai.ChatRequestParser
 import com.adabala.medha.oai.MultimodalProbe
+import com.adabala.medha.oai.TokenCap
+import com.adabala.medha.oai.TranscriptionRequest
 import com.adabala.medha.notify.BriefPolicy
 import com.adabala.medha.notify.NotificationHub
 import com.adabala.medha.sched.InferenceScheduler
@@ -20,6 +23,8 @@ import com.adabala.medha.rag.Retriever
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.content.PartData
+import io.ktor.http.content.forEachPart
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.ApplicationCallPipeline
@@ -34,6 +39,7 @@ import io.ktor.server.request.contentLength
 import io.ktor.server.request.httpMethod
 import io.ktor.server.request.path
 import io.ktor.server.request.receive
+import io.ktor.server.request.receiveMultipart
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.header
 import io.ktor.server.response.respond
@@ -364,18 +370,37 @@ class LocalServer(
                         put("error", engine.lastError ?: "")
                         // Capability block so a client can switch multimodal
                         // on by itself instead of being configured by hand.
-                        // vision/audio come from an actual reflection probe
-                        // of the installed AAR, not from a flag: claiming a
-                        // capability Medha does not have would stop the
-                        // client falling back and make it fail instead.
+                        //
+                        // These are RUNTIME facts, not AAR facts. Until
+                        // v0.11.0 they came from the probe alone and were
+                        // wrong in both directions at once: the probe matched
+                        // method names while the SDK expresses media as types,
+                        // so it reported false on an AAR that supports both —
+                        // and had it reported true, the engine was still being
+                        // constructed with no visionBackend or audioBackend,
+                        // so every multimodal request would have failed
+                        // anyway. A capability is advertised here only when
+                        // the AAR can express it AND this engine actually
+                        // initialized with it, which additionally proves the
+                        // loaded weights carry the encoder.
                         putJsonObject("capabilities") {
                             put("text", true)
+                            put("vision", visionLive())
+                            put("audio", audioLive())
+                        }
+                        // What the AAR could do, kept separate so a client
+                        // can tell "this build cannot" from "this model
+                        // cannot" without reading /system.
+                        putJsonObject("aar_supports") {
                             put("vision", mm.vision)
                             put("audio", mm.audio)
                         }
+                        put("multimodal_mode", engine.multimodalMode)
+                        engine.multimodalError?.let { put("multimodal_error", it) }
                         put("max_context", MAX_CONTEXT_TOKENS)
                         put("max_audio_seconds", ChatRequestParser.MAX_AUDIO_SECONDS.toInt())
                         put("max_image_bytes", ChatRequestParser.MAX_IMAGE_BYTES)
+                        put("max_images", LlmEngine.MAX_IMAGES_PER_REQUEST)
                         put("queue_depth", engine.queueDepth)
                     })
                 }
@@ -404,11 +429,27 @@ class LocalServer(
                         // audioMethods carry real signatures.
                         putJsonObject("multimodal") {
                             val mm = multimodal()
-                            put("vision", mm.vision)
-                            put("audio", mm.audio)
+                            // Live first: what a client can actually use.
+                            put("vision", visionLive())
+                            put("audio", audioLive())
+                            put("mode", engine.multimodalMode)
+                            engine.multimodalError?.let { put("error", it) }
+                            // Then what the AAR itself supports, with the
+                            // evidence behind the verdict. Until v0.11.0
+                            // this reported two booleans and a method
+                            // COUNT, which made a wrong answer impossible
+                            // to diagnose without a rebuild — and the
+                            // answer was wrong. The evidence and class
+                            // lists are the point.
+                            put("aarVision", mm.vision)
+                            put("aarAudio", mm.audio)
                             put("summary", MultimodalProbe.summary(mm))
-                            putJsonArray("imageMethods") { mm.imageMethods.forEach { add(it) } }
-                            putJsonArray("audioMethods") { mm.audioMethods.forEach { add(it) } }
+                            putJsonArray("visionEvidence") { mm.visionEvidence.forEach { add(it) } }
+                            putJsonArray("audioEvidence") { mm.audioEvidence.forEach { add(it) } }
+                            putJsonArray("classesFound") { mm.classesFound.forEach { add(it) } }
+                            putJsonArray("classesMissing") { mm.classesMissing.forEach { add(it) } }
+                            put("hasSessionPath", mm.hasSessionPath)
+                            put("hasConversationPath", mm.hasConversationPath)
                             put("sdkMethodCount", mm.allMethods.size)
                         }
                         put("vectorSearch", retriever.vectorEnabled)
@@ -630,6 +671,161 @@ class LocalServer(
                     })
                 }
 
+                /**
+                 * OpenAI-compatible speech-to-text.
+                 *
+                 * This is the endpoint that lets a client stop shipping its
+                 * own ASR stack. It takes the same multipart form as
+                 * OpenAI's, so an existing client changes a base URL and
+                 * nothing else.
+                 *
+                 * Accepts WAV, and raw 16-bit PCM for anything recording
+                 * straight off Android's AudioRecord — which produces no
+                 * header at all, and is what every on-device client
+                 * actually has. Compressed formats are refused rather than
+                 * decoded: shipping an mp3 decoder to save a caller one
+                 * ffmpeg call is not a trade worth making on a phone.
+                 */
+                post("/v1/audio/transcriptions") {
+                    if (!engine.isLoaded) return@post call.notReady()
+                    call.requireCap(ClientRegistry.Cap.GENERATE) ?: return@post
+
+                    if (!audioLive()) {
+                        val why = engine.audioUnavailableReason()
+                        Diagnostics.i(TAG, "rejected transcription: $why")
+                        return@post call.respond(
+                            HttpStatusCode.NotImplemented,
+                            ErrorResponse(
+                                "this build cannot transcribe audio: $why. " +
+                                    "GET /health reports capabilities ahead of time.",
+                                "audio_unsupported"
+                            )
+                        )
+                    }
+
+                    // Refuse on the declared length before reading a byte,
+                    // so an oversized upload costs no memory on a phone
+                    // that already has the model resident.
+                    val declared = call.request.contentLength() ?: -1L
+                    if (declared > TranscriptionRequest.MAX_UPLOAD_BYTES * 2L) {
+                        return@post call.respond(
+                            HttpStatusCode.PayloadTooLarge,
+                            ErrorResponse(
+                                "request is ${declared / 1024} KB; the audio limit is " +
+                                    "${TranscriptionRequest.MAX_UPLOAD_BYTES / 1024} KB",
+                                "file_too_large"
+                            )
+                        )
+                    }
+
+                    var fileBytes: ByteArray? = null
+                    var fileName: String? = null
+                    val fields = mutableMapOf<String, String>()
+                    try {
+                        call.receiveMultipart().forEachPart { part ->
+                            try {
+                                when (part) {
+                                    is PartData.FileItem ->
+                                        if (fileBytes == null) {
+                                            fileName = part.originalFileName
+                                            fileBytes = part.streamProvider().readBytes()
+                                        }
+                                    is PartData.FormItem -> fields[part.name.orEmpty()] = part.value
+                                    else -> Unit
+                                }
+                            } finally {
+                                part.dispose()
+                            }
+                        }
+                    } catch (e: Exception) {
+                        return@post call.respond(
+                            HttpStatusCode.BadRequest,
+                            ErrorResponse(
+                                "could not read the multipart body: ${e.message}",
+                                "bad_request"
+                            )
+                        )
+                    }
+
+                    val raw = fileBytes ?: return@post call.respond(
+                        HttpStatusCode.BadRequest,
+                        ErrorResponse(
+                            "a 'file' part is required (multipart/form-data)",
+                            "bad_request"
+                        )
+                    )
+
+                    val opts: TranscriptionRequest.Parsed
+                    val wav: ByteArray
+                    val seconds: Double
+                    try {
+                        opts = TranscriptionRequest.parseFields(fields)
+                        // Wrap before validating: a headerless PCM upload is
+                        // legitimate and must not be rejected as unreadable.
+                        wav = Wav.ensureWav(raw)
+                        seconds = TranscriptionRequest.validateAudio(
+                            wav, ChatRequestParser.MAX_AUDIO_SECONDS
+                        )
+                    } catch (e: TranscriptionRequest.Invalid) {
+                        return@post call.respond(
+                            HttpStatusCode.fromValue(e.status),
+                            ErrorResponse(e.message, e.code)
+                        )
+                    }
+
+                    val instruction = TranscriptionRequest.instruction(opts.language, opts.prompt)
+                    val result = try {
+                        scheduler.submit(priorityOf(call)) {
+                            engine.generateMultimodal(
+                                text = instruction,
+                                audio = listOf(wav)
+                            )
+                        }
+                    } catch (e: InferenceScheduler.Rejected) {
+                        return@post call.rejected(e)
+                    } catch (e: InferenceScheduler.TimedOut) {
+                        return@post call.timedOut(e)
+                    } catch (e: LlmEngine.MultimodalUnavailable) {
+                        return@post call.respond(
+                            HttpStatusCode.NotImplemented,
+                            ErrorResponse(e.message ?: "audio unavailable", "audio_unsupported")
+                        )
+                    }
+
+                    val text = TranscriptionRequest.cleanTranscript(result.text)
+                    Diagnostics.i(
+                        TAG,
+                        "transcribed ${"%.1f".format(seconds)}s " +
+                            "(${fileName ?: "unnamed"}) in ${result.ms}ms"
+                    )
+
+                    when (opts.responseFormat) {
+                        "text" -> call.respondText(text, ContentType.Text.Plain)
+
+                        "verbose_json" -> call.respondJson(buildJsonObject {
+                            put("task", "transcribe")
+                            // Echoes the hint when one was given. Medha does
+                            // not detect the language, so reporting a guess
+                            // here would be inventing a fact: null means
+                            // "not determined", not "unknown language".
+                            put("language", opts.language)
+                            put("duration", seconds)
+                            put("text", text)
+                            // OpenAI's verbose_json carries per-segment
+                            // timings. The engine exposes none, so the array
+                            // is empty rather than fabricated with a single
+                            // whole-clip segment that would read as real
+                            // alignment data.
+                            putJsonArray("segments") {}
+                            put("segments_supported", false)
+                            put("model", modelId())
+                            put("ms", result.ms)
+                        })
+
+                        else -> call.respondJson(buildJsonObject { put("text", text) })
+                    }
+                }
+
                 post("/v1/chat/completions") {
                     if (!engine.isLoaded) return@post call.notReady()
                     // Same gap as /generate/stream: this is the endpoint most
@@ -654,7 +850,8 @@ class LocalServer(
                         )
                     }
 
-                    // Multimodal: answer truthfully about this build.
+                    // Multimodal: serve it, or answer truthfully about why
+                    // this build cannot.
                     //
                     // 501 and not 500: the request was understood and is
                     // well-formed, this build just cannot serve it. The
@@ -663,29 +860,68 @@ class LocalServer(
                     // but one that ignores /health still gets an answer it
                     // can act on rather than a crash.
                     if (req.isMultimodal) {
-                        val mm = multimodal()
-                        val needVision = req.hasImages && !mm.vision
-                        val needAudio = req.hasAudio && !mm.audio
+                        val needVision = req.hasImages && !visionLive()
+                        val needAudio = req.hasAudio && !audioLive()
                         if (needVision || needAudio) {
                             val missing = listOfNotNull(
                                 if (needVision) "images" else null,
                                 if (needAudio) "audio" else null
                             ).joinToString(" and ")
-                            Diagnostics.i(
-                                TAG,
-                                "rejected multimodal request ($missing): " +
-                                    MultimodalProbe.summary(mm)
-                            )
+                            val why = listOfNotNull(
+                                if (needVision) engine.visionUnavailableReason() else null,
+                                if (needAudio) engine.audioUnavailableReason() else null
+                            ).distinct().joinToString("; ")
+                            Diagnostics.i(TAG, "rejected multimodal request ($missing): $why")
                             return@post call.respond(
                                 HttpStatusCode.NotImplemented,
                                 ErrorResponse(
-                                    "this build cannot process $missing: " +
-                                        MultimodalProbe.summary(mm) +
-                                        ". GET /health reports capabilities ahead of time.",
+                                    "this build cannot process $missing: $why. " +
+                                        "GET /health reports capabilities ahead of time.",
                                     "multimodal_unsupported"
                                 )
                             )
                         }
+
+                        if (req.images.size > LlmEngine.MAX_IMAGES_PER_REQUEST) {
+                            return@post call.respond(
+                                HttpStatusCode.PayloadTooLarge,
+                                ErrorResponse(
+                                    "${req.images.size} images; this engine was " +
+                                        "initialized for at most " +
+                                        "${LlmEngine.MAX_IMAGES_PER_REQUEST} per request",
+                                    "too_many_images"
+                                )
+                            )
+                        }
+
+                        val images = try {
+                            req.images.map { decodeBase64(it.base64) }
+                        } catch (e: IllegalArgumentException) {
+                            return@post call.respond(
+                                HttpStatusCode.BadRequest,
+                                ErrorResponse("image payload is not valid base64", "bad_request")
+                            )
+                        }
+                        // ensureWav, not a raw pass-through: InputData.Audio
+                        // documents WAV only, and a client recording through
+                        // AudioRecord has headerless PCM. Sniffed rather than
+                        // trusted, so a caller that mislabels a WAV as pcm16
+                        // does not get a second header stapled on.
+                        val audio = try {
+                            req.audio.map { Wav.ensureWav(decodeBase64(it.base64)) }
+                        } catch (e: IllegalArgumentException) {
+                            return@post call.respond(
+                                HttpStatusCode.BadRequest,
+                                ErrorResponse("audio payload is not valid base64", "bad_request")
+                            )
+                        }
+
+                        return@post respondMultimodal(
+                            call = call,
+                            req = req,
+                            images = images,
+                            audio = audio
+                        )
                     }
 
                     val system = ChatRequestParser.systemText(req)
@@ -903,6 +1139,18 @@ class LocalServer(
                 }
 
                 post("/rag/reindex") {
+                    // Added in v0.11.0, found by tools/check_route_auth.py.
+                    //
+                    // This was the one RAG endpoint with no capability check
+                    // and no scoping, while /rag/collections and
+                    // DELETE /rag/collections/{name} have both. Any
+                    // authenticated client -- including a web app paired
+                    // only for notifications -- could name ANOTHER client's
+                    // collection in the body and get back its chunk counts,
+                    // and spend the phone's battery embedding them. The
+                    // namespace isolation every other path enforces was
+                    // simply absent here.
+                    val client = call.requireCap(ClientRegistry.Cap.RAG) ?: return@post
                     if (!embedder.isReady) {
                         return@post call.respond(
                             HttpStatusCode.NotImplemented,
@@ -910,7 +1158,24 @@ class LocalServer(
                         )
                     }
                     val req = call.receive<ReindexRequest>()
-                    val r = retriever.reindex(req.collection?.takeIf { it.isNotBlank() })
+                    val asked = req.collection?.takeIf { it.isNotBlank() }
+                    // A null collection means "everything", which for a
+                    // scoped client would mean everyone's. Admins may do
+                    // that; everyone else must name their own collection.
+                    if (asked == null && !client.isAdmin) {
+                        return@post call.respond(
+                            HttpStatusCode.BadRequest,
+                            ErrorResponse(
+                                "name a collection; only an admin client may reindex everything",
+                                "collection_required"
+                            )
+                        )
+                    }
+                    // Scoped through the client, exactly as /rag/query and
+                    // /rag/collections do. Passing the raw body value is
+                    // what let one client reindex another's collection.
+                    val scoped = if (asked == null) null else client.scope(asked)
+                    val r = retriever.reindex(scoped)
                     call.respondJson(buildJsonObject {
                         put("embedded", r.embedded)
                         put("remaining", r.remaining)
@@ -1305,6 +1570,126 @@ class LocalServer(
      * interactive, because the safe default when a client says nothing is to
      * assume a human is waiting.
      */
+    /**
+     * Decodes a base64 payload, tolerating the line wrapping some clients
+     * apply to long strings and the URL-safe alphabet others use.
+     *
+     * @throws IllegalArgumentException on anything that is not base64.
+     */
+    private fun decodeBase64(s: String): ByteArray {
+        val cleaned = s.filterNot { it.isWhitespace() }
+        return runCatching { java.util.Base64.getDecoder().decode(cleaned) }
+            .recoverCatching { java.util.Base64.getUrlDecoder().decode(cleaned) }
+            .getOrElse { throw IllegalArgumentException("not base64", it) }
+    }
+
+    /**
+     * Runs a parsed multimodal chat request and writes the OpenAI-shaped
+     * response.
+     *
+     * ## Streaming, and why it is not token-by-token here
+     *
+     * `Session` does expose `generateContentStream`, but it is a callback
+     * API, and bridging a native callback into a Flow correctly — covering
+     * cancellation, backpressure and the error path — is a second concurrency
+     * design that cannot be executed or tested anywhere outside a device.
+     * The text path's Flow bridge took three attempts to get right.
+     *
+     * So a streaming multimodal request generates fully and is then emitted
+     * as valid SSE: the wire format is exactly what an OpenAI client expects
+     * and no client breaks, it simply sees the whole answer in one content
+     * chunk. For the request this path mostly serves — a transcription of a
+     * clip of at most 30s — the answer is a sentence or two and arrives in
+     * one piece anyway. Documented in docs/MULTIMODAL.md rather than left
+     * to be discovered.
+     *
+     * ## max_tokens is a truncation here, not a cap
+     *
+     * The text path uses generateCapped, which stops the model rather than
+     * cutting its output, so the phone never spends the compute. That needs
+     * the streaming bridge above. Until then this truncates and says
+     * `finish_reason: "length"` honestly when it does.
+     */
+    private suspend fun respondMultimodal(
+        call: ApplicationCall,
+        req: ChatRequestParser.Request,
+        images: List<ByteArray>,
+        audio: List<ByteArray>
+    ) {
+        val system = ChatRequestParser.systemText(req)
+        val prompt = ChatRequestParser.promptText(req)
+        val id = "chatcmpl-" + java.util.UUID.randomUUID().toString().take(24)
+        val created = nowSeconds()
+
+        val r = try {
+            scheduler.submit(priorityOf(call)) {
+                engine.generateMultimodal(prompt, images, audio, system)
+            }
+        } catch (e: InferenceScheduler.Rejected) {
+            return call.rejected(e)
+        } catch (e: InferenceScheduler.TimedOut) {
+            return call.timedOut(e)
+        } catch (e: LlmEngine.MultimodalUnavailable) {
+            // Reachable despite the check at the call site: the engine can
+            // be reloaded between the capability test and the submission.
+            return call.respond(
+                HttpStatusCode.NotImplemented,
+                ErrorResponse(e.message ?: "multimodal unavailable", "multimodal_unsupported")
+            )
+        }
+
+        // A truncation, not a cap: the model already did the work. See
+        // TokenCap's header for why the multimodal path cannot stop the
+        // model mid-stream the way generateCapped does.
+        val capped = TokenCap.apply(r.text, req.maxTokens) { SystemInfo.estimateTokens(it) }
+        val text = capped.text
+        val truncated = capped.truncated
+
+        if (req.stream) {
+            call.prepareSse()
+            call.respondTextWriter(ContentType.Text.EventStream) {
+                write("data: ${chunk(id, created, roleDelta = true)}\n\n")
+                flush()
+                if (text.isNotEmpty()) {
+                    write("data: ${chunk(id, created, content = text)}\n\n")
+                    flush()
+                }
+                write("data: ${chunk(id, created, finish = if (truncated) "length" else "stop")}\n\n")
+                flush()
+                write("data: [DONE]\n\n")
+                flush()
+            }
+            return
+        }
+
+        call.respondJson(buildJsonObject {
+            put("id", id)
+            put("object", "chat.completion")
+            put("created", created)
+            put("model", modelId())
+            putJsonArray("choices") {
+                addJsonObject {
+                    put("index", 0)
+                    put("finish_reason", if (truncated) "length" else "stop")
+                    putJsonObject("message") {
+                        put("role", "assistant")
+                        put("content", text)
+                    }
+                }
+            }
+            putJsonObject("usage") {
+                // Text tokens only. Image and audio tokens are counted by
+                // the native encoder and not surfaced to the Kotlin layer,
+                // and inventing a number here would corrupt every cost and
+                // throughput figure downstream of it.
+                put("prompt_tokens", r.promptTokens)
+                put("completion_tokens", r.tokens)
+                put("total_tokens", r.promptTokens + r.tokens)
+                put("media_tokens_counted", false)
+            }
+        })
+    }
+
     private fun priorityOf(call: ApplicationCall): InferenceScheduler.Priority =
         if (call.request.headers[HEADER_PRIORITY]?.equals("batch", true) == true) {
             InferenceScheduler.Priority.BATCH
@@ -1361,21 +1746,26 @@ class LocalServer(
      * app able to read replies until the next service restart.
      */
     /**
-     * The multimodal probe, run once and cached.
-     *
-     * Reflection over every method of five classes is not something to do
-     * per request, and the answer cannot change while the process lives —
-     * the AAR is fixed at install time.
+     * What the installed AAR can do. Owned by [LlmEngine] so the engine and
+     * the server cannot disagree, and so the reflection runs once per
+     * process rather than once per component.
      */
-    private val multimodalProbe by lazy {
-        MultimodalProbe.probeInstalled().also {
-            Diagnostics.i(TAG, "multimodal probe: " + MultimodalProbe.summary(it))
-            it.imageMethods.forEach { m -> Diagnostics.i(TAG, "  image candidate: $m") }
-            it.audioMethods.forEach { m -> Diagnostics.i(TAG, "  audio candidate: $m") }
-        }
-    }
+    private fun multimodal() = engine.aarCapabilities
 
-    private fun multimodal() = multimodalProbe
+    /**
+     * What this *running engine* can do, which is what clients are told.
+     *
+     * The distinction is the whole reason the capability block was wrong
+     * before: the AAR supporting audio and the loaded model having an audio
+     * encoder are separate facts, and only their conjunction is a capability
+     * a client can rely on. A model with no audio tower fails at
+     * Engine.initialize() with audioBackend set, LlmEngine's ladder drops to
+     * text-only, and this reports false — correctly — on a build whose AAR
+     * reports true.
+     */
+    private fun visionLive() = engine.isLoaded && engine.visionActive
+
+    private fun audioLive() = engine.isLoaded && engine.audioActive
 
     private fun allowedOrigins(): Set<String> =
         CorsPolicy.loopbackOrigins(port) + registry.pairedWebOrigins()

@@ -157,7 +157,7 @@ fun main() {
     invalid("missing url", """{"messages":[{"role":"user","content":[
         {"type":"image_url","image_url":{}}]}]}""".replace("\n", ""), 400, "bad_request")
 
-    for (mime in listOf("image/jpeg", "image/png", "image/webp")) {
+    for (mime in listOf("image/jpeg", "image/png")) {
         val ok = ChatRequestParser.parse(
             """{"messages":[{"role":"user","content":[
                {"type":"image_url","image_url":{"url":"data:$mime;base64,${b64(1000)}"}}]}]}"""
@@ -165,6 +165,16 @@ fun main() {
         )
         check("accepts $mime", ok.images.firstOrNull()?.mimeType == mime)
     }
+
+    // WebP was accepted here until v0.11.0 and could never have worked:
+    // LiteRT-LM's InputData.Image documents PNG and JPG only, so a WebP
+    // passed this check and then failed inside the native decoder with a
+    // message about neither WebP nor images. Refusing it at the edge names
+    // the fix; accepting it buries it.
+    invalid("webp, which the engine cannot decode", """{"messages":[{"role":"user","content":[
+        {"type":"image_url","image_url":{"url":"data:image/webp;base64,${b64(1000)}"}}]}]}"""
+        .replace("\n", ""), 415, "image_type_unsupported")
+    eq("and is not advertised", "image/webp" in ChatRequestParser.SUPPORTED_IMAGE_TYPES, false)
 
     println("\nChatRequestParser — audio")
     invalid("unsupported format", """{"messages":[{"role":"user","content":[

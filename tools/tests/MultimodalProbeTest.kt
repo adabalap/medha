@@ -6,9 +6,20 @@
 //
 // The probe decides what /health advertises, so getting it wrong means
 // either claiming a capability that does not exist — which makes the client
-// stop falling back and start failing — or hiding one that does. It takes
-// the classes as an argument precisely so the matching can be run here
-// against stand-ins shaped like the real AAR's plausible surfaces.
+// stop falling back and start failing — or hiding one that does.
+//
+// It hid one. v1 of this probe reported vision:false audio:false against
+// litertlm-android 0.13.1, which supports both, because it matched on
+// METHOD NAMES against a guessed hint list while the SDK expresses the
+// capability in TYPES (InputData.Audio, Content.ImageBytes) and in
+// CONSTRUCTOR PARAMETERS (EngineConfig.audioBackend). The entry points are
+// named generateContent() and sendMessage(), which contain neither "audio"
+// nor "image".
+//
+// The first test below is therefore a regression test for that exact
+// failure: a stand-in set shaped like the real 0.13.1 surface, in which NO
+// method name contains "audio" or "image" at all, must still report both
+// capabilities. If that test ever goes back to false, v1's bug is back.
 
 import com.adabala.medha.oai.MultimodalProbe
 
@@ -30,102 +41,236 @@ fun <T> eq(what: String, actual: T, expected: T) {
     }
 }
 
-// --- stand-ins for the shapes the AAR might plausibly expose --------------
+// --- stand-ins shaped like litertlm-android 0.13.1 -----------------------
+//
+// Read off the real source at tag v0.13.1 of google-ai-edge/litert-lm:
+//   kotlin/java/com/google/ai/edge/litertlm/{Session,Message,Config,Engine}.kt
+// Note what is NOT here: no method anywhere is called addAudio, sendAudio,
+// addImage or anything else containing the modality name. That is the whole
+// point.
 
-class TextOnlyConversation {
-    fun sendMessage(text: String): String = ""
-    fun sendMessageAsync(text: String): String = ""
+class RealEngine {
+    fun initialize() {}
+    fun createSession(cfg: Any?): Any? = null
+    fun createConversation(cfg: Any?): Any? = null
     fun close() {}
 }
 
-class VisionConversation {
-    fun sendMessage(text: String): String = ""
-    fun addImage(bytes: ByteArray): VisionConversation = this
+/** `data class EngineConfig(modelPath, backend, visionBackend, audioBackend, maxNumTokens, maxNumImages, cacheDir)` */
+class RealEngineConfig {
+    fun getModelPath(): String = ""
+    fun getBackend(): Any? = null
+    fun getVisionBackend(): Any? = null
+    fun getAudioBackend(): Any? = null
+    fun getMaxNumTokens(): Int? = null
+    fun getMaxNumImages(): Int? = null
+    fun getCacheDir(): String? = null
+}
+
+/** `class Session { fun generateContent(List<InputData>): String; … }` */
+class RealSession {
+    fun runPrefill(inputData: List<Any>) {}
+    fun runDecode(): String = ""
+    fun generateContent(inputData: List<Any>): String = ""
+    fun generateContentStream(inputData: List<Any>, cb: Any?) {}
+    fun cancelProcess() {}
     fun close() {}
 }
 
-class AudioConversation {
-    fun sendMessage(text: String): String = ""
-    fun addAudio(pcm: ByteArray, sampleRate: Int): AudioConversation = this
+/** `class Conversation { fun sendMessage(Contents): Message; … }` */
+class RealConversation {
+    fun sendMessage(text: String): Any? = null
+    fun sendMessageAsync(text: String): Any? = null
+    fun getTokenCount(): Int = 0
+    fun cancelProcess() {}
     fun close() {}
 }
 
-class FullConversation {
-    fun sendMessage(text: String): String = ""
-    fun addImage(bytes: ByteArray): FullConversation = this
-    fun addAudio(pcm: ByteArray): FullConversation = this
-    fun close() {}
+class RealMessage { fun getContents(): Any? = null; fun getRole(): Any? = null }
+class RealContents { fun getContents(): List<Any> = emptyList() }
+
+// sealed class InputData, with its three data-class subtypes
+class RealInputData
+class RealInputDataText { fun getText(): String = "" }
+class RealInputDataImage { fun getBytes(): ByteArray = ByteArray(0) }
+class RealInputDataAudio { fun getBytes(): ByteArray = ByteArray(0) }
+
+// sealed class Content, with the subtypes that carry media
+class RealContentImageBytes { fun getBytes(): ByteArray = ByteArray(0) }
+class RealContentImageFile { fun getAbsolutePath(): String = "" }
+class RealContentAudioBytes { fun getBytes(): ByteArray = ByteArray(0) }
+class RealContentAudioFile { fun getAbsolutePath(): String = "" }
+
+/** An older/stripped AAR: text only, no media types, no media config. */
+class TextOnlyEngineConfig {
+    fun getModelPath(): String = ""
+    fun getBackend(): Any? = null
+    fun getMaxNumTokens(): Int? = null
+    fun getCacheDir(): String? = null
 }
 
-/** A name that merely contains "image" but is not an input path. */
-class DecoyConversation {
-    fun sendMessage(text: String): String = ""
-    fun imageCount(): Int = 0
-    fun close() {}
-}
+// --- resolvers ------------------------------------------------------------
+
+fun resolverOf(map: Map<String, Class<*>>): (String) -> Class<*>? = { map[it] }
+
+val FULL_0_13_1: Map<String, Class<*>> = mapOf(
+    MultimodalProbe.ENGINE to RealEngine::class.java,
+    MultimodalProbe.ENGINE_CONFIG to RealEngineConfig::class.java,
+    MultimodalProbe.SESSION to RealSession::class.java,
+    MultimodalProbe.CONVERSATION to RealConversation::class.java,
+    MultimodalProbe.MESSAGE to RealMessage::class.java,
+    MultimodalProbe.CONTENTS to RealContents::class.java,
+    MultimodalProbe.INPUT_DATA to RealInputData::class.java,
+    MultimodalProbe.INPUT_TEXT to RealInputDataText::class.java,
+    MultimodalProbe.INPUT_IMAGE to RealInputDataImage::class.java,
+    MultimodalProbe.INPUT_AUDIO to RealInputDataAudio::class.java,
+    MultimodalProbe.CONTENT_IMAGE_BYTES to RealContentImageBytes::class.java,
+    MultimodalProbe.CONTENT_IMAGE_FILE to RealContentImageFile::class.java,
+    MultimodalProbe.CONTENT_AUDIO_BYTES to RealContentAudioBytes::class.java,
+    MultimodalProbe.CONTENT_AUDIO_FILE to RealContentAudioFile::class.java
+)
 
 fun main() {
+    println("MultimodalProbe — REGRESSION: the real 0.13.1 surface reports both")
+    val full = MultimodalProbe.probe(resolverOf(FULL_0_13_1))
+    check("vision is true", full.vision)
+    check("audio is true", full.audio)
+    check("no error", full.error == null)
+    check("session path found", full.hasSessionPath)
+    check("conversation path found", full.hasConversationPath)
+    eq("nothing missing", full.classesMissing, emptyList<String>())
+    eq("all 14 classes found", full.classesFound.size, 14)
 
-    println("\nMultimodalProbe — a text-only build reports no capability")
-    val textOnly = MultimodalProbe.probe(listOf(TextOnlyConversation::class.java))
+    // The bug in one assertion. These are v1's hint lists, copied verbatim
+    // from the deleted code. Replayed against the real 0.13.1 surface they
+    // match NOTHING — which is exactly why v1 answered false on an AAR that
+    // supports both. If the probe ever goes back to name matching, the two
+    // checks under this one are what fail.
+    println("\nMultimodalProbe — v1's hint list finds nothing on the real surface")
+    val v1ImageHints = listOf(
+        "addimage", "sendimage", "withimage", "setimage",
+        "addbitmap", "imageinput", "visioninput", "addvision"
+    )
+    val v1AudioHints = listOf(
+        "addaudio", "sendaudio", "withaudio", "setaudio",
+        "audioinput", "addpcm", "addwav"
+    )
+    val v1Matches = full.allMethods.filter {
+        val n = it.substringAfter('.').substringBefore('(').lowercase()
+        (v1ImageHints + v1AudioHints).any { h -> n.contains(h) }
+    }
+    eq("v1 would have matched no method", v1Matches, emptyList<String>())
+    check("yet the probe reports audio", full.audio)
+    check("and reports vision", full.vision)
+
+    // Where the capability actually shows up in a name: on EngineConfig's
+    // accessors, which v1 never looked at as evidence because its hints
+    // required an add/send/with/set prefix.
+    println("\nMultimodalProbe — the only modality-named methods are config accessors")
+    val modalityNamed = full.allMethods.filter {
+        val n = it.substringAfter('.').substringBefore('(').lowercase()
+        n.contains("audio") || n.contains("image") || n.contains("vision")
+    }.map { it.substringBefore('(') }.sorted()
+    eq("exactly the three EngineConfig getters", modalityNamed, listOf(
+        "EngineConfig.getAudioBackend",
+        "EngineConfig.getMaxNumImages",
+        "EngineConfig.getVisionBackend"
+    ))
+    check("none of them is an input method", modalityNamed.none { it.startsWith("Session.") })
+
+    println("\nMultimodalProbe — evidence explains the verdict")
+    check("audio evidence cites the type", full.audioEvidence.any { it.contains("InputData\$Audio") })
+    check("audio evidence cites the config", full.audioEvidence.any { it.contains("getAudioBackend") })
+    check("vision evidence cites the type", full.visionEvidence.any { it.contains("InputData\$Image") })
+    check("vision evidence cites the config", full.visionEvidence.any { it.contains("getVisionBackend") })
+    check("vision evidence cites maxNumImages", full.visionEvidence.any { it.contains("getMaxNumImages") })
+
+    println("\nMultimodalProbe — a text-only AAR reports nothing")
+    val textOnly = MultimodalProbe.probe(resolverOf(mapOf(
+        MultimodalProbe.ENGINE to RealEngine::class.java,
+        MultimodalProbe.ENGINE_CONFIG to TextOnlyEngineConfig::class.java,
+        MultimodalProbe.SESSION to RealSession::class.java,
+        MultimodalProbe.CONVERSATION to RealConversation::class.java,
+        MultimodalProbe.INPUT_DATA to RealInputData::class.java,
+        MultimodalProbe.INPUT_TEXT to RealInputDataText::class.java
+    )))
     check("vision false", !textOnly.vision)
     check("audio false", !textOnly.audio)
-    eq("no image methods listed", textOnly.imageMethods.size, 0)
-    check("but the full method list is still captured for diagnostics",
-        textOnly.allMethods.any { it.contains("sendMessage") })
-    check("summary names the build, not Medha",
-        MultimodalProbe.summary(textOnly).contains("LiteRT-LM AAR"))
+    check("no error — the AAR is present, just text-only", textOnly.error == null)
+    check("missing media types are listed",
+        MultimodalProbe.INPUT_AUDIO in textOnly.classesMissing)
+    eq("summary says so", MultimodalProbe.summary(textOnly),
+        "no image or audio binding in this build of the LiteRT-LM AAR")
 
-    println("\nMultimodalProbe — vision only")
-    val vision = MultimodalProbe.probe(listOf(VisionConversation::class.java))
-    check("vision true", vision.vision)
-    check("audio still false", !vision.audio)
-    check("the matching signature is reported, not just a boolean",
-        vision.imageMethods.any { it.contains("addImage") && it.contains("byte[]") })
-    eq("summary", MultimodalProbe.summary(vision), "vision entry points found; no audio")
+    // Both halves are required, and these two cases are what pin that. A
+    // type with no backend switch is unusable: Medha could build an
+    // InputData.Audio and the native engine would refuse it at inference
+    // because audioBackend was never set at init. Reporting true here would
+    // be v1's bug with the sign flipped — advertising a capability that
+    // fails on first use instead of hiding one that works.
+    println("\nMultimodalProbe — media types WITHOUT the config switch are not a capability")
+    val typesOnly = MultimodalProbe.probe(resolverOf(mapOf(
+        MultimodalProbe.ENGINE to RealEngine::class.java,
+        MultimodalProbe.ENGINE_CONFIG to TextOnlyEngineConfig::class.java,
+        MultimodalProbe.INPUT_AUDIO to RealInputDataAudio::class.java,
+        MultimodalProbe.INPUT_IMAGE to RealInputDataImage::class.java
+    )))
+    check("audio false without getAudioBackend", !typesOnly.audio)
+    check("vision false without getVisionBackend", !typesOnly.vision)
 
-    println("\nMultimodalProbe — audio only")
-    val audio = MultimodalProbe.probe(listOf(AudioConversation::class.java))
-    check("audio true", audio.audio)
-    check("vision false", !audio.vision)
-    check("signature carries the parameter types, so the binding can be written from it",
-        audio.audioMethods.any { it.contains("addAudio") && it.contains("int") })
+    println("\nMultimodalProbe — the config switch WITHOUT media types is not one either")
+    val configOnly = MultimodalProbe.probe(resolverOf(mapOf(
+        MultimodalProbe.ENGINE to RealEngine::class.java,
+        MultimodalProbe.ENGINE_CONFIG to RealEngineConfig::class.java,
+        MultimodalProbe.INPUT_TEXT to RealInputDataText::class.java
+    )))
+    check("audio false without an audio input type", !configOnly.audio)
+    check("vision false without an image input type", !configOnly.vision)
 
-    println("\nMultimodalProbe — both")
-    val full = MultimodalProbe.probe(listOf(FullConversation::class.java))
-    check("vision", full.vision)
-    check("audio", full.audio)
-    eq("summary", MultimodalProbe.summary(full), "vision and audio entry points found")
+    println("\nMultimodalProbe — vision and audio are decided independently")
+    val visionOnly = MultimodalProbe.probe(resolverOf(mapOf(
+        MultimodalProbe.ENGINE_CONFIG to RealEngineConfig::class.java,
+        MultimodalProbe.INPUT_IMAGE to RealInputDataImage::class.java
+    )))
+    check("vision true", visionOnly.vision)
+    check("audio false", !visionOnly.audio)
+    eq("summary names only vision", MultimodalProbe.summary(visionOnly),
+        "AAR accepts images; no audio binding")
 
-    println("\nMultimodalProbe — several classes are searched together")
-    val split = MultimodalProbe.probe(
-        listOf(VisionConversation::class.java, AudioConversation::class.java)
-    )
-    check("vision found on one class", split.vision)
-    check("audio found on the other", split.audio)
+    val audioOnly = MultimodalProbe.probe(resolverOf(mapOf(
+        MultimodalProbe.ENGINE_CONFIG to RealEngineConfig::class.java,
+        MultimodalProbe.CONTENT_AUDIO_BYTES to RealContentAudioBytes::class.java
+    )))
+    check("audio true via Content.AudioBytes alone", audioOnly.audio)
+    check("vision false", !audioOnly.vision)
+    eq("summary names only audio", MultimodalProbe.summary(audioOnly),
+        "AAR accepts audio; no image binding")
 
-    println("\nMultimodalProbe — a bare accessor is not mistaken for an input path")
-    // imageCount() contains "image" but is not a way to send one. The hints
-    // all require a verb (addImage, sendImage, setImage...), so an accessor
-    // does not trip them. Worth pinning: the obvious implementation —
-    // matching on "image" alone — would advertise vision on a text-only
-    // build, and the client would stop falling back and start failing.
-    val decoy = MultimodalProbe.probe(listOf(DecoyConversation::class.java))
-    check("imageCount() does not count as vision support", !decoy.vision)
-    check("nothing is listed as an image method", decoy.imageMethods.isEmpty())
-    check("but it is still in the diagnostic dump",
-        decoy.allMethods.any { it.contains("imageCount") })
-
-    println("\nMultimodalProbe — degenerate input")
-    val none = MultimodalProbe.probe(emptyList())
-    check("no classes is an error, not a silent false", none.error != null)
-    check("and reports no capability", !none.vision && !none.audio)
+    println("\nMultimodalProbe — an absent AAR degrades instead of throwing")
+    val none = MultimodalProbe.probe { null }
+    check("reports an error", none.error != null)
+    check("claims nothing", !none.vision && !none.audio)
+    eq("lists everything as missing", none.classesMissing.size, MultimodalProbe.PROBED_CLASSES.size)
     check("summary says unavailable", MultimodalProbe.summary(none).startsWith("unavailable"))
 
-    println("\nMultimodalProbe — probing the real classpath here finds nothing")
-    // The AAR is not on this classpath, which is the point: the probe must
-    // degrade to "unavailable" rather than throwing, because that is
-    // exactly what it does on a build where the AAR failed to link.
+    println("\nMultimodalProbe — a throwing resolver is survivable")
+    // A real classloader can throw NoClassDefFoundError, not just return
+    // null, when a class resolves but its dependencies do not. That must not
+    // take the whole probe (and with it /health) down.
+    val throwing = MultimodalProbe.probe { name ->
+        if (name == MultimodalProbe.ENGINE_CONFIG) throw NoClassDefFoundError("boom")
+        FULL_0_13_1[name]
+    }
+    check("does not propagate the error", true)
+    check("EngineConfig counted as missing",
+        MultimodalProbe.ENGINE_CONFIG in throwing.classesMissing)
+    check("so audio degrades to false", !throwing.audio)
+    check("and vision degrades to false", !throwing.vision)
+
+    println("\nMultimodalProbe — probing this classpath finds no AAR")
+    // The AAR is not here, which is the point: the probe must degrade to
+    // "unavailable" rather than throwing, because that is exactly what it
+    // does on a build where the AAR failed to link.
     val installed = MultimodalProbe.probeInstalled()
     check("does not throw", true)
     check("reports unavailable off-device", installed.error != null)

@@ -185,6 +185,7 @@ class MainActivity : AppCompatActivity() {
                 R.id.nav_copy_token -> copyToken()
                 R.id.nav_regen_token -> confirmRegenerateToken()
                 R.id.nav_battery -> requestBatteryExemption()
+                R.id.nav_multimodal -> showMultimodalDialog()
                 R.id.nav_diagnostics -> showDiagnosticsDialog()
                 R.id.nav_stop -> stopMedha()
                 R.id.nav_endpoints -> showEndpointsDialog()
@@ -750,6 +751,12 @@ class MainActivity : AppCompatActivity() {
 
             GET   /v1/models
             POST  /v1/chat/completions OpenAI-compatible
+                  text, and image/audio parts when
+                  /health reports those capabilities
+            POST  /v1/audio/transcriptions
+                  multipart: file, model, language?,
+                  prompt?, response_format?
+                  WAV or raw 16-bit PCM, up to 30s
             POST  /v1/embeddings       501 (no embedder)
 
             POST  /rag/ingest
@@ -836,6 +843,99 @@ class MainActivity : AppCompatActivity() {
      * Nothing here transmits anything — sharing is always a separate,
      * explicit action the person takes afterward.
      */
+    /**
+     * What the installed LiteRT-LM AAR exposes for images and audio.
+     *
+     * Exists as a screen rather than only as a /system field because the
+     * answer is needed exactly once, by a person, to decide whether a
+     * vision binding can be written at all — and making them find a token
+     * and run curl on a phone for a one-shot diagnostic is a tax on the
+     * wrong person.
+     *
+     * Needs no model loaded and no server running: the probe reflects over
+     * the AAR's classes, which are present from install. That answers the
+     * API question. Whether the model *file* carries the encoders is a
+     * separate question, and only worth asking if this one says yes.
+     */
+    private fun showMultimodalDialog() {
+        val r = com.adabala.medha.oai.MultimodalProbe.probeInstalled()
+        val report = buildString {
+            append("Medha ").append(BuildInfo.VERSION).append('\n')
+            append("litertlm AAR probe\n\n")
+            append("vision: ").append(r.vision).append('\n')
+            append("audio:  ").append(r.audio).append('\n')
+            append("summary: ")
+                .append(com.adabala.medha.oai.MultimodalProbe.summary(r)).append("\n\n")
+
+            // The evidence, not just the verdict. v1 of this probe reported
+            // false on an AAR that supports both and gave no way to see
+            // why, which cost a release to diagnose.
+            if (r.visionEvidence.isNotEmpty()) {
+                append("vision evidence:\n")
+                r.visionEvidence.forEach { append("  ").append(it).append('\n') }
+                append('\n')
+            }
+            if (r.audioEvidence.isNotEmpty()) {
+                append("audio evidence:\n")
+                r.audioEvidence.forEach { append("  ").append(it).append('\n') }
+                append('\n')
+            }
+            append("paths: session=").append(r.hasSessionPath)
+                .append(" conversation=").append(r.hasConversationPath).append("\n\n")
+
+            if (r.classesMissing.isNotEmpty()) {
+                append("classes NOT found (").append(r.classesMissing.size).append("):\n")
+                r.classesMissing.forEach { append("  ").append(it).append('\n') }
+                append('\n')
+            }
+            append("classes found (").append(r.classesFound.size).append("):\n")
+            r.classesFound.forEach { append("  ").append(it).append('\n') }
+            append('\n')
+
+            // The full surface matters most when the verdict is false: the
+            // capability may be expressed in a way the probe does not yet
+            // recognise, and only the real list can show that. It is how
+            // v1's bug was eventually found.
+            append("all SDK methods (").append(r.allMethods.size).append("):\n")
+            r.allMethods.forEach { append("  ").append(it).append('\n') }
+        }
+
+        val enabled = prefs.getBoolean(InferenceService.KEY_MULTIMODAL, true)
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.multimodal_title)
+            .setIcon(R.drawable.ic_book)
+            .setMessage(report)
+            .setPositiveButton(R.string.close, null)
+            // The escape hatch. Each failed rung of LlmEngine's init ladder
+            // costs a full model load, so on a model with no encoders a
+            // cold start pays ~25s to discover that every single time.
+            // Once you know, turning it off makes starts fast again.
+            .setNegativeButton(
+                if (enabled) R.string.multimodal_disable else R.string.multimodal_enable
+            ) { _, _ ->
+                prefs.edit().putBoolean(InferenceService.KEY_MULTIMODAL, !enabled).apply()
+                toast(
+                    getString(
+                        R.string.multimodal_toggled,
+                        getString(if (enabled) R.string.off else R.string.on)
+                    )
+                )
+            }
+            .setNeutralButton(R.string.multimodal_share) { _, _ ->
+                startActivity(
+                    Intent.createChooser(
+                        Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_SUBJECT, "Medha multimodal probe")
+                            putExtra(Intent.EXTRA_TEXT, report)
+                        },
+                        getString(R.string.multimodal_share)
+                    )
+                )
+            }
+            .show()
+    }
+
     private fun showDiagnosticsDialog() {
         val files = Diagnostics.listDumps(this)
         val dateFmt = SimpleDateFormat("MMM d, HH:mm", Locale.US)

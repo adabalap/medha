@@ -287,7 +287,27 @@ object ChatRequestParser {
     fun systemText(req: Request): String? =
         req.messages.firstOrNull { it.role == "system" }?.text?.ifBlank { null }
 
-    val SUPPORTED_IMAGE_TYPES = setOf("image/jpeg", "image/png", "image/webp")
+    /**
+     * JPEG and PNG only.
+     *
+     * `image/webp` was here until v0.11.0, and was never going to work:
+     * LiteRT-LM's `InputData.Image` documents *"Supported format: PNG and
+     * JPG"*, so a WebP would have passed this check and then failed inside
+     * the native decoder with a message about neither WebP nor images.
+     * Advertising a format the engine cannot read is worse than refusing
+     * it — the refusal names the fix.
+     */
+    val SUPPORTED_IMAGE_TYPES = setOf("image/jpeg", "image/png")
+
+    /**
+     * WAV, plus raw 16-bit PCM.
+     *
+     * The engine takes WAV only. `pcm16` is accepted because Android's
+     * AudioRecord — what any on-device client actually records with —
+     * produces headerless PCM, and [com.adabala.medha.audio.Wav.ensureWav]
+     * puts a header on it before it reaches the engine. Advertised here
+     * because that wrapping makes it true, not as an aspiration.
+     */
     val SUPPORTED_AUDIO_FORMATS = setOf("wav", "pcm16")
 
     /**

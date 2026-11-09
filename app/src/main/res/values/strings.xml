@@ -166,6 +166,16 @@ Licensed under the terms in the project repository.</string>
     <string name="brief_item_open">Open</string>
     <string name="brief_item_open_app">Open the app</string>
 
+    <!-- multimodal probe -->
+    <string name="nav_multimodal">Multimodal support</string>
+    <string name="multimodal_title">Multimodal support</string>
+    <string name="multimodal_share">Share this report</string>
+    <string name="multimodal_disable">Turn off</string>
+    <string name="multimodal_enable">Turn on</string>
+    <string name="multimodal_toggled">Multimodal %1$s — restart Medha to apply</string>
+    <string name="on">on</string>
+    <string name="off">off</string>
+
     <!-- brief rotation -->
     <string name="brief_rotate_title">Brief rotation</string>
     <string name="brief_rotate_body">The widget shows 3 lines at a time. When there are more, it cycles through them while the screen is on.</string>

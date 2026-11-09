@@ -2,9 +2,11 @@ package com.adabala.medha
 
 import android.content.Context
 import com.adabala.medha.diag.Diagnostics
+import com.adabala.medha.oai.MultimodalProbe
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
+import com.google.ai.edge.litertlm.InputData
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -48,6 +50,34 @@ class LlmEngine(private val appContext: Context) {
     @Volatile var loadMs: Long = 0; private set
     @Volatile var loadedAt: Long = 0; private set
 
+    // --- multimodal state -------------------------------------------------
+    //
+    // Two separate facts, and conflating them is what produced a /health
+    // block that lied for three releases:
+    //
+    //   aarCapabilities  what the installed AAR can express and configure
+    //   visionActive /   whether THIS engine actually came up with those
+    //   audioActive      backends enabled, which additionally depends on the
+    //                    loaded .litertlm carrying the encoder
+    //
+    // /health advertises the second pair, never the first. A model with no
+    // audio tower makes Engine.initialize() fail with audioBackend set, and
+    // a client told "audio: true" on that build would stop falling back and
+    // start failing — the exact outcome the capability block exists to
+    // prevent.
+
+    /** What the installed AAR supports. Fixed for the process lifetime. */
+    val aarCapabilities: MultimodalProbe.Report by lazy { MultimodalProbe.probeInstalled() }
+
+    @Volatile var visionActive: Boolean = false; private set
+    @Volatile var audioActive: Boolean = false; private set
+
+    /** Why multimodal is off when the AAR supports it; null when it is on. */
+    @Volatile var multimodalError: String? = null; private set
+
+    /** Which rung of the init ladder the live engine came up on. */
+    @Volatile var multimodalMode: String = "text-only"; private set
+
     private val inFlight = AtomicLong(0)
 
     val isLoaded: Boolean get() = engine != null
@@ -63,7 +93,12 @@ class LlmEngine(private val appContext: Context) {
      * close() + initialize(), which tore down a live engine underneath any
      * request that happened to be running.
      */
-    fun load(modelPath: String, backend: ConfiguredBackend, force: Boolean = false) {
+    fun load(
+        modelPath: String,
+        backend: ConfiguredBackend,
+        force: Boolean = false,
+        enableMultimodal: Boolean = true
+    ) {
         synchronized(lifecycle) {
             if (!force && engine != null &&
                 loadedModelPath == modelPath && configuredBackend == backend
@@ -77,28 +112,104 @@ class LlmEngine(private val appContext: Context) {
 
             closeLocked()
             lastError = null
+            multimodalError = null
+            visionActive = false
+            audioActive = false
+            multimodalMode = "text-only"
             configuredBackend = backend
 
-            val be = when (backend) {
-                ConfiguredBackend.GPU -> Backend.GPU()
-                ConfiguredBackend.CPU -> Backend.CPU()
-                ConfiguredBackend.NPU ->
-                    Backend.NPU(nativeLibraryDir = appContext.applicationInfo.nativeLibraryDir)
-            }
-            val config = EngineConfig(
-                modelPath = modelPath,
-                backend = be,
-                cacheDir = appContext.cacheDir.path
-            )
+            val caps = aarCapabilities
+            val wantVision = enableMultimodal && caps.vision
+            val wantAudio = enableMultimodal && caps.audio
             val start = System.currentTimeMillis()
-            val e = Engine(config)
-            e.initialize()
+
+            // Init ladder. Each rung costs a full model load (~8s on a
+            // flagship), so this only ever descends on failure — the happy
+            // path is one attempt.
+            //
+            // Rung 2 exists because the media encoders and the language
+            // model do not have to run on the same accelerator, and a GPU
+            // that happily runs the decoder can still lack a kernel the
+            // vision tower needs. Retrying the encoders on CPU costs a few
+            // hundred ms per request and is strictly better than silently
+            // dropping to text-only.
+            val rungs = buildList {
+                if (wantVision || wantAudio) {
+                    add(Triple("media on ${backend.name}", wantVision, wantAudio) to backend)
+                    if (backend != ConfiguredBackend.CPU) {
+                        add(Triple("media on CPU", wantVision, wantAudio) to ConfiguredBackend.CPU)
+                    }
+                }
+                add(Triple("text-only", false, false) to backend)
+            }
+
+            var live: Engine? = null
+            for ((spec, mediaBackend) in rungs) {
+                val (label, v, a) = spec
+                val attempt = runCatching {
+                    val e = Engine(
+                        EngineConfig(
+                            modelPath = modelPath,
+                            backend = backendOf(backend),
+                            visionBackend = if (v) backendOf(mediaBackend) else null,
+                            audioBackend = if (a) backendOf(mediaBackend) else null,
+                            maxNumImages = if (v) MAX_IMAGES_PER_REQUEST else null,
+                            cacheDir = appContext.cacheDir.path
+                        )
+                    )
+                    // initialize() is where a model without the encoder
+                    // fails, so the Engine object already exists by then and
+                    // leaks native memory unless it is closed on the way out.
+                    runCatching { e.initialize() }.onFailure {
+                        runCatching { e.close() }
+                        throw it
+                    }
+                    e
+                }
+
+                attempt.onSuccess {
+                    live = it
+                    visionActive = v
+                    audioActive = a
+                    multimodalMode = label
+                }
+                if (live != null) break
+
+                val why = attempt.exceptionOrNull()?.let { "${it.javaClass.simpleName}: ${it.message}" }
+                    ?: "unknown"
+                // Only the first failure is worth reporting to clients: it
+                // is the one that says "this model has no encoder", which is
+                // the fact a caller can act on.
+                if (multimodalError == null) multimodalError = why
+                Diagnostics.w(TAG, "Engine init rung '$label' failed -- $why")
+            }
+
+            val e = live ?: error("Engine failed to initialize on every configuration")
             loadMs = System.currentTimeMillis() - start
             engine = e
             loadedModelPath = modelPath
             loadedAt = System.currentTimeMillis()
-            Diagnostics.i(TAG, "Engine initialized: $modelPath backend=$backend in ${loadMs}ms")
+            Diagnostics.i(
+                TAG,
+                "Engine initialized: $modelPath backend=$backend mode=$multimodalMode " +
+                    "vision=$visionActive audio=$audioActive in ${loadMs}ms"
+            )
         }
+    }
+
+    /**
+     * A fresh Backend instance per config slot.
+     *
+     * Not a shared one: the same object would be handed to the main, vision
+     * and audio slots, and these are native-backed handles whose lifecycle
+     * the Kotlin layer does not document. Three cheap allocations beat one
+     * shared handle closed three times.
+     */
+    private fun backendOf(b: ConfiguredBackend): Backend = when (b) {
+        ConfiguredBackend.GPU -> Backend.GPU()
+        ConfiguredBackend.CPU -> Backend.CPU()
+        ConfiguredBackend.NPU ->
+            Backend.NPU(nativeLibraryDir = appContext.applicationInfo.nativeLibraryDir)
     }
 
     /**
@@ -185,6 +296,101 @@ class LlmEngine(private val appContext: Context) {
         val inTokens = SystemInfo.estimateTokens(composePrompt(prompt, systemInstruction))
         return Capped(text, inTokens, SystemInfo.estimateTokens(text), ms, hitCap, truncated = false)
     }
+
+    /**
+     * Raised when a request needs a modality this engine did not come up
+     * with. Carries enough for the caller to answer accurately rather than
+     * returning a bare 500.
+     */
+    class MultimodalUnavailable(
+        val modality: String,
+        val reason: String
+    ) : Exception("$modality input is not available on this build: $reason")
+
+    /**
+     * One-shot generation over mixed text, image and audio input.
+     *
+     * Runs through [com.google.ai.edge.litertlm.Session] rather than
+     * `Conversation`, deliberately: a transcription or an image question is
+     * stateless, and a Conversation would carry a KV cache and chat
+     * formatting that the caller neither asked for nor can reuse. Session's
+     * `generateContent(List<InputData>)` is the SDK's own stateless path.
+     *
+     * Media comes before the text instruction in the input list. These
+     * models are trained with the media tokens preceding the question, and
+     * the reverse order measurably degrades the answer — the model has
+     * already started composing a reply to a question about nothing.
+     */
+    suspend fun generateMultimodal(
+        text: String,
+        images: List<ByteArray> = emptyList(),
+        audio: List<ByteArray> = emptyList(),
+        systemInstruction: String? = null
+    ): Result {
+        val e = engine ?: error("No model loaded")
+
+        if (images.isNotEmpty() && !visionActive) {
+            throw MultimodalUnavailable("image", visionUnavailableReason())
+        }
+        if (audio.isNotEmpty() && !audioActive) {
+            throw MultimodalUnavailable("audio", audioUnavailableReason())
+        }
+        require(images.size <= MAX_IMAGES_PER_REQUEST) {
+            "at most $MAX_IMAGES_PER_REQUEST images per request"
+        }
+
+        val prompt = composePrompt(text, systemInstruction)
+        val parts = buildList<InputData> {
+            images.forEach { add(InputData.Image(it)) }
+            audio.forEach { add(InputData.Audio(it)) }
+            if (prompt.isNotBlank()) add(InputData.Text(prompt))
+        }
+        if (parts.isEmpty()) return Result("", 0, 0, 0)
+
+        inFlight.incrementAndGet()
+        try {
+            return gate.withLock {
+                withContext(Dispatchers.IO) {
+                    val start = System.currentTimeMillis()
+                    val out = e.createSession().use { s -> s.generateContent(parts) }
+                    val ms = System.currentTimeMillis() - start
+                    val outTokens = SystemInfo.estimateTokens(out)
+                    // Media tokens are not text tokens and estimateTokens
+                    // cannot see them, so the prompt count here covers the
+                    // text only. Reported as such rather than guessed at:
+                    // a fabricated image-token count would corrupt every
+                    // downstream cost and throughput figure.
+                    val inTokens = SystemInfo.estimateTokens(prompt)
+                    SystemInfo.record(inTokens, outTokens, ms)
+                    Result(out, inTokens, outTokens, ms)
+                }
+            }
+        } finally {
+            inFlight.decrementAndGet()
+        }
+    }
+
+    /** Why vision is off, in words a client can act on. */
+    fun visionUnavailableReason(): String = when {
+        engine == null -> "no model is loaded"
+        !aarCapabilities.vision ->
+            "the installed LiteRT-LM AAR has no image binding (${aarCapabilities.summary()})"
+        multimodalError != null ->
+            "the loaded model did not initialize with a vision backend: $multimodalError"
+        else -> "vision was disabled for this engine"
+    }
+
+    /** Why audio is off, in words a client can act on. */
+    fun audioUnavailableReason(): String = when {
+        engine == null -> "no model is loaded"
+        !aarCapabilities.audio ->
+            "the installed LiteRT-LM AAR has no audio binding (${aarCapabilities.summary()})"
+        multimodalError != null ->
+            "the loaded model did not initialize with an audio backend: $multimodalError"
+        else -> "audio was disabled for this engine"
+    }
+
+    private fun MultimodalProbe.Report.summary(): String = MultimodalProbe.summary(this)
 
     data class Capped(
         val text: String,
@@ -373,5 +579,17 @@ class LlmEngine(private val appContext: Context) {
 
     companion object {
         private const val TAG = "LlmEngine"
+
+        /**
+         * Hard cap on images in one request, passed to
+         * `EngineConfig.maxNumImages`.
+         *
+         * Each image costs a few hundred vision tokens against a 4096-token
+         * context, so four is already most of the window. The limit is here
+         * rather than only in the parser because the engine needs the number
+         * at init: a request with more images than the engine was configured
+         * for fails natively, with a message about tensor shapes.
+         */
+        const val MAX_IMAGES_PER_REQUEST = 4
     }
 }

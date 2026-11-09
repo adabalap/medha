@@ -76,10 +76,42 @@ java -jar "$WORK/chatreq.jar"
 echo
 echo "== MultimodalProbeTest =="
 # Decides what /health advertises. Claiming a capability this build does not
-# have would stop clients falling back and make them fail instead.
+# have would stop clients falling back and make them fail instead -- and
+# HIDING one, which is what v1 of the probe did for three releases, means
+# shipping a whisper.cpp sidecar to do what the model already does. The
+# first test in here replays v1's hint list against the real 0.13.1 surface
+# and asserts it matches nothing.
 kotlinc "$SRC/oai/MultimodalProbe.kt" MultimodalProbeTest.kt \
   -include-runtime -d "$WORK/probe.jar"
 java -jar "$WORK/probe.jar"
+
+echo
+echo "== WavTest =="
+# InputData.Audio takes WAV only, and AudioRecord produces headerless PCM,
+# so every audio request goes through this file. Two silent killers: the
+# RIFF size field is total-8 and not total, and chunk walking has to honour
+# the word-align pad byte or a perfectly valid ffmpeg WAV reports a wrong
+# duration and gets rejected against the 30s limit.
+kotlinc "$SRC/audio/Wav.kt" WavTest.kt -include-runtime -d "$WORK/wav.jar"
+java -jar "$WORK/wav.jar"
+
+echo
+echo "== TranscriptionRequestTest =="
+# POST /v1/audio/transcriptions -- the endpoint that replaces whisper.cpp
+# for hg_agent. Validation, the Telugu script instruction, and the cleanup
+# that strips the model's conversational scaffolding without eating real
+# transcript text.
+kotlinc "$SRC/audio/Wav.kt" "$SRC/oai/TranscriptionRequest.kt" \
+  TranscriptionRequestTest.kt -include-runtime -d "$WORK/trans.jar"
+java -jar "$WORK/trans.jar"
+
+echo
+echo "== TokenCapTest =="
+# max_tokens on the multimodal path is a truncation, not a cap. Getting the
+# character budget wrong empties every capped response rather than
+# shortening it.
+kotlinc "$SRC/oai/TokenCap.kt" TokenCapTest.kt -include-runtime -d "$WORK/tokencap.jar"
+java -jar "$WORK/tokencap.jar"
 
 echo
 echo "== NetPolicyTest =="
@@ -91,6 +123,18 @@ kotlinc "$SRC/net/WebOrigin.kt" "$SRC/net/CorsPolicy.kt" "$SRC/net/RateLimiter.k
   "$SRC/auth/PairingManager.kt" NetPolicyTest.kt \
   -include-runtime -d "$WORK/net.jar"
 java -jar "$WORK/net.jar"
+
+echo
+echo "== hg_agent_transcribe_test (Python) =="
+# samples/hg-agent-transcribe.py is what replaces whisper.cpp for hg_agent,
+# and its multipart encoder is hand-rolled. Real HTTP round trips against a
+# stub server, parsed back with the stdlib's email parser -- a multipart bug
+# produces a truncated upload that looks like a corrupt audio file.
+if command -v python3 >/dev/null 2>&1; then
+  python3 -I hg_agent_transcribe_test.py
+else
+  echo "python3 not found on PATH — skipping."
+fi
 
 if command -v node >/dev/null 2>&1; then
   echo

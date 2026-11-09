@@ -102,10 +102,31 @@ jobs:
       - name: Check workflow configuration
         run: python3 tools/check_workflows.py
 
+      # A widget layout using a class RemoteViews cannot inflate builds
+      # and lints clean, then refuses to be placed on the home screen.
+      - name: Check widget layouts
+        run: python3 tools/check_widget_layouts.py
+
+      # Adding an endpoint is three lines and forgetting the capability
+      # check is one of them -- the route then works, the tests pass, and
+      # any paired client can call it. This found exactly that on
+      # /rag/reindex, where a client paired only for notifications could
+      # name another client's collection and get its chunk counts back.
+      - name: Check route authorization
+        run: python3 tools/check_route_auth.py
+
       # Real HTTP round trips against a stdlib server standing in for
       # Medha. Needs no Android SDK, no Gradle and no network.
-      - name: Test the Python client
-        run: python3 tools/tests/medha_brief_py_test.py
+      - name: Test the Python clients
+        run: |
+          python3 tools/tests/medha_brief_py_test.py
+          # samples/hg-agent-transcribe.py's multipart encoder is
+          # hand-rolled -- the stdlib has none and requests is not worth a
+          # dependency under Termux. A multipart bug produces a truncated
+          # upload that looks like a corrupt audio file on the far side, so
+          # this round-trips real bytes through a stub server and parses
+          # them back with the stdlib's own email parser.
+          python3 -I tools/tests/hg_agent_transcribe_test.py
 
       # GitHub-hosted runners ship Node.js already; no setup-node step needed.
       # These test the bundled demo webapp's actual shipped JS (markdown
