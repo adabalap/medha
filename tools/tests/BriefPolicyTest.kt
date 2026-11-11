@@ -379,6 +379,140 @@ fun main() {
     eq("dueAt carried", r0.dueAt, T - DAY)
     eq("kind carried", r0.kind, "bill")
 
+    // ------------------------------------------------- banded ordering
+    //
+    // Added in v0.12.2. Five of the checks below — the three marked
+    // REGRESSION, plus the urgent-app and maxRows ones — fail when run
+    // against the pre-v0.12.2 rows(), which round-robined by depth and never
+    // looked at dueAt. That was the whole bug: `dueAt` was accepted, stored
+    // and returned for two releases while changing nothing a user could see.
+    //
+    // The count is measured, not assumed. Two checks here were originally
+    // written in a way that passed against the old implementation too — one
+    // put the overdue item on the newest section, which prune() already
+    // sorts first, and one asserted only that two lists were non-empty.
+    // Both were rewritten after running them against the old code. If this
+    // section is extended, run it that way again: a regression test that
+    // passes before the fix is decoration.
+    println("\nBriefPolicy.rows — urgency decides the band, posting order decides nothing")
+
+    fun dueItem(title: String, daysOut: Long?) =
+        BriefPolicy.Item(title, "t", null, daysOut?.let { T + it * DAY }, null)
+
+    // "first" posts an overdue bill, "second" a note due in three weeks.
+    // The overdue one is deliberately the OLDER section: prune() sorts
+    // newest-first, so under depth round-robin the three-week note takes
+    // the top line purely for having been posted more recently. Written the
+    // other way round this check passes against both implementations and
+    // proves nothing — it was, until the legacy run said so.
+    var urgent = BriefPolicy.put(emptyList(), "first", listOf(dueItem("bill", -10)), T)
+    urgent = BriefPolicy.put(urgent, "second", listOf(dueItem("note", 21)), T + 1000)
+    val ordered = BriefPolicy.rows(urgent, T, offsetMs = 0L).map { it.title }
+    eq("REGRESSION: overdue leads, however recently the other app posted",
+        ordered, listOf("bill", "note"))
+
+    // Full band sweep, one client, deliberately shuffled on input.
+    val sweep = BriefPolicy.put(
+        emptyList(), "one",
+        listOf(
+            dueItem("later", 20),
+            dueItem("undated", null),
+            dueItem("overdue", -3),
+            dueItem("soon", 2)
+        ),
+        T
+    )
+    eq(
+        "REGRESSION: overdue, then this week, then later, then undated",
+        BriefPolicy.rows(sweep, T, offsetMs = 0L).map { it.title },
+        listOf("overdue", "soon", "later", "undated")
+    )
+
+    // The anti-flood property, now inside a band rather than across the
+    // whole brief. Both clients are overdue, so neither can be demoted by
+    // urgency — and "loud" still must not take both top rows.
+    var band = BriefPolicy.put(
+        emptyList(), "loud", listOf(dueItem("L1", -5), dueItem("L2", -4)), T
+    )
+    band = BriefPolicy.put(band, "quiet", listOf(dueItem("Q1", -5)), T + 1000)
+    eq(
+        "round-robin survives inside a band",
+        BriefPolicy.rows(band, T, offsetMs = 0L).map { it.title },
+        listOf("Q1", "L1", "L2")
+    )
+
+    // One app being the only overdue app is not starvation: five overdue
+    // things genuinely are five overdue things. It still yields one row at a
+    // time, so a second overdue app would interleave.
+    var hog = BriefPolicy.put(
+        emptyList(), "hog",
+        listOf(dueItem("H1", -5), dueItem("H2", -4), dueItem("H3", -3)), T
+    )
+    hog = BriefPolicy.put(hog, "other", listOf(dueItem("O1", 30)), T + 1000)
+    val hogRows = BriefPolicy.rows(hog, T, offsetMs = 0L).map { it.title }
+    eq("a genuinely urgent app does take the top", hogRows.take(3), listOf("H1", "H2", "H3"))
+    check("but nobody is dropped", hogRows.contains("O1"))
+
+    // The compatibility promise made to every client that has not adopted
+    // dueAt yet: identical output, not merely similar.
+    var undated = BriefPolicy.put(emptyList(), "a", items("A1", "A2"), T)
+    undated = BriefPolicy.put(undated, "b", items("B1", "B2"), T + 1000)
+    eq(
+        "a brief with no dueAt anywhere is the old round-robin, unchanged",
+        BriefPolicy.rows(undated, T, offsetMs = 0L).map { it.title },
+        listOf("B1", "A1", "B2", "A2")
+    )
+
+    // The row cap must bite the least urgent end. Truncating the overdue
+    // band to show "later" items would be the original bug wearing a hat.
+    val capped = BriefPolicy.put(
+        emptyList(), "c",
+        listOf(dueItem("far", 40), dueItem("od1", -2), dueItem("od2", -1)), T
+    )
+    eq(
+        "maxRows drops the least urgent, not the first posted",
+        BriefPolicy.rows(capped, T, maxRows = 2, offsetMs = 0L).map { it.title },
+        listOf("od1", "od2")
+    )
+
+    // Banding is timezone-sensitive because dayDelta is, and that has to
+    // survive the trip through rows(). One instant, two offsets, and the
+    // ORDER changes — asserting merely that both are non-empty would pass
+    // against an implementation that ignores the offset entirely.
+    //
+    // "edge" is 14h before T: one local day earlier at UTC (overdue), the
+    // same local day 11h west (due today, so SOON). "fixed" is three days
+    // out, SOON under both. Input order is fixed-then-edge, so when both
+    // land in SOON the input order shows through unchanged.
+    val edge = BriefPolicy.put(
+        emptyList(), "tz",
+        listOf(
+            BriefPolicy.Item("fixed", "t", null, T + 3 * DAY, null),
+            BriefPolicy.Item("edge", "t", null, T - 14 * HOUR, null)
+        ),
+        T - 2 * HOUR
+    )
+    eq("REGRESSION: at UTC the edge item is overdue and leads",
+        BriefPolicy.rows(edge, T, offsetMs = 0L).map { it.title }, listOf("edge", "fixed"))
+    eq("eleven hours west it is merely due today, and stays put",
+        BriefPolicy.rows(edge, T, offsetMs = -11 * HOUR).map { it.title },
+        listOf("fixed", "edge"))
+
+    // page() must hand the offset down, or the widget bands in UTC while
+    // the server bands locally and the two disagree about "today".
+    eq(
+        "page() threads offsetMs through to rows()",
+        BriefPolicy.page(sweep, T, 0, offsetMs = 0L).rows.map { it.title },
+        BriefPolicy.rows(sweep, T, offsetMs = 0L).take(BriefPolicy.PAGE_ROWS).map { it.title }
+    )
+
+    println("\nBriefPolicy.deviceOffset — one spelling of the device offset")
+    eq(
+        "agrees with the platform",
+        BriefPolicy.deviceOffset(T),
+        java.util.TimeZone.getDefault().getOffset(T).toLong()
+    )
+
     println("\n--------------------------------------------------")
     if (failures == 0) {
         println("BriefPolicyTest: all $checks checks passed")

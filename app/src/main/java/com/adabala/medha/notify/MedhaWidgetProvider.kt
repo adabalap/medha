@@ -71,7 +71,12 @@ class MedhaWidgetProvider : AppWidgetProvider() {
 
         val now = System.currentTimeMillis()
         val sections = if (raw == null) emptyList() else BriefJson.parse(raw, now)
-        val page = BriefPolicy.page(sections, now, tick)
+        // The offset is read per render, not cached: it changes under DST and
+        // when the phone crosses a timezone, and a brief that bands "today"
+        // against last month's offset is wrong in exactly the hours that
+        // matter most.
+        val offset = BriefPolicy.deviceOffset(now)
+        val page = BriefPolicy.page(sections, now, tick, offsetMs = offset)
         val contributors = BriefPolicy.prune(sections, now).size
 
         for (id in ids) {
@@ -113,13 +118,60 @@ class MedhaWidgetProvider : AppWidgetProvider() {
                         v.setViewVisibility(slot.row, View.VISIBLE)
                         v.setTextViewText(slot.title, r.title)
                         v.setTextViewText(slot.text, r.text)
+                        // When the item carries a dueAt, the countdown wins
+                        // over the post age. "10d over" is what the row is
+                        // for; "2h" is how long ago some app happened to
+                        // write, which is of no use to anyone looking at an
+                        // overdue bill. Age remains the fallback because for
+                        // an undated item it is the only freshness signal
+                        // there is.
+                        //
+                        // Computed here rather than sent by the client on
+                        // purpose: a string posted as "overdue 10 days" is
+                        // right when written and wrong a few hours later.
+                        // This one is derived at render time from dueAt, so
+                        // it cannot go stale on the home screen.
+                        val mark = BriefPolicy.relative(r.dueAt, now, offset)
+                            ?: BriefPolicy.age(r.updatedAt, now)
+
                         // Attribution only when more than one app is
                         // contributing. With a single writer the client id on
                         // every line is noise the user already knows.
+                        // Countdown first, attribution second. Which app
+                        // wrote the line is the least urgent thing on it.
+                        //
+                        // Not tinted by band yet. Two things to know before
+                        // adding it, because the obvious way is wrong.
+                        //
+                        // WRONG: setTextColor(id, color) and setInt(id,
+                        // "setBackgroundColor", color). Both take an ALREADY
+                        // RESOLVED int, so the colour is resolved here in
+                        // Medha's process against Medha's configuration and
+                        // baked into the update — while every colour in
+                        // widget_medha.xml is resolved by the LAUNCHER at
+                        // inflation, which is what makes values-night work on
+                        // a home screen. Mix the two and the widget is right
+                        // in one theme and wrong in the other, with nothing
+                        // to see unless you switch themes while watching.
+                        //
+                        // RIGHT: setImageViewResource(id, drawableRes). That
+                        // marshals a resource id, which the host resolves
+                        // against its own configuration exactly as the layout
+                        // XML is resolved. Band colour then lives in a
+                        // per-band shape drawable pointing at @color, with a
+                        // values-night override, like everything else here.
+                        //
+                        // The row already HAS the bar to tint: each row in
+                        // widget_medha.xml carries a 3dp ImageView with
+                        // @drawable/bg_brief_accent. All it lacks is an
+                        // android:id, since RemoteViews cannot address a view
+                        // that has none. Held for the layout rebuild rather
+                        // than done here, because that rebuild replaces this
+                        // layout wholesale and a mistake in it costs a silent
+                        // "Couldn't add widget" with no stack trace.
                         v.setTextViewText(
                             slot.meta,
-                            if (contributors > 1) "${r.clientId} · ${BriefPolicy.age(r.updatedAt, now)}"
-                            else BriefPolicy.age(r.updatedAt, now)
+                            if (contributors > 1) "$mark · ${r.clientId}" else mark
                         )
                     }
                 }

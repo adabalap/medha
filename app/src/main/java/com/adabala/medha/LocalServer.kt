@@ -1863,8 +1863,10 @@ class LocalServer(
      * a server that has been up since before the change would otherwise be
      * an hour out until it restarts.
      */
-    private fun tzOffset(at: Long): Long =
-        java.util.TimeZone.getDefault().getOffset(at).toLong()
+    // Delegates rather than duplicating: three surfaces now need the device
+    // offset (this, the widget, the rotator) and three copies of a DST
+    // lookup is three chances to drift.
+    private fun tzOffset(at: Long): Long = BriefPolicy.deviceOffset(at)
 
     /** One OpenAI `chat.completion.chunk`. */
     private fun chunk(

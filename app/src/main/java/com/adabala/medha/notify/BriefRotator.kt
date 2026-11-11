@@ -172,7 +172,10 @@ class BriefRotator(
     private fun shouldRotate(): Boolean {
         if (!widgetPlaced()) return false
         if (!screenOn()) return false
-        val rows = BriefPolicy.rows(hub.brief(), System.currentTimeMillis()).size
+        val at = System.currentTimeMillis()
+        val rows = BriefPolicy
+            .rows(hub.brief(), at, offsetMs = BriefPolicy.deviceOffset(at))
+            .size
         return BriefPolicy.pageCount(rows) > 1
     }
 

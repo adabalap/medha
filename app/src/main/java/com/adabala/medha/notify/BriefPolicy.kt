@@ -161,39 +161,99 @@ object BriefPolicy {
     /**
      * Flattens the live sections into rows to draw.
      *
-     * Interleaved one item per client per pass, not section by section. With
-     * section-by-section, one app posting five items fills the whole widget
-     * and every other app is invisible — the exact failure the per-client
-     * split was meant to fix, reintroduced at the rendering step. Round-robin
-     * means each app gets its first line before any app gets its second.
+     * Two rules, in this order.
+     *
+     * URGENCY ACROSS BANDS. Rows come out banded: everything overdue, then
+     * everything due within [SOON_DAYS], then everything later, then
+     * everything undated. Until v0.12.2 this did not happen, and the
+     * consequence was plain — an overdue bill from the second app to post
+     * sat underneath a note due in three weeks from the first, because
+     * position was decided by who posted rather than by when things are
+     * due. A brief whose top line is not its most urgent line is not a
+     * brief. This is also what lets the widget show a fixed top few rows
+     * honestly: overdue cannot hide below the fold if overdue sorts first.
+     *
+     * FAIRNESS WITHIN A BAND. Inside each band the original behaviour is
+     * untouched: one item per client per pass, not section by section.
+     * With section-by-section, one app posting five items fills the whole
+     * widget and every other app is invisible — the exact failure the
+     * per-client split was meant to fix, reintroduced at the rendering
+     * step. Round-robin means each app gets its first line of a band
+     * before any app gets its second.
+     *
+     * Note what banding does NOT do: it cannot starve an app the way a
+     * global sort on `dueAt` would, because the round-robin still runs
+     * inside every band. One app with five overdue items takes the overdue
+     * band, which is correct — five things are actually overdue — but it
+     * takes it one row at a time, behind every other app's overdue row.
+     *
+     * A client that sends no `dueAt` is unaffected: all of its items land
+     * in the same undated band, so it gets back exactly the round-robin it
+     * got before.
+     *
+     * [offsetMs] is the device's UTC offset; see [deviceOffset]. It is a
+     * parameter rather than a lookup so a test can pin a timezone instead
+     * of inheriting the machine's.
      */
     fun rows(
         sections: List<Section>,
         now: Long,
-        maxRows: Int = MAX_ROWS
+        maxRows: Int = MAX_ROWS,
+        offsetMs: Long = 0L
     ): List<Row> {
         val live = prune(sections, now)
         if (live.isEmpty()) return emptyList()
 
+        // `null` last, and `null` is a real key here rather than a synonym
+        // for LATER: an item with no dueAt is unranked, not far away, and
+        // folding the two together would let an undated note outrank a
+        // dated one for no reason the user could see.
+        val bands: List<Band?> = listOf(Band.OVERDUE, Band.SOON, Band.LATER, null)
+
         val out = mutableListOf<Row>()
-        val deepest = live.maxOf { it.items.size }
-        for (depth in 0 until deepest) {
-            for (s in live) {
-                val item = s.items.getOrNull(depth) ?: continue
-                out += Row(
-                    title = item.title,
-                    text = item.text,
-                    clientId = s.clientId,
-                    updatedAt = s.updatedAt,
-                    link = item.link,
-                    dueAt = item.dueAt,
-                    kind = item.kind
-                )
-                if (out.size == maxRows) return out
+        for (band in bands) {
+            val queues = live
+                .map { s -> s to s.items.filter { bandOf(it.dueAt, now, offsetMs) == band } }
+                .filter { (_, items) -> items.isNotEmpty() }
+            if (queues.isEmpty()) continue
+
+            val deepest = queues.maxOf { (_, items) -> items.size }
+            for (depth in 0 until deepest) {
+                for ((s, items) in queues) {
+                    val item = items.getOrNull(depth) ?: continue
+                    out += Row(
+                        title = item.title,
+                        text = item.text,
+                        clientId = s.clientId,
+                        updatedAt = s.updatedAt,
+                        link = item.link,
+                        dueAt = item.dueAt,
+                        kind = item.kind
+                    )
+                    if (out.size == maxRows) return out
+                }
             }
         }
         return out
     }
+
+    /**
+     * The device's UTC offset at [at], for callers to pass back in as
+     * `offsetMs`.
+     *
+     * Deliberately not called from anywhere inside this file. Every banding
+     * function here takes the offset as a parameter so a test can pin a
+     * timezone rather than inherit the machine's, and that property is worth
+     * more than the convenience of looking it up internally. This exists so
+     * that the callers which DO want the real device offset all spell it the
+     * same way, instead of each writing its own and drifting apart on DST.
+     *
+     * Fully qualified on purpose: this file has no import statements, which
+     * is what lets the pure-logic harness compile it with nothing but
+     * kotlinc. One qualified name is a cheaper price than losing that.
+     */
+    fun deviceOffset(at: Long): Long =
+        java.util.TimeZone.getDefault().getOffset(at).toLong()
 
     /**
      * One screenful of the widget.
@@ -237,9 +297,10 @@ object BriefPolicy {
         sections: List<Section>,
         now: Long,
         tick: Long = 0,
-        perPage: Int = PAGE_ROWS
+        perPage: Int = PAGE_ROWS,
+        offsetMs: Long = 0L
     ): Page {
-        val all = rows(sections, now)
+        val all = rows(sections, now, offsetMs = offsetMs)
         val count = pageCount(all.size, perPage)
 
         // No early return for the empty case: pageCount() floors at 1, so the

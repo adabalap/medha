@@ -54,6 +54,17 @@ kotlinc "$SRC/notify/BriefPolicy.kt" BriefPolicyTest.kt \
 java -jar "$WORK/brief.jar"
 
 echo
+echo "== WidgetCallShapesTest =="
+# The BriefPolicy call shapes used by MedhaWidgetProvider, BriefRotator and
+# LocalServer. Those three need an Android classpath, so no stage before
+# Gradle type-checks them; this compiles the same argument shapes against the
+# real BriefPolicy so a signature change fails here in seconds instead of in
+# CI minutes later.
+kotlinc "$SRC/notify/BriefPolicy.kt" WidgetCallShapesTest.kt \
+  -include-runtime -d "$WORK/shapes.jar"
+java -jar "$WORK/shapes.jar"
+
+echo
 echo "== BriefJsonTest =="
 # The brief's on-disk format, INCLUDING the v0.9.0 -> v0.9.1 migration. Runs
 # against the real BriefJson.kt plus stubs/org/json, which mirror Android's
