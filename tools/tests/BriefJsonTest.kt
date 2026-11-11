@@ -272,6 +272,29 @@ fun main() {
     eq("the item survives", oddKind.first().items.size, 1)
     eq("the kind does not", oddKind.first().items.first().kind, null)
 
+    println("\nBriefJson.safeLinkOrNull — one rule for both tap surfaces")
+    // A brief row and a notification must accept exactly the same links,
+    // or a client hits the case where its URL works in the widget and
+    // silently does nothing in the shade.
+    eq("https kept", BriefJson.safeLinkOrNull("https://host/note/1"), "https://host/note/1")
+    eq("http kept", BriefJson.safeLinkOrNull("http://127.0.0.1:5230/n/1"), "http://127.0.0.1:5230/n/1")
+    eq("null in, null out", BriefJson.safeLinkOrNull(null), null)
+    // The case hg_agent will hit first: a custom scheme deep link.
+    eq("a custom scheme is dropped", BriefJson.safeLinkOrNull("quicksilver://note/1"), null)
+    eq("javascript is dropped", BriefJson.safeLinkOrNull("javascript:alert(1)"), null)
+    eq("intent: is dropped", BriefJson.safeLinkOrNull("intent://x#Intent;end"), null)
+    eq("file: is dropped", BriefJson.safeLinkOrNull("file:///etc/passwd"), null)
+    eq("a newline inside is dropped", BriefJson.safeLinkOrNull("https://a\nb"), null)
+    eq("empty is dropped", BriefJson.safeLinkOrNull(""), null)
+    eq("over the length cap is dropped",
+        BriefJson.safeLinkOrNull("https://h/" + "a".repeat(BriefJson.MAX_LINK_LENGTH)), null)
+    // Dropping must never be an exception: the notification still posts.
+    check("never throws on hostile input", runCatching {
+        listOf("\u0000", "  ", "HTTPS://OK/x", "https://" + "\u0001").forEach {
+            BriefJson.safeLinkOrNull(it)
+        }
+    }.isSuccess)
+
     println("\n--------------------------------------------------")
     if (failures == 0) {
         println("BriefJsonTest: all $checks checks passed")

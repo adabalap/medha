@@ -161,6 +161,22 @@ object BriefJson {
         return s.none { it.isWhitespace() || it.code < 0x20 }
     }
 
+    /**
+     * The link worth keeping, or null.
+     *
+     * The one rule both tap surfaces use — a brief row and, since v0.12.1,
+     * a notification. Never throws: an unsafe link is **dropped while the
+     * item or notification still posts**, because losing a tap target is a
+     * far smaller failure than losing the content it was attached to.
+     *
+     * Having one function rather than the same `takeIf { isSafeLink(it) }`
+     * written at each call site is the point: the two surfaces cannot drift
+     * into accepting different things, which is exactly the sort of
+     * difference nobody notices until a client reports that its link works
+     * in the brief and not in the shade.
+     */
+    fun safeLinkOrNull(raw: String?): String? = raw?.takeIf { isSafeLink(it) }
+
     const val MAX_LINK_LENGTH = 2000
 
     /**

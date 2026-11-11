@@ -153,6 +153,7 @@ class Medha:
         progress_current: int = -1,
         progress_max: int = -1,
         silent: bool = True,
+        link: str = None,
     ) -> dict:
         """Post to the notification shade.
 
@@ -165,24 +166,34 @@ class Medha:
         not granted *Medha* the notification permission. The ``reason``
         field says so.
 
+        ``link`` is where a tap goes. Without it the tap opens Medha. Only
+        http(s) is accepted -- a custom scheme like ``quicksilver://note/1``
+        is **dropped and the notification still posts**, so check
+        ``result["tapOpens"]``, which is ``"link"`` or ``"medha"``.
+
+        For your own app to receive the tap rather than a browser, its
+        intent filter must declare ``android.intent.category.BROWSABLE``.
+        Medha adds that category, and a filter has to match every category
+        in the intent -- without it the link goes to the browser with no
+        error anywhere.
+
         Rate limited to 10 in a burst and 30 a minute, per client. Over that
         you get ``MedhaError(code="rate_limited")``.
         """
         if not title:
             raise MedhaError("title is required", "bad_request")
-        return self._call(
-            "POST",
-            "/notify",
-            {
-                "id": id,
-                "title": str(title)[:200],
-                "text": str(text)[:2000],
-                "ongoing": bool(ongoing),
-                "progressCurrent": int(progress_current),
-                "progressMax": int(progress_max),
-                "silent": bool(silent),
-            },
-        )
+        payload = {
+            "id": id,
+            "title": str(title)[:200],
+            "text": str(text)[:2000],
+            "ongoing": bool(ongoing),
+            "progressCurrent": int(progress_current),
+            "progressMax": int(progress_max),
+            "silent": bool(silent),
+        }
+        if link:
+            payload["link"] = str(link)
+        return self._call("POST", "/notify", payload)
 
     def cancel_notification(self, id: str = "default") -> dict:
         return self._call("DELETE", "/notify/" + urllib.parse.quote(id, safe=""))

@@ -44,7 +44,17 @@ class NotificationHub(private val appContext: Context) {
         val progressCurrent: Int = -1,
         val progressMax: Int = -1,
         val silent: Boolean = true,
-        val clientId: String = "unknown"
+        val clientId: String = "unknown",
+        /**
+         * Where tapping the notification should go. http(s) only, already
+         * validated by the caller against [BriefJson.isSafeLink].
+         *
+         * Null keeps the old behaviour: the tap opens Medha. That was the
+         * only behaviour until v0.12.1, and a client that wanted the user
+         * taken somewhere had to put a URL in [text] — where Android does
+         * not linkify it, so it was dead characters on the screen.
+         */
+        val link: String? = null
     )
 
     private val manager get() = NotificationManagerCompat.from(appContext)
@@ -93,8 +103,24 @@ class NotificationHub(private val appContext: Context) {
         ensureChannel()
         val key = stableId(req.clientId, req.id)
 
+        // Where a tap goes. A safe link takes the user there; otherwise
+        // Medha's own screen, which is what every notification did before
+        // v0.12.1.
+        //
+        // CATEGORY_BROWSABLE is added for the same reason BriefActivity
+        // adds it: both tap paths then resolve by one rule, so an app
+        // wanting to claim its own links registers one filter shape rather
+        // than discovering that the two surfaces behave differently. The
+        // cost, which is worth stating plainly in the docs: a filter that
+        // omits BROWSABLE will not match, and the link quietly goes to the
+        // browser instead.
+        val target = req.link
+            ?.let { Intent(Intent.ACTION_VIEW, android.net.Uri.parse(it))
+                .addCategory(Intent.CATEGORY_BROWSABLE) }
+            ?: Intent(appContext, MainActivity::class.java)
+
         val open = PendingIntent.getActivity(
-            appContext, key, Intent(appContext, MainActivity::class.java),
+            appContext, key, target,
             PendingIntent.FLAG_UPDATE_CURRENT or
                 (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
         )

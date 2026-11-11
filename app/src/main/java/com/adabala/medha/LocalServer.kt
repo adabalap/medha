@@ -158,7 +158,21 @@ data class NotifyRequest(
     val ongoing: Boolean = false,
     val progressCurrent: Int = -1,
     val progressMax: Int = -1,
-    val silent: Boolean = true
+    val silent: Boolean = true,
+    /**
+     * Optional http(s) URL opened when the notification is tapped.
+     *
+     * Without it the tap opens Medha, which was the only behaviour before
+     * v0.12.1 — so a client that wanted the user taken somewhere put a URL
+     * in [text], where Android does not linkify it and it was simply dead
+     * characters.
+     *
+     * Validated exactly like a brief item's link: http(s) only, no
+     * whitespace or control characters. An unsafe link is **dropped and
+     * the notification still posts** — losing the tap target is a smaller
+     * failure than losing the alert. The response says which happened.
+     */
+    val link: String? = null
 )
 
 @Serializable
@@ -1494,17 +1508,32 @@ class LocalServer(
                     if (req.text.length > MAX_NOTIFY_TEXT) {
                         return@post call.badRequest("text exceeds $MAX_NOTIFY_TEXT characters")
                     }
+                    val link = BriefJson.safeLinkOrNull(req.link)
                     val ok = notifier.post(
                         NotificationHub.Request(
                             id = req.id, title = req.title, text = req.text,
                             ongoing = req.ongoing,
                             progressCurrent = req.progressCurrent, progressMax = req.progressMax,
-                            silent = req.silent, clientId = client.id
+                            silent = req.silent, clientId = client.id,
+                            link = link
                         )
                     )
                     call.respondJson(buildJsonObject {
                         put("posted", ok)
                         put("id", req.id)
+                        // Which tap target the notification actually got.
+                        // A client cannot see this from the shade, and a
+                        // silently dropped link is the kind of thing that
+                        // gets blamed on the wrong layer for an afternoon.
+                        put("tapOpens", if (link != null) "link" else "medha")
+                        if (link != null) put("link", link)
+                        if (req.link != null && link == null) {
+                            put(
+                                "linkDropped",
+                                "link must be an http(s) URL with no whitespace; " +
+                                    "custom schemes are not accepted"
+                            )
+                        }
                         // False means the post was refused by the platform,
                         // which on Android 13+ almost always means the user
                         // has not granted Medha POST_NOTIFICATIONS. Say so,
@@ -1558,7 +1587,7 @@ class LocalServer(
                             BriefPolicy.Item(
                                 title = it.title,
                                 text = it.text,
-                                link = it.link?.takeIf { l -> BriefJson.isSafeLink(l) },
+                                link = BriefJson.safeLinkOrNull(it.link),
                                 // A non-positive dueAt is dropped rather
                                 // than stored: 0 is a real instant and
                                 // would render as 56 years overdue.

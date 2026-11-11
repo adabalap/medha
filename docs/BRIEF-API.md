@@ -258,12 +258,39 @@ knowing at a glance but never worth a buzz.
 | `ongoing` | no | Persistent, non-dismissable |
 | `silent` | no | Defaults to `true` |
 | `progressCurrent` / `progressMax` | no | `-1` disables the progress bar |
+| `link` | no | http(s) URL opened on tap. Unsafe or custom-scheme links are **dropped and the notification still posts** |
 
 Response:
 
 ```json
-{"posted": true, "id": "sync"}
+{"posted": true, "id": "sync", "tapOpens": "link", "link": "https://host/n/1"}
 ```
+
+`tapOpens` is `"link"` or `"medha"` — which target the notification actually
+got. A client cannot see that from the shade, and a silently dropped link is
+the kind of thing that gets blamed on the wrong layer for an afternoon. When
+a link was sent and refused, `linkDropped` says why.
+
+### Making your own app receive the tap
+
+Both tap surfaces — a brief row and a notification — resolve the same way:
+`ACTION_VIEW` plus `CATEGORY_BROWSABLE`. Two consequences:
+
+**Your intent filter must declare `BROWSABLE`.** A filter has to match every
+category in the intent. Omit it and the filter silently does not match, the
+link goes to the browser, and nothing anywhere reports an error.
+
+```xml
+<intent-filter android:autoVerify="true">
+  <action android:name="android.intent.action.VIEW" />
+  <category android:name="android.intent.category.DEFAULT" />
+  <category android:name="android.intent.category.BROWSABLE" />
+  <data android:scheme="https" android:host="your.host" />
+</intent-filter>
+```
+
+**Custom schemes do not work.** `quicksilver://note/1` fails validation and
+is dropped. Use an `https://` deep link with a verified App Link.
 
 **`posted: false` is not a server error.** It almost always means the user
 has not granted Medha the Android notification permission, and the response
@@ -340,3 +367,7 @@ print(r["items"], "of", 1, "stored")
   `dueAt` and let the chip be computed.
 - **Sending `dueAt` in seconds.** It is milliseconds. Seconds puts every item
   in 1970, which reads as ~56 years overdue.
+- **Putting a URL in `text` and expecting it to be tappable.** Android does
+  not linkify notification body text. Send `link`.
+- **Registering an intent filter without `BROWSABLE`.** It will not match,
+  and the failure is completely silent.
