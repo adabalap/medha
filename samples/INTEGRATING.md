@@ -16,6 +16,9 @@ Five minutes per app. No SDK, no build step, no backend.
 > model already in memory, which is what replaces running whisper.cpp
 > beside it.
 
+> **Server-side client?** [../docs/BRIEF-API.md](../docs/BRIEF-API.md) is the
+> precise reference for the brief and notification endpoints.
+
 ---
 
 ## Which client do you want?

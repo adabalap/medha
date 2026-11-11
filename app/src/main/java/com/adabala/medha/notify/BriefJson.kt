@@ -97,7 +97,23 @@ object BriefJson {
             // `intent:` or `file:` URL here would be a way for one app to
             // aim the user at something Medha never intended to launch.
             val link = o.optString("link", "").takeIf { isSafeLink(it) }
-            out += BriefPolicy.Item(title, o.optString("text", ""), link)
+            // Absent in every brief written before v0.12.0, and absent in
+            // any item whose client does not send it. optLong's fallback
+            // would be 0, which is a real instant (1 Jan 1970) and would
+            // render every legacy item as decades overdue -- so the key's
+            // presence is checked rather than its value.
+            val dueAt = if (o.has("dueAt") && !o.isNull("dueAt")) {
+                o.optLong("dueAt", 0L).takeIf { it > 0L }
+            } else {
+                null
+            }
+            out += BriefPolicy.Item(
+                title = title,
+                text = o.optString("text", ""),
+                link = link,
+                dueAt = dueAt,
+                kind = BriefPolicy.kindOrNull(o.optString("kind", "").ifBlank { null })
+            )
         }
         return out
     }
@@ -110,6 +126,8 @@ object BriefJson {
             s.items.forEach { i ->
                 val o = JSONObject().put("title", i.title).put("text", i.text)
                 if (i.link != null) o.put("link", i.link)
+                if (i.dueAt != null) o.put("dueAt", i.dueAt)
+                if (i.kind != null) o.put("kind", i.kind)
                 items.put(o)
             }
             arr.put(

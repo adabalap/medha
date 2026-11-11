@@ -229,6 +229,49 @@ fun main() {
     eq("no sections round-trips to no sections",
         BriefJson.parse(BriefJson.encode(emptyList()), NOW).size, 0)
 
+    println("\nBriefJson — dueAt and kind round-trip")
+    val withDue = listOf(BriefPolicy.Section("a", NOW, NOW + 86400000L, listOf(
+        BriefPolicy.Item("ICICI credit card", "payment missed", null, 1778490000000L, "bill"),
+        BriefPolicy.Item("plain", "no extras"))))
+    val dueBack = BriefJson.parse(BriefJson.encode(withDue), NOW)
+    eq("dueAt survives", dueBack.first().items[0].dueAt, 1778490000000L)
+    eq("kind survives", dueBack.first().items[0].kind, "bill")
+    eq("an item without them stays null", dueBack.first().items[1].dueAt, null)
+    eq("kind too", dueBack.first().items[1].kind, null)
+
+    println("\nBriefJson — a legacy item is undated, NOT 1970")
+    // optLong's fallback is 0, which is a real instant. Taken literally it
+    // would render every pre-v0.12.0 item as fifty-odd years overdue --
+    // the entire widget turning red on upgrade.
+    val undated = BriefJson.parse(
+        "{\"sections\":[{\"clientId\":\"a\",\"updatedAt\":" + NOW +
+        ",\"expiresAt\":" + (NOW + 86400000L) +
+        ",\"items\":[{\"title\":\"old\",\"text\":\"x\"}]}]}", NOW)
+    eq("parses", undated.size, 1)
+    eq("dueAt is null, not zero", undated.first().items.first().dueAt, null)
+    eq("so it has no band", BriefPolicy.bandOf(undated.first().items.first().dueAt, NOW), null)
+
+    println("\nBriefJson — hostile dueAt values are dropped")
+    for ((what, raw) in listOf(
+        "explicit null" to "null",
+        "zero" to "0",
+        "negative" to "-5"
+    )) {
+        val parsed = BriefJson.parse(
+            "{\"sections\":[{\"clientId\":\"a\",\"updatedAt\":" + NOW +
+            ",\"expiresAt\":" + (NOW + 86400000L) +
+            ",\"items\":[{\"title\":\"t\",\"dueAt\":" + raw + "}]}]}", NOW)
+        eq("$what becomes null", parsed.first().items.first().dueAt, null)
+    }
+
+    println("\nBriefJson — an unknown kind is dropped, the item is kept")
+    val oddKind = BriefJson.parse(
+        "{\"sections\":[{\"clientId\":\"a\",\"updatedAt\":" + NOW +
+        ",\"expiresAt\":" + (NOW + 86400000L) +
+        ",\"items\":[{\"title\":\"t\",\"kind\":\"spaceship\"}]}]}", NOW)
+    eq("the item survives", oddKind.first().items.size, 1)
+    eq("the kind does not", oddKind.first().items.first().kind, null)
+
     println("\n--------------------------------------------------")
     if (failures == 0) {
         println("BriefJsonTest: all $checks checks passed")

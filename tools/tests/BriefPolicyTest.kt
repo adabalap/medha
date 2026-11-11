@@ -269,6 +269,116 @@ fun main() {
     eq("no rows", stalePage.rows.size, 0)
     check("does not overflow", !stalePage.overflows)
 
+    // ───────────── dueAt: bands and relative time ─────────────
+    //
+    // Added in v0.12.0. Before it, a client sent "overdue 10 days" as prose
+    // and the widget showed that string for as long as the section lived --
+    // observably wrong on a real device, which displayed a five-hour-old
+    // "10 days" without flinching. Medha now derives the distance at draw
+    // time from a timestamp.
+
+    val IST = 5 * 3600_000L + 30 * 60_000L          // Asia/Kolkata, +05:30
+    // 11 Nov 2026, 09:00 UTC = 14:30 IST. Matches the device this was
+    // designed against, so the arithmetic is checked where it is used.
+    val T = 1778490000000L
+
+    println("\nBriefPolicy.dayDelta — whole days, not elapsed milliseconds")
+    eq("same instant is day 0", BriefPolicy.dayDelta(T, T, IST), 0)
+    eq("+1 day", BriefPolicy.dayDelta(T + DAY, T, IST), 1)
+    eq("-1 day", BriefPolicy.dayDelta(T - DAY, T, IST), -1)
+    eq("+10 days", BriefPolicy.dayDelta(T + 10 * DAY, T, IST), 10)
+
+    // THE case the whole design rests on. A bill due "17 Nov" arrives as
+    // local midnight on the 17th. At 14:30 that afternoon an elapsed-time
+    // comparison calls it overdue -- wrong, and alarming. People think in
+    // days, so the arithmetic must too.
+    val midnight17 = T + 6 * DAY - (9 * 3600_000L) - IST + DAY  // 00:00 IST, 17 Nov
+    eq("midnight on the due day, read that afternoon, is still today",
+        BriefPolicy.dayDelta(midnight17, midnight17 + 14 * 3600_000L, IST), 0)
+    eq("and is NOT overdue",
+        BriefPolicy.bandOf(midnight17, midnight17 + 14 * 3600_000L, IST), BriefPolicy.Band.SOON)
+
+    println("\nBriefPolicy.dayDelta — the offset is what makes 'today' local")
+    // 02:00 IST on 12 Nov is still 11 Nov in UTC. Without the offset every
+    // date reads one day short for the five and a half hours overnight --
+    // exactly when a daily brief regenerates.
+    val twoAmIst = T + 11 * 3600_000L + 30 * 60_000L            // 02:00 IST, 12 Nov = 20:30 UTC, 11 Nov
+    val noonIst = twoAmIst + 10 * 3600_000L                     // 12:00 IST, 12 Nov = 06:30 UTC, 12 Nov
+    // Both instants are 12 Nov in Hyderabad, so this is due TODAY.
+    eq("with the offset, a same-local-day due date is 0",
+        BriefPolicy.dayDelta(noonIst, twoAmIst, IST), 0)
+    // In UTC they land either side of midnight, so the same item would be
+    // drawn as "tomorrow" -- wrong, every night between 00:00 and 05:30.
+    eq("in UTC the same pair straddles midnight and reads 1",
+        BriefPolicy.dayDelta(noonIst, twoAmIst, 0L), 1)
+
+    println("\nBriefPolicy.dayDelta — flooring stays correct before the epoch")
+    // Integer division truncates TOWARD ZERO, so -1ms / 86400000 is 0, not
+    // -1: without a floor correction an instant just before the epoch lands
+    // on the same day as the epoch itself. The API drops any dueAt <= 0, so
+    // this is not reachable through PUT today -- but dayDelta is a general
+    // helper, a negative offset can push a small positive dueAt below zero,
+    // and mutation testing showed nothing else was holding the line.
+    eq("one ms before the epoch is the previous day",
+        BriefPolicy.dayDelta(-1L, 0L), -1)
+    eq("exactly the epoch is day zero", BriefPolicy.dayDelta(0L, 0L), 0)
+    eq("a full day before the epoch", BriefPolicy.dayDelta(-DAY, 0L), -1)
+    eq("just over a day before", BriefPolicy.dayDelta(-DAY - 1L, 0L), -2)
+    // The same thing reached the way it actually could be: a tiny dueAt
+    // pushed negative by a western offset.
+    eq("a small dueAt with a negative offset still floors",
+        BriefPolicy.dayDelta(1L, DAY, -5 * 3600_000L), -1)
+
+    println("\nBriefPolicy.bandOf — boundaries")
+    eq("yesterday is OVERDUE", BriefPolicy.bandOf(T - DAY, T, IST), BriefPolicy.Band.OVERDUE)
+    eq("today is SOON", BriefPolicy.bandOf(T, T, IST), BriefPolicy.Band.SOON)
+    eq("day 7 is still SOON", BriefPolicy.bandOf(T + 7 * DAY, T, IST), BriefPolicy.Band.SOON)
+    eq("day 8 is LATER", BriefPolicy.bandOf(T + 8 * DAY, T, IST), BriefPolicy.Band.LATER)
+    eq("SOON_DAYS is the documented 7", BriefPolicy.SOON_DAYS, 7)
+    eq("no due date means no band", BriefPolicy.bandOf(null, T, IST), null)
+
+    println("\nBriefPolicy.relative — the chip the row shows")
+    eq("today", BriefPolicy.relative(T, T, IST), "today")
+    eq("tomorrow", BriefPolicy.relative(T + DAY, T, IST), "tomorrow")
+    eq("yesterday", BriefPolicy.relative(T - DAY, T, IST), "yesterday")
+    eq("10 days over", BriefPolicy.relative(T - 10 * DAY, T, IST), "10d over")
+    eq("in 6 days", BriefPolicy.relative(T + 6 * DAY, T, IST), "in 6d")
+    eq("no due date, no chip", BriefPolicy.relative(null, T, IST), null)
+    // It is derived, so it cannot go stale: the SAME dueAt read a day later
+    // must say something different.
+    eq("the same dueAt reads differently a day on",
+        BriefPolicy.relative(T + 6 * DAY, T + DAY, IST), "in 5d")
+
+    println("\nBriefPolicy.overdueCount — the header badge")
+    val dueMix = listOf(
+        BriefPolicy.Section("a", T, T + DAY, listOf(
+            BriefPolicy.Item("late", "", null, T - 3 * DAY),
+            BriefPolicy.Item("soon", "", null, T + 2 * DAY))),
+        BriefPolicy.Section("b", T, T + DAY, listOf(
+            BriefPolicy.Item("alsoLate", "", null, T - DAY),
+            BriefPolicy.Item("undated", "", null, null)))
+    )
+    eq("counts across every section", BriefPolicy.overdueCount(dueMix, T, IST), 2)
+    eq("an undated item is never overdue",
+        BriefPolicy.overdueCount(
+            listOf(BriefPolicy.Section("c", T, T + DAY, listOf(BriefPolicy.Item("x", "")))), T, IST), 0)
+
+    println("\nBriefPolicy.kindOrNull — a wrong glyph beats a lost item")
+    eq("a known kind", BriefPolicy.kindOrNull("bill"), "bill")
+    eq("case is normalised", BriefPolicy.kindOrNull("BILL"), "bill")
+    eq("whitespace is trimmed", BriefPolicy.kindOrNull("  event "), "event")
+    eq("an unknown kind is dropped, not refused", BriefPolicy.kindOrNull("spaceship"), null)
+    eq("empty", BriefPolicy.kindOrNull(""), null)
+    eq("null", BriefPolicy.kindOrNull(null), null)
+    eq("all six are offered", BriefPolicy.KINDS.size, 6)
+
+    println("\nBriefPolicy.rows — dueAt and kind reach the row")
+    val dated = listOf(BriefPolicy.Section("a", T, T + DAY,
+        listOf(BriefPolicy.Item("bill", "x", null, T - DAY, "bill"))))
+    val r0 = BriefPolicy.rows(dated, T).first()
+    eq("dueAt carried", r0.dueAt, T - DAY)
+    eq("kind carried", r0.kind, "bill")
+
     println("\n--------------------------------------------------")
     if (failures == 0) {
         println("BriefPolicyTest: all $checks checks passed")

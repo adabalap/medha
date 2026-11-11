@@ -111,6 +111,17 @@ class JSONObject {
 
     fun isNull(name: String): Boolean = !map.containsKey(name) || map[name] == null
 
+    /**
+     * Mirrors org.json's `has`: the KEY is present, whatever its value.
+     *
+     * Distinct from `!isNull(name)` on purpose, and BriefJson needs the
+     * distinction. `optLong("dueAt", 0)` cannot tell an absent key from a
+     * stored zero, and zero is a real instant — so every brief written
+     * before dueAt existed would read as fifty-odd years overdue. Checking
+     * the key's presence is what separates "undated" from "due in 1970".
+     */
+    fun has(name: String): Boolean = map.containsKey(name)
+
     override fun toString(): String {
         val sb = StringBuilder("{")
         var first = true

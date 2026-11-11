@@ -171,7 +171,22 @@ data class WidgetItem(
      * rejected, so one bad item does not fail a whole post -- see
      * BriefJson.isSafeLink for why the scheme list is deliberately boring.
      */
-    val link: String? = null
+    val link: String? = null,
+    /**
+     * When this comes due, epoch ms. Optional, and the reason the redesign
+     * is possible: Medha derives the urgency band and the "10d over" chip
+     * from it at draw time.
+     *
+     * Before this, a client sent that distance as prose in [text], which is
+     * wrong as soon as the clock passes midnight — a real device was
+     * observed showing a five-hour-old string still claiming "10 days".
+     */
+    val dueAt: Long? = null,
+    /**
+     * Glyph hint: bill, date, event, alert, done or note. Anything else is
+     * dropped to null rather than refused.
+     */
+    val kind: String? = null
 )
 
 @Serializable
@@ -1540,9 +1555,16 @@ class LocalServer(
                     val stored = notifier.setBrief(
                         clientId = client.id,
                         items = req.items.map {
-                            BriefPolicy.Item(it.title, it.text, it.link?.takeIf { l ->
-                                BriefJson.isSafeLink(l)
-                            })
+                            BriefPolicy.Item(
+                                title = it.title,
+                                text = it.text,
+                                link = it.link?.takeIf { l -> BriefJson.isSafeLink(l) },
+                                // A non-positive dueAt is dropped rather
+                                // than stored: 0 is a real instant and
+                                // would render as 56 years overdue.
+                                dueAt = it.dueAt?.takeIf { d -> d > 0L },
+                                kind = BriefPolicy.kindOrNull(it.kind)
+                            )
                         },
                         ttlMs = req.ttlSeconds?.let { it * 1000 } ?: BriefPolicy.DEFAULT_TTL_MS
                     )
@@ -1578,6 +1600,10 @@ class LocalServer(
                         put("pageRows", BriefPolicy.PAGE_ROWS)
                         put("maxRows", BriefPolicy.MAX_ROWS)
                         put("contributors", all.size)
+                        // Across every section, not just the caller's: the
+                        // header badge counts the whole widget.
+                        put("overdue", BriefPolicy.overdueCount(all, now, tzOffset(now)))
+                        putJsonArray("kinds") { BriefPolicy.KINDS.forEach { k -> add(k) } }
                         putJsonArray("sections") {
                             visible.forEach { s ->
                                 addJsonObject {
@@ -1594,6 +1620,18 @@ class LocalServer(
                                                 // tell a dropped link from a
                                                 // kept one.
                                                 if (i.link != null) put("link", i.link)
+                                                if (i.dueAt != null) put("dueAt", i.dueAt)
+                                                if (i.kind != null) put("kind", i.kind)
+                                                // What Medha DERIVED, so a
+                                                // client can see the band it
+                                                // will be drawn in without
+                                                // reimplementing the rule —
+                                                // and spot a dueAt it got
+                                                // wrong by a timezone.
+                                                BriefPolicy.bandOf(i.dueAt, now, tzOffset(now))
+                                                    ?.let { b -> put("band", b.name.lowercase()) }
+                                                BriefPolicy.relative(i.dueAt, now, tzOffset(now))
+                                                    ?.let { r -> put("due", r) }
                                             }
                                         }
                                     }
@@ -1783,6 +1821,21 @@ class LocalServer(
         engine.loadedModelPath?.substringAfterLast('/') ?: "medha"
 
     private fun nowSeconds(): Long = System.currentTimeMillis() / 1000
+
+    /**
+     * The device's UTC offset at [at], in ms.
+     *
+     * "Today" is a local idea. At 02:00 in Hyderabad it is still the
+     * previous day in UTC, so a due date compared in UTC reads one day
+     * short for the five and a half hours that matter most — overnight,
+     * which is exactly when a daily brief is regenerated.
+     *
+     * Read per call rather than cached: the offset changes under DST, and
+     * a server that has been up since before the change would otherwise be
+     * an hour out until it restarts.
+     */
+    private fun tzOffset(at: Long): Long =
+        java.util.TimeZone.getDefault().getOffset(at).toLong()
 
     /** One OpenAI `chat.completion.chunk`. */
     private fun chunk(

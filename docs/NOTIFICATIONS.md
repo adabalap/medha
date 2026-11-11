@@ -1,5 +1,10 @@
 # Notifications from a web app
 
+> **Writing a daemon or script rather than a browser app?** Read
+> [BRIEF-API.md](BRIEF-API.md) instead — the exact request and response
+> shapes, every limit as a number, and none of the pairing-code or CORS
+> material below, which applies only to browsers.
+
 How a web app — hosted anywhere — posts to this phone's notification shade
 through Medha, and why the design is shaped the way it is.
 

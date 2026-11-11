@@ -58,8 +58,26 @@ object BriefPolicy {
       * hashed namespace rather than the caller's package, so it cannot
       * launch the posting app and will not guess. With no link, tapping
       * opens a detail sheet instead of doing nothing.
-      */
-     data class Item(val title: String, val text: String, val link: String? = null)
+      *
+      * [dueAt] is when the item comes due, epoch ms, and is optional.
+     *
+     * It exists because the alternative is prose. Before v0.12.0 a client
+     * sent "overdue 10 days" as [text], which is wrong the moment the clock
+     * passes midnight and was observably wrong on a real device: a widget
+     * showing a five-hour-old string that still claimed "10 days". A
+     * timestamp lets Medha compute the distance at draw time, every time.
+     *
+     * [kind] is one of [KINDS], and only chooses a glyph. Unknown values
+     * are dropped rather than rejected — a client sending a kind Medha has
+     * never heard of should still get its item on the screen.
+     */
+     data class Item(
+        val title: String,
+        val text: String,
+        val link: String? = null,
+        val dueAt: Long? = null,
+        val kind: String? = null
+     )
 
     /** One client's contribution, replaced wholesale when it writes again. */
     data class Section(
@@ -75,7 +93,9 @@ object BriefPolicy {
         val text: String,
         val clientId: String,
         val updatedAt: Long,
-        val link: String? = null
+        val link: String? = null,
+        val dueAt: Long? = null,
+        val kind: String? = null
     )
 
     /**
@@ -165,7 +185,9 @@ object BriefPolicy {
                     text = item.text,
                     clientId = s.clientId,
                     updatedAt = s.updatedAt,
-                    link = item.link
+                    link = item.link,
+                    dueAt = item.dueAt,
+                    kind = item.kind
                 )
                 if (out.size == maxRows) return out
             }
@@ -245,6 +267,82 @@ object BriefPolicy {
      * since moved backwards; it reads as "just now" rather than a negative
      * figure.
      */
+    /**
+     * Which urgency band an item falls in. Drives colour, grouping and the
+     * overdue count in the widget header.
+     */
+    enum class Band { OVERDUE, SOON, LATER }
+
+    /** Days ahead, inclusive, that still count as [Band.SOON]. */
+    const val SOON_DAYS = 7
+
+    private const val DAY_MS = 24 * 60 * 60 * 1000L
+
+    /**
+     * Whole days from today to [dueAt]'s day: negative in the past, 0 today.
+     *
+     * **Day granularity, not elapsed milliseconds**, and that is the whole
+     * point. A bill due "17 Nov" arrives as midnight on the 17th; by 14:00
+     * that day an elapsed-time comparison calls it overdue, which is both
+     * wrong and alarming. People think in days, so the arithmetic does too.
+     *
+     * [offsetMs] is the viewer's UTC offset, because "today" is a local
+     * idea — at 02:00 in Hyderabad it is still the previous day in UTC, and
+     * every date would read one short. The caller passes the device offset;
+     * this file stays free of Android so it can be tested.
+     */
+    fun dayDelta(dueAt: Long, now: Long, offsetMs: Long = 0L): Int =
+        (floorDay(dueAt + offsetMs) - floorDay(now + offsetMs)).toInt()
+
+    /** Floor division into whole days; correct for pre-epoch values too. */
+    private fun floorDay(ms: Long): Long {
+        val d = ms / DAY_MS
+        return if (ms < 0 && d * DAY_MS != ms) d - 1 else d
+    }
+
+    /** The band for [dueAt], or null when an item carries no due date. */
+    fun bandOf(dueAt: Long?, now: Long, offsetMs: Long = 0L): Band? {
+        if (dueAt == null) return null
+        val d = dayDelta(dueAt, now, offsetMs)
+        return when {
+            d < 0 -> Band.OVERDUE
+            d <= SOON_DAYS -> Band.SOON
+            else -> Band.LATER
+        }
+    }
+
+    /**
+     * The short chip a row shows: `10d over`, `today`, `in 6d`.
+     *
+     * Computed at draw time from [dueAt], so it cannot go stale the way a
+     * client-supplied string does.
+     */
+    fun relative(dueAt: Long?, now: Long, offsetMs: Long = 0L): String? {
+        if (dueAt == null) return null
+        return when (val d = dayDelta(dueAt, now, offsetMs)) {
+            0 -> "today"
+            1 -> "tomorrow"
+            -1 -> "yesterday"
+            else -> if (d < 0) "${-d}d over" else "in ${d}d"
+        }
+    }
+
+    /** How many items in [sections] are overdue. The widget header's badge. */
+    fun overdueCount(sections: List<Section>, now: Long, offsetMs: Long = 0L): Int =
+        sections.sumOf { s ->
+            s.items.count { bandOf(it.dueAt, now, offsetMs) == Band.OVERDUE }
+        }
+
+    /**
+     * Glyphs a client may ask for. Anything else is dropped to null rather
+     * than refused: a wrong icon is a smaller failure than a lost item.
+     */
+    val KINDS = setOf("bill", "date", "event", "alert", "done", "note")
+
+    /** Normalises a caller's `kind`, or null if it is not one Medha draws. */
+    fun kindOrNull(raw: String?): String? =
+        raw?.trim()?.lowercase()?.takeIf { it in KINDS }
+
     fun age(updatedAt: Long, now: Long): String {
         val ms = now - updatedAt
         if (ms < 60_000) return "just now"
