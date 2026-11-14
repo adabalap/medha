@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.Uri
 import android.os.Build
+import com.adabala.medha.connect.MedhaNotificationListener
 import com.adabala.medha.notify.BriefTheme
 import com.adabala.medha.notify.BriefWidgets
 import android.os.Bundle
@@ -183,6 +184,7 @@ class MainActivity : AppCompatActivity() {
             binding.drawerLayout.closeDrawer(GravityCompat.START)
             when (item.itemId) {
                 R.id.nav_open_pwa -> openDemo()
+                R.id.nav_notif_listen -> showNotificationListenDialog()
                 R.id.nav_brief_theme -> showBriefThemeDialog()
                 R.id.nav_clients -> showClientsDialog()
                 R.id.nav_pair_web -> showPairWebDialog()
@@ -368,6 +370,84 @@ class MainActivity : AppCompatActivity() {
      * shown in full exactly once at creation, so "no copy" meant a typo in the
      * client id was unrecoverable and the token was gone for good.
      */
+    /**
+     * Turning notification reading on, and explaining what it costs.
+     *
+     * Two switches, shown together because they fail differently. Android's
+     * grant is the consent and lives in system settings; Medha's own switch
+     * is so the feature can be stopped from here without hunting for that
+     * screen again. Neither alone reads anything.
+     *
+     * The body is long on purpose. This is the one place in Medha that
+     * reads data the user did not hand to it, and the honest version of
+     * that sentence does not fit on a toggle label.
+     */
+    private fun showNotificationListenDialog() {
+        val granted = notificationAccessGranted()
+        val medhaOn = prefs.getBoolean(
+            MedhaNotificationListener.KEY_ENABLED,
+            MedhaNotificationListener.DEFAULT_ENABLED
+        )
+
+        val status =
+            (if (granted) getString(R.string.notif_listen_granted)
+            else getString(R.string.notif_listen_not_granted)) + "\n" +
+                (if (medhaOn) getString(R.string.notif_listen_on)
+                else getString(R.string.notif_listen_off))
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.notif_listen_title)
+            .setIcon(R.drawable.ic_info)
+            .setMessage(getString(R.string.notif_listen_body) + "\n\n" + status)
+            .setPositiveButton(R.string.notif_listen_grant) { _, _ ->
+                openNotificationAccessSettings()
+            }
+            .setNeutralButton(
+                if (medhaOn) R.string.notif_listen_turn_off else R.string.notif_listen_turn_on
+            ) { _, _ ->
+                prefs.edit()
+                    .putBoolean(MedhaNotificationListener.KEY_ENABLED, !medhaOn)
+                    .apply()
+                toast(
+                    getString(
+                        if (medhaOn) R.string.notif_listen_off else R.string.notif_listen_on
+                    )
+                )
+            }
+            .setNegativeButton(R.string.close, null)
+            .show()
+    }
+
+    /**
+     * Whether the system has bound our listener.
+     *
+     * Read from Settings.Secure every time rather than cached: the user can
+     * revoke it in system settings whenever they like and Medha is never
+     * told, so a remembered answer would be confidently wrong exactly when
+     * it mattered.
+     */
+    private fun notificationAccessGranted(): Boolean = runCatching {
+        android.provider.Settings.Secure
+            .getString(contentResolver, "enabled_notification_listeners")
+            .orEmpty()
+            .contains(packageName)
+    }.getOrDefault(false)
+
+    /**
+     * Falls back to the top of Settings rather than dying: the listener
+     * screen is missing or renamed on some vendor builds, and a dead button
+     * is worse than a longer walk.
+     */
+    private fun openNotificationAccessSettings() {
+        val actions = listOf(
+            android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS,
+            android.provider.Settings.ACTION_SETTINGS
+        )
+        for (action in actions) {
+            if (runCatching { startActivity(Intent(action)); true }.getOrDefault(false)) return
+        }
+    }
+
     /**
      * Picks the accent the brief widget draws with.
      *

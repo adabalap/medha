@@ -66,10 +66,11 @@ abstract class BriefWidgetProvider : AppWidgetProvider() {
 
     protected class Slot(
         val row: Int,
-        val bar: Int,
+        val tile: Int,
         val icon: Int,
         val title: Int,
         val text: Int,
+        val pill: Int,
         val mark: Int
     )
 
@@ -159,7 +160,8 @@ abstract class BriefWidgetProvider : AppWidgetProvider() {
                         // out here. Any call that takes a resolved colour int
                         // would bake in Medha's configuration instead and be
                         // wrong in one of the two themes, invisibly.
-                        v.setImageViewResource(slot.bar, BriefIcons.bar(line.band, theme))
+                        v.setImageViewResource(slot.tile, BriefIcons.tile(line.band))
+                        v.setImageViewResource(slot.pill, BriefIcons.pill(line.band))
                         v.setImageViewResource(slot.icon, BriefIcons.icon(line.kind))
                     }
                 }
@@ -199,12 +201,12 @@ abstract class BriefWidgetProvider : AppWidgetProvider() {
 class MedhaWidgetProvider : BriefWidgetProvider() {
     override val layout = R.layout.widget_brief_4x2
     override val slots = listOf(
-        Slot(R.id.widgetRow1, R.id.widgetBar1, R.id.widgetIcon1,
-            R.id.widgetTitle1, R.id.widgetText1, R.id.widgetMark1),
-        Slot(R.id.widgetRow2, R.id.widgetBar2, R.id.widgetIcon2,
-            R.id.widgetTitle2, R.id.widgetText2, R.id.widgetMark2),
-        Slot(R.id.widgetRow3, R.id.widgetBar3, R.id.widgetIcon3,
-            R.id.widgetTitle3, R.id.widgetText3, R.id.widgetMark3)
+        Slot(R.id.widgetRow1, R.id.widgetTile1, R.id.widgetIcon1,
+            R.id.widgetTitle1, R.id.widgetText1, R.id.widgetPill1, R.id.widgetMark1),
+        Slot(R.id.widgetRow2, R.id.widgetTile2, R.id.widgetIcon2,
+            R.id.widgetTitle2, R.id.widgetText2, R.id.widgetPill2, R.id.widgetMark2),
+        Slot(R.id.widgetRow3, R.id.widgetTile3, R.id.widgetIcon3,
+            R.id.widgetTitle3, R.id.widgetText3, R.id.widgetPill3, R.id.widgetMark3)
     )
 }
 
@@ -213,8 +215,8 @@ class MedhaWidget2x2Provider : BriefWidgetProvider() {
     override val layout = R.layout.widget_brief_2x2
     override val foldId: Int? = null
     override val slots = listOf(
-        Slot(R.id.widgetRow1, R.id.widgetBar1, R.id.widgetIcon1,
-            R.id.widgetTitle1, R.id.widgetText1, R.id.widgetMark1)
+        Slot(R.id.widgetRow1, R.id.widgetTile1, R.id.widgetIcon1,
+            R.id.widgetTitle1, R.id.widgetText1, R.id.widgetPill1, R.id.widgetMark1)
     )
 }
 
@@ -226,8 +228,8 @@ class MedhaWidget4x4Provider : BriefWidgetProvider() {
     // check_widget_wiring.py compares all three.
     override val slots = (1..BriefRender.ROWS_4X4).map { n ->
         Slot(
-            ROW_IDS[n - 1], BAR_IDS[n - 1], ICON_IDS[n - 1],
-            TITLE_IDS[n - 1], TEXT_IDS[n - 1], MARK_IDS[n - 1]
+            ROW_IDS[n - 1], TILE_IDS[n - 1], ICON_IDS[n - 1],
+            TITLE_IDS[n - 1], TEXT_IDS[n - 1], PILL_IDS[n - 1], MARK_IDS[n - 1]
         )
     }
 
@@ -239,9 +241,13 @@ class MedhaWidget4x4Provider : BriefWidgetProvider() {
             R.id.widgetRow1, R.id.widgetRow2, R.id.widgetRow3, R.id.widgetRow4,
             R.id.widgetRow5, R.id.widgetRow6, R.id.widgetRow7
         )
-        val BAR_IDS = intArrayOf(
-            R.id.widgetBar1, R.id.widgetBar2, R.id.widgetBar3, R.id.widgetBar4,
-            R.id.widgetBar5, R.id.widgetBar6, R.id.widgetBar7
+        val TILE_IDS = intArrayOf(
+            R.id.widgetTile1, R.id.widgetTile2, R.id.widgetTile3, R.id.widgetTile4,
+            R.id.widgetTile5, R.id.widgetTile6, R.id.widgetTile7
+        )
+        val PILL_IDS = intArrayOf(
+            R.id.widgetPill1, R.id.widgetPill2, R.id.widgetPill3, R.id.widgetPill4,
+            R.id.widgetPill5, R.id.widgetPill6, R.id.widgetPill7
         )
         val ICON_IDS = intArrayOf(
             R.id.widgetIcon1, R.id.widgetIcon2, R.id.widgetIcon3, R.id.widgetIcon4,

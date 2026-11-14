@@ -2,8 +2,8 @@
 <!--
   One line of the full brief.
 
-  Deliberately the same anatomy as a widget row — urgency bar, kind icon,
-  title, detail, countdown — because the screen is what the widget opens
+  Deliberately the same anatomy as a widget row — a tinted kind tile,
+  title, detail, and the countdown in a tinted pill — because the screen is what the widget opens
   into, and a tap that rearranges everything makes the user re-find the row
   they were already looking at. Same order, same colours, more room.
 
@@ -26,19 +26,18 @@
     android:paddingTop="10dp"
     android:paddingBottom="10dp">
 
-    <ImageView android:id="@+id/rowBar"
-        android:layout_width="3dp" android:layout_height="match_parent"
-        android:layout_marginEnd="14dp"
-        android:layout_marginTop="2dp" android:layout_marginBottom="2dp"
-        android:scaleType="fitXY"
-        android:contentDescription="@null"
-        android:src="@drawable/bar_none" />
-
-    <ImageView android:id="@+id/rowIcon"
-        android:layout_width="20dp" android:layout_height="20dp"
-        android:layout_marginEnd="14dp"
-        android:contentDescription="@null"
-        android:src="@drawable/ic_kind_note" />
+    <FrameLayout android:layout_width="38dp" android:layout_height="38dp"
+        android:layout_marginEnd="14dp">
+        <ImageView android:id="@+id/rowTile"
+            android:layout_width="match_parent" android:layout_height="match_parent"
+            android:scaleType="fitXY" android:contentDescription="@null"
+            android:src="@drawable/tile_none" />
+        <ImageView android:id="@+id/rowIcon"
+            android:layout_width="20dp" android:layout_height="20dp"
+            android:layout_gravity="center"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_kind_note" />
+    </FrameLayout>
 
     <LinearLayout android:layout_width="0dp" android:layout_weight="1"
         android:layout_height="wrap_content" android:orientation="vertical">
@@ -59,9 +58,17 @@
             android:visibility="gone" android:text="" />
     </LinearLayout>
 
-    <TextView android:id="@+id/rowMark"
-        android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:paddingStart="14dp"
-        android:textAppearance="?attr/textAppearanceLabelMedium"
-        android:maxLines="1" android:text="" />
+    <FrameLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:layout_marginStart="12dp">
+        <ImageView android:id="@+id/rowPill"
+            android:layout_width="match_parent" android:layout_height="match_parent"
+            android:scaleType="fitXY" android:contentDescription="@null"
+            android:src="@drawable/pill_none" />
+        <TextView android:id="@+id/rowMark"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:paddingStart="10dp" android:paddingEnd="10dp"
+            android:paddingTop="4dp" android:paddingBottom="4dp"
+            android:textAppearance="?attr/textAppearanceLabelMedium"
+            android:maxLines="1" android:text="" />
+    </FrameLayout>
 </LinearLayout>

@@ -88,4 +88,15 @@
     <color name="accent_teal">#116B5C</color>
     <color name="accent_rose">#A52562</color>
     <color name="accent_amber">#8A5A00</color>
+
+    <!-- Washes behind the kind tile and the countdown pill.
+
+         The band colour at low alpha, as literal ARGB rather than a
+         reference: Android colour resources cannot apply an alpha to
+         another colour, so the wash has to be written out per theme. Fixed
+         like the bands they belong to, and absent from values-v31 for the
+         same reason. -->
+    <color name="band_soon_tint">#1A8A5A00</color>
+    <color name="band_later_tint">#1A4A38C4</color>
+    <color name="band_none_tint">#12000000</color>
 </resources>

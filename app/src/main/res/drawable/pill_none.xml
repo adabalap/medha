@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The countdown pill, washed in the none band.
+
+     A background on an ImageView BEHIND the text rather than on the
+     TextView itself: setImageViewResource takes a resource id the launcher
+     resolves, which is what keeps dark mode right, while setting a
+     background from the provider would need an already-resolved value. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/band_none_tint" />
+    <corners android:radius="999dp" />
+</shape>

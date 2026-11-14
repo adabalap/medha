@@ -94,6 +94,31 @@
         </activity>
 
         <!-- ===============================================================
+             NOTIFICATION LISTENER.
+
+             Declared with android:permission so ONLY the system may bind
+             it. Without that line any app could bind this service directly
+             and drive it.
+
+             exported="true" is required and is not a loosening: a listener
+             is started by the system, which cannot bind an unexported
+             service. The permission above is what keeps that narrow.
+
+             Nothing happens until the user grants notification access in
+             Android settings AND leaves Medha's own switch on. Until then
+             the system never binds this and no notification is read.
+             =============================================================== -->
+        <service
+            android:name=".connect.MedhaNotificationListener"
+            android:label="@string/notif_listen_title"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- ===============================================================
              THREE BRIEF WIDGETS, THREE RECEIVERS.
 
              The widget picker lists one entry per provider, so three sizes

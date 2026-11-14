@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The rounded tile behind a row's kind glyph, washed in the overdue band.
+
+     This replaced the 3dp hairline bar in v0.16.0. The bar was a reading
+     aid; a tile is the thing the eye lands on first, and it carries the
+     same urgency colour in a shape big enough to read at arm's length. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/band_overdue_tint" />
+    <corners android:radius="10dp" />
+</shape>

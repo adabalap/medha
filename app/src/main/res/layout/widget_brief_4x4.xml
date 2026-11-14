@@ -83,21 +83,21 @@
 
     <LinearLayout android:id="@+id/widgetRow1"
         android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal" android:baselineAligned="false">
+        android:orientation="horizontal" android:baselineAligned="false"
+        android:gravity="center_vertical">
 
-        <ImageView android:id="@+id/widgetBar1"
-            android:layout_width="3dp" android:layout_height="match_parent"
-            android:layout_marginEnd="10dp"
-            android:layout_marginTop="2dp" android:layout_marginBottom="2dp"
-            android:scaleType="fitXY"
-            android:contentDescription="@null"
-            android:src="@drawable/bar_none" />
-
-        <ImageView android:id="@+id/widgetIcon1"
-            android:layout_width="15dp" android:layout_height="15dp"
-            android:layout_marginEnd="9dp" android:layout_marginTop="2dp"
-            android:contentDescription="@null"
-            android:src="@drawable/ic_kind_note" />
+        <FrameLayout android:layout_width="30dp" android:layout_height="30dp"
+            android:layout_marginEnd="12dp">
+            <ImageView android:id="@+id/widgetTile1"
+                android:layout_width="match_parent" android:layout_height="match_parent"
+                android:scaleType="fitXY" android:contentDescription="@null"
+                android:src="@drawable/tile_none" />
+            <ImageView android:id="@+id/widgetIcon1"
+                android:layout_width="16dp" android:layout_height="16dp"
+                android:layout_gravity="center"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_kind_note" />
+        </FrameLayout>
 
         <LinearLayout android:layout_width="0dp" android:layout_weight="1"
             android:layout_height="wrap_content" android:orientation="vertical">
@@ -113,30 +113,39 @@
                 android:lineSpacingExtra="1dp" android:text="" />
         </LinearLayout>
 
-        <TextView android:id="@+id/widgetMark1"
-            android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:paddingStart="10dp" android:textSize="10.5sp"
-            android:textStyle="bold" android:textColor="@color/brief_widget_meta"
-            android:maxLines="1" android:ellipsize="end" android:text="" />
+        <FrameLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginStart="10dp">
+            <ImageView android:id="@+id/widgetPill1"
+                android:layout_width="match_parent" android:layout_height="match_parent"
+                android:scaleType="fitXY" android:contentDescription="@null"
+                android:src="@drawable/pill_none" />
+            <TextView android:id="@+id/widgetMark1"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:paddingStart="9dp" android:paddingEnd="9dp"
+                android:paddingTop="3dp" android:paddingBottom="3dp"
+                android:textSize="10.5sp" android:textStyle="bold"
+                android:textColor="@color/brief_widget_title"
+                android:maxLines="1" android:text="" />
+        </FrameLayout>
     </LinearLayout>
 
     <LinearLayout android:id="@+id/widgetRow2"
         android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal" android:baselineAligned="false" android:paddingTop="7dp">
+        android:orientation="horizontal" android:baselineAligned="false"
+        android:gravity="center_vertical" android:paddingTop="9dp">
 
-        <ImageView android:id="@+id/widgetBar2"
-            android:layout_width="3dp" android:layout_height="match_parent"
-            android:layout_marginEnd="10dp"
-            android:layout_marginTop="2dp" android:layout_marginBottom="2dp"
-            android:scaleType="fitXY"
-            android:contentDescription="@null"
-            android:src="@drawable/bar_none" />
-
-        <ImageView android:id="@+id/widgetIcon2"
-            android:layout_width="15dp" android:layout_height="15dp"
-            android:layout_marginEnd="9dp" android:layout_marginTop="2dp"
-            android:contentDescription="@null"
-            android:src="@drawable/ic_kind_note" />
+        <FrameLayout android:layout_width="30dp" android:layout_height="30dp"
+            android:layout_marginEnd="12dp">
+            <ImageView android:id="@+id/widgetTile2"
+                android:layout_width="match_parent" android:layout_height="match_parent"
+                android:scaleType="fitXY" android:contentDescription="@null"
+                android:src="@drawable/tile_none" />
+            <ImageView android:id="@+id/widgetIcon2"
+                android:layout_width="16dp" android:layout_height="16dp"
+                android:layout_gravity="center"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_kind_note" />
+        </FrameLayout>
 
         <LinearLayout android:layout_width="0dp" android:layout_weight="1"
             android:layout_height="wrap_content" android:orientation="vertical">
@@ -152,30 +161,39 @@
                 android:lineSpacingExtra="1dp" android:text="" />
         </LinearLayout>
 
-        <TextView android:id="@+id/widgetMark2"
-            android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:paddingStart="10dp" android:textSize="10.5sp"
-            android:textStyle="bold" android:textColor="@color/brief_widget_meta"
-            android:maxLines="1" android:ellipsize="end" android:text="" />
+        <FrameLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginStart="10dp">
+            <ImageView android:id="@+id/widgetPill2"
+                android:layout_width="match_parent" android:layout_height="match_parent"
+                android:scaleType="fitXY" android:contentDescription="@null"
+                android:src="@drawable/pill_none" />
+            <TextView android:id="@+id/widgetMark2"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:paddingStart="9dp" android:paddingEnd="9dp"
+                android:paddingTop="3dp" android:paddingBottom="3dp"
+                android:textSize="10.5sp" android:textStyle="bold"
+                android:textColor="@color/brief_widget_title"
+                android:maxLines="1" android:text="" />
+        </FrameLayout>
     </LinearLayout>
 
     <LinearLayout android:id="@+id/widgetRow3"
         android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal" android:baselineAligned="false" android:paddingTop="7dp">
+        android:orientation="horizontal" android:baselineAligned="false"
+        android:gravity="center_vertical" android:paddingTop="9dp">
 
-        <ImageView android:id="@+id/widgetBar3"
-            android:layout_width="3dp" android:layout_height="match_parent"
-            android:layout_marginEnd="10dp"
-            android:layout_marginTop="2dp" android:layout_marginBottom="2dp"
-            android:scaleType="fitXY"
-            android:contentDescription="@null"
-            android:src="@drawable/bar_none" />
-
-        <ImageView android:id="@+id/widgetIcon3"
-            android:layout_width="15dp" android:layout_height="15dp"
-            android:layout_marginEnd="9dp" android:layout_marginTop="2dp"
-            android:contentDescription="@null"
-            android:src="@drawable/ic_kind_note" />
+        <FrameLayout android:layout_width="30dp" android:layout_height="30dp"
+            android:layout_marginEnd="12dp">
+            <ImageView android:id="@+id/widgetTile3"
+                android:layout_width="match_parent" android:layout_height="match_parent"
+                android:scaleType="fitXY" android:contentDescription="@null"
+                android:src="@drawable/tile_none" />
+            <ImageView android:id="@+id/widgetIcon3"
+                android:layout_width="16dp" android:layout_height="16dp"
+                android:layout_gravity="center"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_kind_note" />
+        </FrameLayout>
 
         <LinearLayout android:layout_width="0dp" android:layout_weight="1"
             android:layout_height="wrap_content" android:orientation="vertical">
@@ -191,30 +209,39 @@
                 android:lineSpacingExtra="1dp" android:text="" />
         </LinearLayout>
 
-        <TextView android:id="@+id/widgetMark3"
-            android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:paddingStart="10dp" android:textSize="10.5sp"
-            android:textStyle="bold" android:textColor="@color/brief_widget_meta"
-            android:maxLines="1" android:ellipsize="end" android:text="" />
+        <FrameLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginStart="10dp">
+            <ImageView android:id="@+id/widgetPill3"
+                android:layout_width="match_parent" android:layout_height="match_parent"
+                android:scaleType="fitXY" android:contentDescription="@null"
+                android:src="@drawable/pill_none" />
+            <TextView android:id="@+id/widgetMark3"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:paddingStart="9dp" android:paddingEnd="9dp"
+                android:paddingTop="3dp" android:paddingBottom="3dp"
+                android:textSize="10.5sp" android:textStyle="bold"
+                android:textColor="@color/brief_widget_title"
+                android:maxLines="1" android:text="" />
+        </FrameLayout>
     </LinearLayout>
 
     <LinearLayout android:id="@+id/widgetRow4"
         android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal" android:baselineAligned="false" android:paddingTop="7dp">
+        android:orientation="horizontal" android:baselineAligned="false"
+        android:gravity="center_vertical" android:paddingTop="9dp">
 
-        <ImageView android:id="@+id/widgetBar4"
-            android:layout_width="3dp" android:layout_height="match_parent"
-            android:layout_marginEnd="10dp"
-            android:layout_marginTop="2dp" android:layout_marginBottom="2dp"
-            android:scaleType="fitXY"
-            android:contentDescription="@null"
-            android:src="@drawable/bar_none" />
-
-        <ImageView android:id="@+id/widgetIcon4"
-            android:layout_width="15dp" android:layout_height="15dp"
-            android:layout_marginEnd="9dp" android:layout_marginTop="2dp"
-            android:contentDescription="@null"
-            android:src="@drawable/ic_kind_note" />
+        <FrameLayout android:layout_width="30dp" android:layout_height="30dp"
+            android:layout_marginEnd="12dp">
+            <ImageView android:id="@+id/widgetTile4"
+                android:layout_width="match_parent" android:layout_height="match_parent"
+                android:scaleType="fitXY" android:contentDescription="@null"
+                android:src="@drawable/tile_none" />
+            <ImageView android:id="@+id/widgetIcon4"
+                android:layout_width="16dp" android:layout_height="16dp"
+                android:layout_gravity="center"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_kind_note" />
+        </FrameLayout>
 
         <LinearLayout android:layout_width="0dp" android:layout_weight="1"
             android:layout_height="wrap_content" android:orientation="vertical">
@@ -230,30 +257,39 @@
                 android:lineSpacingExtra="1dp" android:text="" />
         </LinearLayout>
 
-        <TextView android:id="@+id/widgetMark4"
-            android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:paddingStart="10dp" android:textSize="10.5sp"
-            android:textStyle="bold" android:textColor="@color/brief_widget_meta"
-            android:maxLines="1" android:ellipsize="end" android:text="" />
+        <FrameLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginStart="10dp">
+            <ImageView android:id="@+id/widgetPill4"
+                android:layout_width="match_parent" android:layout_height="match_parent"
+                android:scaleType="fitXY" android:contentDescription="@null"
+                android:src="@drawable/pill_none" />
+            <TextView android:id="@+id/widgetMark4"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:paddingStart="9dp" android:paddingEnd="9dp"
+                android:paddingTop="3dp" android:paddingBottom="3dp"
+                android:textSize="10.5sp" android:textStyle="bold"
+                android:textColor="@color/brief_widget_title"
+                android:maxLines="1" android:text="" />
+        </FrameLayout>
     </LinearLayout>
 
     <LinearLayout android:id="@+id/widgetRow5"
         android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal" android:baselineAligned="false" android:paddingTop="7dp">
+        android:orientation="horizontal" android:baselineAligned="false"
+        android:gravity="center_vertical" android:paddingTop="9dp">
 
-        <ImageView android:id="@+id/widgetBar5"
-            android:layout_width="3dp" android:layout_height="match_parent"
-            android:layout_marginEnd="10dp"
-            android:layout_marginTop="2dp" android:layout_marginBottom="2dp"
-            android:scaleType="fitXY"
-            android:contentDescription="@null"
-            android:src="@drawable/bar_none" />
-
-        <ImageView android:id="@+id/widgetIcon5"
-            android:layout_width="15dp" android:layout_height="15dp"
-            android:layout_marginEnd="9dp" android:layout_marginTop="2dp"
-            android:contentDescription="@null"
-            android:src="@drawable/ic_kind_note" />
+        <FrameLayout android:layout_width="30dp" android:layout_height="30dp"
+            android:layout_marginEnd="12dp">
+            <ImageView android:id="@+id/widgetTile5"
+                android:layout_width="match_parent" android:layout_height="match_parent"
+                android:scaleType="fitXY" android:contentDescription="@null"
+                android:src="@drawable/tile_none" />
+            <ImageView android:id="@+id/widgetIcon5"
+                android:layout_width="16dp" android:layout_height="16dp"
+                android:layout_gravity="center"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_kind_note" />
+        </FrameLayout>
 
         <LinearLayout android:layout_width="0dp" android:layout_weight="1"
             android:layout_height="wrap_content" android:orientation="vertical">
@@ -269,30 +305,39 @@
                 android:lineSpacingExtra="1dp" android:text="" />
         </LinearLayout>
 
-        <TextView android:id="@+id/widgetMark5"
-            android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:paddingStart="10dp" android:textSize="10.5sp"
-            android:textStyle="bold" android:textColor="@color/brief_widget_meta"
-            android:maxLines="1" android:ellipsize="end" android:text="" />
+        <FrameLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginStart="10dp">
+            <ImageView android:id="@+id/widgetPill5"
+                android:layout_width="match_parent" android:layout_height="match_parent"
+                android:scaleType="fitXY" android:contentDescription="@null"
+                android:src="@drawable/pill_none" />
+            <TextView android:id="@+id/widgetMark5"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:paddingStart="9dp" android:paddingEnd="9dp"
+                android:paddingTop="3dp" android:paddingBottom="3dp"
+                android:textSize="10.5sp" android:textStyle="bold"
+                android:textColor="@color/brief_widget_title"
+                android:maxLines="1" android:text="" />
+        </FrameLayout>
     </LinearLayout>
 
     <LinearLayout android:id="@+id/widgetRow6"
         android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal" android:baselineAligned="false" android:paddingTop="7dp">
+        android:orientation="horizontal" android:baselineAligned="false"
+        android:gravity="center_vertical" android:paddingTop="9dp">
 
-        <ImageView android:id="@+id/widgetBar6"
-            android:layout_width="3dp" android:layout_height="match_parent"
-            android:layout_marginEnd="10dp"
-            android:layout_marginTop="2dp" android:layout_marginBottom="2dp"
-            android:scaleType="fitXY"
-            android:contentDescription="@null"
-            android:src="@drawable/bar_none" />
-
-        <ImageView android:id="@+id/widgetIcon6"
-            android:layout_width="15dp" android:layout_height="15dp"
-            android:layout_marginEnd="9dp" android:layout_marginTop="2dp"
-            android:contentDescription="@null"
-            android:src="@drawable/ic_kind_note" />
+        <FrameLayout android:layout_width="30dp" android:layout_height="30dp"
+            android:layout_marginEnd="12dp">
+            <ImageView android:id="@+id/widgetTile6"
+                android:layout_width="match_parent" android:layout_height="match_parent"
+                android:scaleType="fitXY" android:contentDescription="@null"
+                android:src="@drawable/tile_none" />
+            <ImageView android:id="@+id/widgetIcon6"
+                android:layout_width="16dp" android:layout_height="16dp"
+                android:layout_gravity="center"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_kind_note" />
+        </FrameLayout>
 
         <LinearLayout android:layout_width="0dp" android:layout_weight="1"
             android:layout_height="wrap_content" android:orientation="vertical">
@@ -308,30 +353,39 @@
                 android:lineSpacingExtra="1dp" android:text="" />
         </LinearLayout>
 
-        <TextView android:id="@+id/widgetMark6"
-            android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:paddingStart="10dp" android:textSize="10.5sp"
-            android:textStyle="bold" android:textColor="@color/brief_widget_meta"
-            android:maxLines="1" android:ellipsize="end" android:text="" />
+        <FrameLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginStart="10dp">
+            <ImageView android:id="@+id/widgetPill6"
+                android:layout_width="match_parent" android:layout_height="match_parent"
+                android:scaleType="fitXY" android:contentDescription="@null"
+                android:src="@drawable/pill_none" />
+            <TextView android:id="@+id/widgetMark6"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:paddingStart="9dp" android:paddingEnd="9dp"
+                android:paddingTop="3dp" android:paddingBottom="3dp"
+                android:textSize="10.5sp" android:textStyle="bold"
+                android:textColor="@color/brief_widget_title"
+                android:maxLines="1" android:text="" />
+        </FrameLayout>
     </LinearLayout>
 
     <LinearLayout android:id="@+id/widgetRow7"
         android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal" android:baselineAligned="false" android:paddingTop="7dp">
+        android:orientation="horizontal" android:baselineAligned="false"
+        android:gravity="center_vertical" android:paddingTop="9dp">
 
-        <ImageView android:id="@+id/widgetBar7"
-            android:layout_width="3dp" android:layout_height="match_parent"
-            android:layout_marginEnd="10dp"
-            android:layout_marginTop="2dp" android:layout_marginBottom="2dp"
-            android:scaleType="fitXY"
-            android:contentDescription="@null"
-            android:src="@drawable/bar_none" />
-
-        <ImageView android:id="@+id/widgetIcon7"
-            android:layout_width="15dp" android:layout_height="15dp"
-            android:layout_marginEnd="9dp" android:layout_marginTop="2dp"
-            android:contentDescription="@null"
-            android:src="@drawable/ic_kind_note" />
+        <FrameLayout android:layout_width="30dp" android:layout_height="30dp"
+            android:layout_marginEnd="12dp">
+            <ImageView android:id="@+id/widgetTile7"
+                android:layout_width="match_parent" android:layout_height="match_parent"
+                android:scaleType="fitXY" android:contentDescription="@null"
+                android:src="@drawable/tile_none" />
+            <ImageView android:id="@+id/widgetIcon7"
+                android:layout_width="16dp" android:layout_height="16dp"
+                android:layout_gravity="center"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_kind_note" />
+        </FrameLayout>
 
         <LinearLayout android:layout_width="0dp" android:layout_weight="1"
             android:layout_height="wrap_content" android:orientation="vertical">
@@ -347,11 +401,20 @@
                 android:lineSpacingExtra="1dp" android:text="" />
         </LinearLayout>
 
-        <TextView android:id="@+id/widgetMark7"
-            android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:paddingStart="10dp" android:textSize="10.5sp"
-            android:textStyle="bold" android:textColor="@color/brief_widget_meta"
-            android:maxLines="1" android:ellipsize="end" android:text="" />
+        <FrameLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginStart="10dp">
+            <ImageView android:id="@+id/widgetPill7"
+                android:layout_width="match_parent" android:layout_height="match_parent"
+                android:scaleType="fitXY" android:contentDescription="@null"
+                android:src="@drawable/pill_none" />
+            <TextView android:id="@+id/widgetMark7"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:paddingStart="9dp" android:paddingEnd="9dp"
+                android:paddingTop="3dp" android:paddingBottom="3dp"
+                android:textSize="10.5sp" android:textStyle="bold"
+                android:textColor="@color/brief_widget_title"
+                android:maxLines="1" android:text="" />
+        </FrameLayout>
     </LinearLayout>
 
     </LinearLayout>

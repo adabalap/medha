@@ -24,9 +24,36 @@ import com.adabala.medha.R
 object BriefIcons {
 
     /**
-     * Only [BriefPolicy.Band.LATER] takes the theme. Later is the absence of
-     * urgency rather than a grade of it, so it is chrome and may be themed;
-     * overdue and this week are signal, and no preference recolours them.
+     * The wash behind a row's kind glyph.
+     *
+     * Replaced the hairline bar in v0.16.0. A bar is a reading aid for a
+     * list; a tile is the thing the eye lands on first, which is what makes
+     * a brief read as a card rather than as rows of text.
+     *
+     * Not themed. The accent picker moves the mark badge and the `later`
+     * bar, which are decoration; these carry urgency, and no preference
+     * recolours urgency.
+     */
+    fun tile(band: BriefPolicy.Band?): Int = when (band) {
+        BriefPolicy.Band.OVERDUE -> R.drawable.tile_overdue
+        BriefPolicy.Band.SOON -> R.drawable.tile_soon
+        BriefPolicy.Band.LATER -> R.drawable.tile_later
+        null -> R.drawable.tile_none
+    }
+
+    /** The wash behind the countdown. Same rule, same colours. */
+    fun pill(band: BriefPolicy.Band?): Int = when (band) {
+        BriefPolicy.Band.OVERDUE -> R.drawable.pill_overdue
+        BriefPolicy.Band.SOON -> R.drawable.pill_soon
+        BriefPolicy.Band.LATER -> R.drawable.pill_later
+        null -> R.drawable.pill_none
+    }
+
+    /**
+     * The old hairline bar, still used by the band HEADINGS on the full
+     * brief screen, where a single coloured rule introduces a group. Rows no
+     * longer use it. [BriefTheme] still moves the `later` one, because at
+     * heading size it is chrome again.
      */
     fun bar(band: BriefPolicy.Band?, theme: BriefTheme = BriefTheme.DYNAMIC): Int =
         when (band) {

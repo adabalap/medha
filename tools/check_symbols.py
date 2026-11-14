@@ -56,6 +56,7 @@ RECEIVER_BLOCK = re.compile(
 
 # Kotlin/Java/Android names that are legitimately unqualified.
 BUILTIN = set("""
+sin cos tan asin acos atan atan2 sqrt cbrt exp ln log log10 log2 hypot floor ceil sign truncate
 if for while when return throw try catch finally else do run let apply also with
 takeIf takeUnless require requireNotNull check checkNotNull error TODO
 listOf mutableListOf arrayListOf setOf mutableSetOf mapOf mutableMapOf hashMapOf

@@ -153,7 +153,8 @@ class BriefActivity : AppCompatActivity() {
 
     private fun row(line: BriefRender.Line, attribute: Boolean, parent: ViewGroup): View =
         layoutInflater.inflate(R.layout.item_brief_row, parent, false).apply {
-            findViewById<ImageView>(R.id.rowBar).setImageResource(BriefIcons.bar(line.band))
+            findViewById<ImageView>(R.id.rowTile).setImageResource(BriefIcons.tile(line.band))
+            findViewById<ImageView>(R.id.rowPill).setImageResource(BriefIcons.pill(line.band))
             findViewById<ImageView>(R.id.rowIcon).setImageResource(BriefIcons.icon(line.kind))
             findViewById<TextView>(R.id.rowTitle).text = line.title
             findViewById<TextView>(R.id.rowText).also {

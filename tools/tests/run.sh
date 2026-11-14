@@ -74,6 +74,26 @@ kotlinc "$SRC/notify/BriefPolicy.kt" "$SRC/notify/BriefRender.kt" \
 java -jar "$WORK/shapes.jar"
 
 echo
+echo "== NotificationFilterTest =="
+# What a notification is allowed to become. Medha asks for the one Android
+# switch that reads EVERY notification, because a work calendar inside
+# Outlook or Teams never reaches CalendarContract. This is the evidence for
+# the promise that comes with that -- above all, that a one-time passcode
+# can never reach a home screen.
+kotlinc "$SRC/connect/NotificationFilter.kt" NotificationFilterTest.kt \
+  -include-runtime -d "$WORK/nfilter.jar"
+java -jar "$WORK/nfilter.jar"
+
+echo
+echo "== NotificationItemTest =="
+# And what it becomes: which glyph, what time the words mean, and keeping
+# the same meeting from appearing four times as its countdown ticks down.
+kotlinc "$SRC/notify/BriefPolicy.kt" "$SRC/connect/NotificationFilter.kt" \
+  "$SRC/connect/NotificationItem.kt" NotificationItemTest.kt \
+  -include-runtime -d "$WORK/nitem.jar"
+java -jar "$WORK/nitem.jar"
+
+echo
 echo "== BriefJsonTest =="
 # The brief's on-disk format, INCLUDING the v0.9.0 -> v0.9.1 migration. Runs
 # against the real BriefJson.kt plus stubs/org/json, which mirror Android's
@@ -128,6 +148,15 @@ echo "== WavTest =="
 # duration and gets rejected against the 30s limit.
 kotlinc "$SRC/audio/Wav.kt" WavTest.kt -include-runtime -d "$WORK/wav.jar"
 java -jar "$WORK/wav.jar"
+
+echo
+echo "== ResampleTest =="
+# Getting a video's audio to the 16 kHz mono the engine demands. The alias
+# check is the one that matters: naive decimation folds 12 kHz down onto
+# speech at full strength and nothing about it looks broken, so the test
+# drives real tones through and measures what survives.
+kotlinc "$SRC/audio/Resample.kt" ResampleTest.kt -include-runtime -d "$WORK/resample.jar"
+java -jar "$WORK/resample.jar"
 
 echo
 echo "== TranscriptionRequestTest =="

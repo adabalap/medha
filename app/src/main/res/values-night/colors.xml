@@ -57,4 +57,9 @@
     <color name="accent_teal">#3FBFA6</color>
     <color name="accent_rose">#E887B4</color>
     <color name="accent_amber">#FFB657</color>
+
+    <!-- Band washes, dark. Lifted, because a 10% wash vanishes on a dark card. -->
+    <color name="band_soon_tint">#26FFB657</color>
+    <color name="band_later_tint">#268B7DF7</color>
+    <color name="band_none_tint">#1FFFFFFF</color>
 </resources>

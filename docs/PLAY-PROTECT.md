@@ -36,6 +36,45 @@ nothing left for that particular warning to fire on, and `verify.sh` has an
 absence guard that fails the build if an SMS permission or capability is
 reintroduced.
 
+## v0.15.0: notification access, and why it does not change the above
+
+Medha now reads notifications, behind `BIND_NOTIFICATION_LISTENER_SERVICE`.
+
+That is **not** a `uses-permission`. It is a service-level permission on a
+declared `NotificationListenerService`, which only the system may bind, and
+the manifest's `uses-permission` list is unchanged — still the six entries
+above, still no SMS, contacts, location, camera or storage. The Play Protect
+warning this document is about fires on SMS permissions in the manifest, so
+there is nothing new for it to fire on.
+
+What *is* new, and is worth being plain about rather than filing under a
+permission that does not appear:
+
+- Android has exactly one switch for notification access and it covers every
+  notification on the device. There is no way to scope it to some apps.
+  Medha asks for it because a work calendar living inside Outlook or Teams
+  never reaches CalendarContract, so the notification is the only route to a
+  work meeting that exists on the device.
+- The grant is entirely the user's: the system never binds the listener
+  until they turn it on in Settings, and Medha has its own switch on top of
+  that which can stop it without going back there.
+- Granting it shows an Android consent screen that says, correctly, that the
+  app will be able to read all notifications. Medha's own dialog says the
+  same thing in its own words before sending anyone to that screen.
+- Notification text is never written to storage. It exists for the length of
+  one callback and either becomes a brief item with an 8-hour TTL or is
+  discarded. The diagnostics log records the *reason* a notification was
+  dropped, never its content.
+- Anything matching `NotificationFilter.looksLikeSecret` is dropped
+  unconditionally, before anything else happens. No allowlist, importance or
+  category rescues one, because a one-time passcode drawn on a home screen
+  defeats the point of sending it out of band.
+
+The filter is pure Kotlin with 65 executable checks, including a corpus of
+real-world passcode phrasings that an earlier version of it leaked. That is
+deliberate: "which notifications reach your home screen" should not be a
+question answered by code nobody can run.
+
 ## What you may still see
 
 Sideloading an APK is still sideloading. Android may show either of these,

@@ -260,4 +260,15 @@ Licensed under the terms in the project repository.</string>
     <string name="theme_amber">Amber</string>
     <string name="theme_saved">Brief accent: %1$s</string>
     <string name="theme_dynamic_note">Needs Android 12 or newer; below that it matches Medha indigo.</string>
+
+    <!-- Notification reading. -->
+    <string name="notif_listen_title">Read notifications</string>
+    <string name="notif_listen_body">Your work calendar lives inside Outlook and Teams, which never sync to the phone\'s calendar — so the only way Medha can see a work meeting is the notification those apps post.\n\nAndroid has one switch for this and it covers every notification on the phone; there is no way to limit it to some apps. So Medha filters instead, on the device, and keeps nothing: notification text is never written to storage. It either becomes a brief line that expires in 8 hours, or it is discarded.\n\nAnything that looks like a passcode is dropped before anything else happens, with no exceptions. A one-time code on your home screen would defeat the point of sending it.</string>
+    <string name="notif_listen_grant">Open Android settings</string>
+    <string name="notif_listen_on">Medha: reading is ON</string>
+    <string name="notif_listen_off">Medha: reading is OFF</string>
+    <string name="notif_listen_turn_on">Turn on in Medha</string>
+    <string name="notif_listen_turn_off">Turn off in Medha</string>
+    <string name="notif_listen_granted">Android access: granted</string>
+    <string name="notif_listen_not_granted">Android access: not granted yet</string>
 </resources>
