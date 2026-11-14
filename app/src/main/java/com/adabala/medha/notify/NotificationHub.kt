@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import androidx.preference.PreferenceManager
 import com.adabala.medha.diag.Diagnostics
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -217,6 +218,7 @@ class NotificationHub(private val appContext: Context) {
         )
         writeSections(merged)
         BriefWidgets.refresh(appContext)
+        maybeNudge(merged)
         return merged.firstOrNull { it.clientId == clientId }?.items?.size ?: 0
     }
 
@@ -231,6 +233,52 @@ class NotificationHub(private val appContext: Context) {
     fun clearAllBrief() = synchronized(briefLock) {
         writeSections(emptyList())
         BriefWidgets.refresh(appContext)
+    }
+
+    /**
+     * Medha speaking for itself about the brief.
+     *
+     * Fired from the brief write rather than on a timer: the only moment
+     * the answer can change is when the content changes, and a timer would
+     * be a wakelock to discover nothing happened. [BriefNudge] holds every
+     * rule about whether to speak at all, so this function only persists
+     * what it is not allowed to forget — when it last spoke, and about how
+     * many — and posts.
+     */
+    private fun maybeNudge(sections: List<BriefPolicy.Section>) {
+        runCatching {
+            val prefs = PreferenceManager.getDefaultSharedPreferences(appContext)
+            if (!prefs.getBoolean(KEY_NUDGE, NUDGE_DEFAULT)) return
+
+            val now = System.currentTimeMillis()
+            val n = BriefNudge.nudge(
+                sections = sections,
+                now = now,
+                offsetMs = BriefPolicy.deviceOffset(now),
+                memory = BriefNudge.Memory(
+                    lastAt = prefs.getLong(KEY_NUDGE_AT, 0L),
+                    lastCount = prefs.getInt(KEY_NUDGE_COUNT, 0)
+                )
+            ) ?: return
+
+            prefs.edit()
+                .putLong(KEY_NUDGE_AT, now)
+                .putInt(KEY_NUDGE_COUNT, n.overdue)
+                .apply()
+
+            post(
+                Request(
+                    id = NUDGE_ID,
+                    title = appContext.getString(R.string.nudge_title, n.overdue),
+                    text = appContext.getString(R.string.nudge_text, n.worst, n.worstMark),
+                    // Silent on purpose. This is a reminder about something
+                    // already late, not an alarm; it belongs in the shade
+                    // next time the phone is picked up, not in the room.
+                    silent = true,
+                    clientId = "medha"
+                )
+            )
+        }
     }
 
     /** Withdraws [clientId]'s section. Returns true if there was one. */
@@ -272,6 +320,13 @@ class NotificationHub(private val appContext: Context) {
         private const val TAG = "NotificationHub"
         private const val CHANNEL_ID = "medha_apps"
         const val WIDGET_PREFS = "medha_widget"
+
+        /** Medha's own nudge about overdue items. */
+        const val KEY_NUDGE = "brief_nudge"
+        const val NUDGE_DEFAULT = true
+        private const val KEY_NUDGE_AT = "brief_nudge_at"
+        private const val KEY_NUDGE_COUNT = "brief_nudge_count"
+        private const val NUDGE_ID = "medha-brief-nudge"
         const val WIDGET_KEY = "content"
 
         /**

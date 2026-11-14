@@ -63,6 +63,16 @@ kotlinc "$SRC/notify/BriefPolicy.kt" "$SRC/notify/BriefRender.kt" \
 java -jar "$WORK/render.jar"
 
 echo
+echo "== BriefNudgeTest =="
+# Whether Medha should interrupt you. The easiest thing in an app to get
+# wrong, and the wrongness is invisible in review: a nudge that fires twice,
+# or at 3am, or on every widget redraw, reads as reasonable logic right up
+# until it is on a real phone at 3am.
+kotlinc "$SRC/notify/BriefPolicy.kt" "$SRC/notify/BriefNudge.kt" BriefNudgeTest.kt \
+  -include-runtime -d "$WORK/nudge.jar"
+java -jar "$WORK/nudge.jar"
+
+echo
 echo "== WidgetCallShapesTest =="
 # The BriefPolicy and BriefRender call shapes used by BriefWidgets.kt and
 # LocalServer. Those three need an Android classpath, so no stage before

@@ -11,6 +11,7 @@ import android.net.Uri
 import android.os.Build
 import com.adabala.medha.connect.MedhaNotificationListener
 import com.adabala.medha.notify.BriefTheme
+import com.adabala.medha.notify.NotificationHub
 import com.adabala.medha.notify.BriefWidgets
 import android.os.Bundle
 import android.os.Handler
@@ -25,16 +26,12 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
-import androidx.core.view.GravityCompat
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.core.app.NotificationManagerCompat
 import com.adabala.medha.auth.ClientRegistry
 import com.adabala.medha.auth.PairingManager
 import com.adabala.medha.diag.Diagnostics
-import com.adabala.medha.sched.InferenceScheduler
 import com.adabala.medha.ui.ClientListAdapter
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -108,7 +105,7 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        setupDrawer()
+        setupNavigation()
         setupScheduler()
 
         binding.editPort.setText(
@@ -160,61 +157,98 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ----------------------------- drawer -----------------------------
+    // --------------------------- navigation ---------------------------
 
-    private fun setupDrawer() {
-        // fitsSystemWindows on NavigationView REPLACES the header's padding with
-        // the window insets instead of adding to it, which drew the title under
-        // the status bar. Apply the top inset ourselves and keep the layout's
-        // own padding intact.
-        val header = binding.navView.getHeaderView(0)
-        val basePad = header.paddingTop
-        ViewCompat.setOnApplyWindowInsetsListener(header) { v, insets ->
-            val top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
-            v.setPadding(v.paddingLeft, basePad + top, v.paddingRight, v.paddingBottom)
-            insets
-        }
+    /**
+     * Three destinations instead of a sixteen-item drawer.
+     *
+     * The drawer was not slow to use; it was impossible to learn. Fourteen
+     * of its entries opened a dialog, so the app's entire surface was a list
+     * of nouns with no sense of which mattered, over a home screen that put
+     * a live status readout and every setting in one scroll.
+     *
+     * Sections are sibling views swapped by visibility rather than
+     * fragments. The content is three scrolls in one Activity that already
+     * binds every one of these views directly; fragments would add a
+     * lifecycle, a back stack and a state-restore path to solve a problem
+     * nobody has here.
+     */
+    private fun setupNavigation() {
         binding.toolbar.contentDescription = getString(R.string.app_name)
-        binding.toolbar.setNavigationContentDescription(R.string.open_drawer)
-        binding.toolbar.setNavigationOnClickListener {
-            binding.drawerLayout.openDrawer(GravityCompat.START)
-        }
-
-        binding.navView.setNavigationItemSelectedListener { item ->
-            binding.drawerLayout.closeDrawer(GravityCompat.START)
-            when (item.itemId) {
-                R.id.nav_open_pwa -> openDemo()
-                R.id.nav_notif_listen -> showNotificationListenDialog()
-                R.id.nav_brief_theme -> showBriefThemeDialog()
-                R.id.nav_clients -> showClientsDialog()
-                R.id.nav_pair_web -> showPairWebDialog()
-                R.id.nav_brief -> openBrief()
-                R.id.nav_scheduler -> showSchedulerDialog()
-                R.id.nav_thermal -> showThermalDialog()
-                R.id.nav_copy_token -> copyToken()
-                R.id.nav_regen_token -> confirmRegenerateToken()
-                R.id.nav_battery -> requestBatteryExemption()
-                R.id.nav_multimodal -> showMultimodalDialog()
-                R.id.nav_diagnostics -> showDiagnosticsDialog()
-                R.id.nav_stop -> stopMedha()
-                R.id.nav_endpoints -> showEndpointsDialog()
-                R.id.nav_about -> showAboutDialog()
-                else -> return@setNavigationItemSelectedListener false
-            }
+        binding.bottomNav.setOnItemSelectedListener { item ->
+            show(
+                when (item.itemId) {
+                    R.id.tab_apps -> Tab.APPS
+                    R.id.tab_settings -> Tab.SETTINGS
+                    else -> Tab.HOME
+                }
+            )
             true
         }
+        show(Tab.HOME)
 
-        // Back closes the drawer before leaving the screen.
+        // Apps
+        binding.appsClientList.layoutManager = LinearLayoutManager(this)
+        binding.appsClientList.adapter = clientAdapter
+        binding.btnPairWeb.setOnClickListener { showPairWebDialog() }
+        binding.btnOpenDemo.setOnClickListener { openDemo() }
+
+        // Settings rows. Each one opens the dialog the drawer used to.
+        binding.rowBrief.setOnClickListener { openBrief() }
+        binding.rowBriefTheme.setOnClickListener { showBriefThemeDialog() }
+        binding.rowNotifListen.setOnClickListener { showNotificationListenDialog() }
+        binding.rowNudge.setOnClickListener { showNudgeDialog() }
+        binding.rowMultimodal.setOnClickListener { showMultimodalDialog() }
+        binding.rowThermal.setOnClickListener { showThermalDialog() }
+        binding.rowScheduler.setOnClickListener { showSchedulerDialog() }
+        binding.rowBattery.setOnClickListener { requestBatteryExemption() }
+        binding.rowEndpoints.setOnClickListener { showEndpointsDialog() }
+        binding.rowRegenToken.setOnClickListener { confirmRegenerateToken() }
+        binding.rowDiagnostics.setOnClickListener { showDiagnosticsDialog() }
+        binding.rowAbout.setOnClickListener { showAboutDialog() }
+
+        // Back goes to Home before it leaves the app: a tab is a place, and
+        // leaving the app from Settings is never what the gesture meant.
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (binding.drawerLayout.isDrawerOpen(GravityCompat.START)) {
-                    binding.drawerLayout.closeDrawer(GravityCompat.START)
+                if (tab != Tab.HOME) {
+                    binding.bottomNav.selectedItemId = R.id.tab_home
                 } else {
                     isEnabled = false
                     onBackPressedDispatcher.onBackPressed()
                 }
             }
         })
+    }
+
+    private enum class Tab { HOME, APPS, SETTINGS }
+
+    private var tab: Tab = Tab.HOME
+
+    private fun show(which: Tab) {
+        tab = which
+        binding.contentScroll.visibility = if (which == Tab.HOME) View.VISIBLE else View.GONE
+        binding.sectionApps.visibility = if (which == Tab.APPS) View.VISIBLE else View.GONE
+        binding.sectionSettings.visibility =
+            if (which == Tab.SETTINGS) View.VISIBLE else View.GONE
+        if (which == Tab.APPS) refreshClients()
+    }
+
+    /**
+     * The paired clients, inline.
+     *
+     * This was a dialog. "What is connected to this" is a question about the
+     * app's state, and state does not belong behind a modal that is
+     * dismissed by tapping next to it.
+     */
+    private fun refreshClients() {
+        val clients = runCatching { registry.all() }.getOrDefault(emptyList())
+        clientAdapter.submitList(clients)
+        binding.appsEmpty.visibility = if (clients.isEmpty()) View.VISIBLE else View.GONE
+    }
+
+    private val clientAdapter by lazy {
+        ClientListAdapter { client -> showClientActions(client) }
     }
 
     // -------------------------- state machine --------------------------
@@ -253,11 +287,18 @@ class MainActivity : AppCompatActivity() {
 
         binding.btnCopyToken.isEnabled = apiToken() != null
 
-        binding.navView.menu.findItem(R.id.nav_open_pwa)?.isEnabled = state == UiState.RUNNING
-        binding.navView.menu.findItem(R.id.nav_stop)?.isEnabled = live
-        binding.navView.menu.findItem(R.id.nav_copy_token)?.isEnabled = apiToken() != null
-        binding.navView.menu.findItem(R.id.nav_regen_token)?.isEnabled = apiToken() != null
-        binding.navView.menu.findItem(R.id.nav_thermal)?.isEnabled = lastSystemJson != null
+        binding.btnOpenDemo.isEnabled = state == UiState.RUNNING
+        binding.rowRegenToken.isEnabled = apiToken() != null
+        binding.rowThermal.isEnabled = lastSystemJson != null
+
+        // The endpoint belongs beside the token: the two are useless apart,
+        // and "what do I point my app at" was previously answered only by a
+        // dialog three taps into the drawer.
+        binding.endpointText.text = if (state == UiState.RUNNING) {
+            getString(R.string.endpoint_fmt, currentPort())
+        } else {
+            getString(R.string.endpoint_idle)
+        }
 
         val sub = when (state) {
             UiState.IDLE -> getString(R.string.state_stopped)
@@ -267,10 +308,6 @@ class MainActivity : AppCompatActivity() {
             UiState.ERROR -> getString(R.string.state_error)
         }
         binding.toolbarTitle.toolbarSubtitle.text = sub
-        runCatching {
-            binding.navView.getHeaderView(0)
-                .findViewById<android.widget.TextView>(R.id.navHeaderStatus)?.text = sub
-        }
         binding.loadProgress.visibility = if (busy) View.VISIBLE else View.GONE
         binding.configLockedHint.visibility = if (live) View.VISIBLE else View.GONE
     }
@@ -446,6 +483,21 @@ class MainActivity : AppCompatActivity() {
         for (action in actions) {
             if (runCatching { startActivity(Intent(action)); true }.getOrDefault(false)) return
         }
+    }
+
+    /** Medha's own reminder about overdue items. */
+    private fun showNudgeDialog() {
+        val on = prefs.getBoolean(NotificationHub.KEY_NUDGE, NotificationHub.NUDGE_DEFAULT)
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.nudge_setting)
+            .setIcon(R.drawable.ic_stat_medha)
+            .setMessage(R.string.nudge_setting_body)
+            .setPositiveButton(if (on) R.string.nudge_off else R.string.nudge_on) { _, _ ->
+                prefs.edit().putBoolean(NotificationHub.KEY_NUDGE, !on).apply()
+                toast(getString(if (on) R.string.nudge_off else R.string.nudge_on))
+            }
+            .setNegativeButton(R.string.close, null)
+            .show()
     }
 
     /**

@@ -41,3 +41,11 @@ app/src/main/res/xml/widget_medha_info.xml
 # Rotation is gone entirely: a brief read in a two-second glance must not
 # move, so there is no timer, no screen-on receiver and no interval setting.
 app/src/main/java/com/adabala/medha/notify/BriefRotator.kt
+
+# --- removed in v0.17.0 -----------------------------------------------------
+# The navigation drawer. Sixteen entries, fourteen of which opened a dialog,
+# replaced by three destinations in a bottom navigation bar. Leaving these
+# behind breaks nothing at build time and quietly keeps a dead menu and a
+# dead header in the APK.
+app/src/main/res/menu/drawer_menu.xml
+app/src/main/res/layout/nav_header.xml

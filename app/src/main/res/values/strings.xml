@@ -271,4 +271,36 @@ Licensed under the terms in the project repository.</string>
     <string name="notif_listen_turn_off">Turn off in Medha</string>
     <string name="notif_listen_granted">Android access: granted</string>
     <string name="notif_listen_not_granted">Android access: not granted yet</string>
+
+    <!-- Medha's own nudge. Names one thing rather than only counting:
+         "3 overdue" is a statistic, a title and a countdown is a reminder. -->
+    <string name="nudge_title">%1$d overdue on your brief</string>
+    <string name="nudge_text">%1$s · %2$s</string>
+    <string name="nudge_setting">Remind me about overdue items</string>
+    <string name="nudge_setting_body">Medha posts one quiet notification when something on your brief goes overdue. At most twice a day, never between 10 pm and 7 am, and never twice for the same thing unless the count grows.</string>
+    <string name="nudge_on">Reminders on</string>
+    <string name="nudge_off">Reminders off</string>
+
+    <!-- The three-destination shell, v0.17.0. -->
+    <string name="tab_home">Home</string>
+    <string name="tab_apps">Apps</string>
+    <string name="tab_settings">Settings</string>
+    <string name="sec_connect">CONNECT AN APP</string>
+    <string name="sec_model">MODEL</string>
+    <string name="sec_perf">PERFORMANCE</string>
+    <string name="sec_brief">BRIEF</string>
+    <string name="sec_system">SYSTEM</string>
+    <string name="sec_diag">DIAGNOSTICS</string>
+    <string name="status_idle">Not running</string>
+    <string name="start">Start</string>
+    <string name="stop">Stop</string>
+    <string name="pick_model">Choose model file</string>
+    <string name="backend">Backend</string>
+    <string name="port">Port</string>
+    <string name="batch_charging">Run batch work only while charging</string>
+    <string name="pair_web">Pair a web app</string>
+    <string name="open_demo">Open the demo app</string>
+    <string name="apps_empty">Nothing is paired yet. Pair a web app to let it use Medha.</string>
+    <string name="endpoint_fmt">http://127.0.0.1:%1$d</string>
+    <string name="endpoint_idle">Start Medha to get an address</string>
 </resources>
