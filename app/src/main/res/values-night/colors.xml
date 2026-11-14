@@ -50,4 +50,11 @@
     <color name="band_soon">#FFB657</color>
     <color name="band_later">#8B7DF7</color>
     <color name="band_none">#6F6793</color>
+    <color name="band_overdue_tint">#26FF7A5C</color>
+
+    <!-- User-picked accents, dark. -->
+    <color name="accent_indigo">#8B7DF7</color>
+    <color name="accent_teal">#3FBFA6</color>
+    <color name="accent_rose">#E887B4</color>
+    <color name="accent_amber">#FFB657</color>
 </resources>

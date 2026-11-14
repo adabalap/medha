@@ -1,6 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- One app's section on the full brief screen. -->
+<!--
+  The card behind the brief rows on the full screen.
+
+  colorSurfaceContainerHigh as a theme attribute, not a fixed colour. This
+  drawable is only ever inflated by an Activity, which carries a Material 3
+  theme and therefore the dynamic palette on a device that has one.
+
+  The widget cannot do this. The launcher inflates it with no theme of ours,
+  so a theme attribute there resolves against the launcher and not against
+  Medha; the widget's surfaces go through values-v31 instead.
+-->
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <solid android:color="@color/brief_card_bg" />
-    <corners android:radius="22dp" />
+    <solid android:color="?attr/colorSurfaceContainerHigh" />
+    <corners android:radius="24dp" />
 </shape>

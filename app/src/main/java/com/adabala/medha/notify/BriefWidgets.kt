@@ -93,6 +93,10 @@ abstract class BriefWidgetProvider : AppWidgetProvider() {
         // matter most.
         val offset = BriefPolicy.deviceOffset(now)
         val face = BriefRender.face(sections, now, offset, slots.size)
+        // Read per render, like the offset: a preference changed while the
+        // widget sits on the home screen has to reach it on the next redraw,
+        // and there is no instance of this class for a cache to live on.
+        val theme = BriefTheme.current(context)
 
         for (id in ids) {
             val v = RemoteViews(context.packageName, layout)
@@ -111,6 +115,8 @@ abstract class BriefWidgetProvider : AppWidgetProvider() {
                     flags
                 )
             )
+
+            v.setImageViewResource(R.id.widgetBadge, theme.badge)
 
             v.setTextViewText(
                 R.id.widgetOverdue,
@@ -153,8 +159,8 @@ abstract class BriefWidgetProvider : AppWidgetProvider() {
                         // out here. Any call that takes a resolved colour int
                         // would bake in Medha's configuration instead and be
                         // wrong in one of the two themes, invisibly.
-                        v.setImageViewResource(slot.bar, barFor(line.band))
-                        v.setImageViewResource(slot.icon, iconFor(line.kind))
+                        v.setImageViewResource(slot.bar, BriefIcons.bar(line.band, theme))
+                        v.setImageViewResource(slot.icon, BriefIcons.icon(line.kind))
                     }
                 }
 
@@ -181,25 +187,6 @@ abstract class BriefWidgetProvider : AppWidgetProvider() {
             context.getString(R.string.widget_fold_clear, fold.more)
     }
 
-    private fun barFor(band: BriefPolicy.Band?): Int = when (band) {
-        BriefPolicy.Band.OVERDUE -> R.drawable.bar_overdue
-        BriefPolicy.Band.SOON -> R.drawable.bar_soon
-        BriefPolicy.Band.LATER -> R.drawable.bar_later
-        null -> R.drawable.bar_none
-    }
-
-    // Not exhaustive on purpose: BriefPolicy.kindOrNull has already dropped
-    // anything outside KINDS, so the else branch is "no kind given" rather
-    // than "unknown kind", and a new kind added to KINDS without an icon here
-    // degrades to the note glyph instead of failing to draw.
-    private fun iconFor(kind: String?): Int = when (kind) {
-        "bill" -> R.drawable.ic_kind_bill
-        "date" -> R.drawable.ic_kind_date
-        "event" -> R.drawable.ic_kind_event
-        "alert" -> R.drawable.ic_kind_alert
-        "done" -> R.drawable.ic_kind_done
-        else -> R.drawable.ic_kind_note
-    }
 }
 
 /**

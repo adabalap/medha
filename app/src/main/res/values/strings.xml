@@ -240,4 +240,24 @@ Licensed under the terms in the project repository.</string>
     <string name="widget_desc_2x2">The next thing on your plate, and nothing else.</string>
     <string name="widget_desc_4x2">Three lines, most urgent first, from the apps using Medha.</string>
     <string name="widget_desc_4x4">Everything live, grouped by how soon it is due.</string>
+
+    <!-- Band headings on the full brief screen. Grouped by when a thing is
+         due, not by which app wrote it. -->
+    <string name="band_overdue">OVERDUE</string>
+    <string name="band_soon">THIS WEEK</string>
+    <string name="band_later">LATER</string>
+    <string name="band_none">NO DATE</string>
+    <string name="band_count">%1$d</string>
+    <string name="brief_from">from %1$s</string>
+
+    <!-- Brief accent picker. -->
+    <string name="theme_title">Brief accent</string>
+    <string name="theme_body">Picks the accent the brief widget draws with. Surfaces and text always follow your system theme, and the overdue and this-week colours never change — a wallpaper should not be able to make an overdue bill look calm.</string>
+    <string name="theme_dynamic">From your wallpaper</string>
+    <string name="theme_indigo">Medha indigo</string>
+    <string name="theme_teal">Teal</string>
+    <string name="theme_rose">Rose</string>
+    <string name="theme_amber">Amber</string>
+    <string name="theme_saved">Brief accent: %1$s</string>
+    <string name="theme_dynamic_note">Needs Android 12 or newer; below that it matches Medha indigo.</string>
 </resources>

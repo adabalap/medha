@@ -34,8 +34,18 @@
         android:orientation="horizontal" android:gravity="center_vertical"
         android:paddingBottom="8dp">
 
-        <FrameLayout android:layout_width="26dp" android:layout_height="26dp"
-            android:background="@drawable/bg_brief_badge">
+        <FrameLayout android:layout_width="26dp" android:layout_height="26dp">
+            <!-- The badge fill is an ImageView rather than the FrameLayout's
+                 background so the provider can swap it per chosen accent.
+                 setImageViewResource takes a resource ID, which the LAUNCHER
+                 resolves against its own configuration; a background set from
+                 a resolved colour int would bake in Medha's idea of light or
+                 dark and be wrong in the other theme. -->
+            <ImageView android:id="@+id/widgetBadge"
+                android:layout_width="match_parent" android:layout_height="match_parent"
+                android:scaleType="fitXY"
+                android:contentDescription="@null"
+                android:src="@drawable/bg_brief_badge" />
             <ImageView android:layout_width="16dp" android:layout_height="16dp"
                 android:layout_gravity="center"
                 android:src="@drawable/ic_medha_mark"

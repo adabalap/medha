@@ -9,6 +9,8 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.Uri
 import android.os.Build
+import com.adabala.medha.notify.BriefTheme
+import com.adabala.medha.notify.BriefWidgets
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -37,6 +39,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import androidx.preference.PreferenceManager
 import com.adabala.medha.databinding.ActivityMainBinding
+import com.google.android.material.color.DynamicColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -96,6 +99,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Material You. Before any view is inflated: it swaps the theme's
+        // colour roles for the ones derived from the wallpaper, and anything
+        // already inflated keeps the old ones. A no-op below API 31, where
+        // there is no system palette to take.
+        DynamicColors.applyToActivityIfAvailable(this)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
@@ -175,6 +183,7 @@ class MainActivity : AppCompatActivity() {
             binding.drawerLayout.closeDrawer(GravityCompat.START)
             when (item.itemId) {
                 R.id.nav_open_pwa -> openDemo()
+                R.id.nav_brief_theme -> showBriefThemeDialog()
                 R.id.nav_clients -> showClientsDialog()
                 R.id.nav_pair_web -> showPairWebDialog()
                 R.id.nav_brief -> openBrief()
@@ -359,6 +368,47 @@ class MainActivity : AppCompatActivity() {
      * shown in full exactly once at creation, so "no copy" meant a typo in the
      * client id was unrecoverable and the token was gone for good.
      */
+    /**
+     * Picks the accent the brief widget draws with.
+     *
+     * A short list of presets rather than a colour wheel, and that is a
+     * correctness decision rather than a shortcut. The widget is drawn by
+     * the launcher, which resolves resource ids against its own
+     * configuration; that is what makes dark mode work out there. An
+     * arbitrary colour would have to be resolved here in Medha's process and
+     * shipped as an int, baking in this process's idea of light or dark, and
+     * would then be wrong in the other theme with nothing to see until
+     * someone switched. See [BriefTheme].
+     */
+    private fun showBriefThemeDialog() {
+        val themes = BriefTheme.values()
+        val labels = themes.map { getString(it.labelRes) }.toTypedArray()
+        val current = themes.indexOf(BriefTheme.current(this)).takeIf { it >= 0 } ?: 0
+
+        val body = buildString {
+            append(getString(R.string.theme_body))
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                append("\n\n").append(getString(R.string.theme_dynamic_note))
+            }
+        }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.theme_title)
+            .setIcon(R.drawable.ic_tune)
+            .setMessage(body)
+            .setSingleChoiceItems(labels, current) { dialog, which ->
+                prefs.edit().putString(BriefTheme.KEY, themes[which].key).apply()
+                // Redraw now. The widget reads the preference on every
+                // render, so this is the whole of "apply": no service to
+                // nudge, nothing to restart.
+                BriefWidgets.refresh(applicationContext)
+                toast(getString(R.string.theme_saved, labels[which]))
+                dialog.dismiss()
+            }
+            .setNegativeButton(R.string.close, null)
+            .show()
+    }
+
     private fun showClientsDialog() {
         val clients = registry.all()
         if (clients.isEmpty()) {

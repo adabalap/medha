@@ -76,7 +76,15 @@ object BriefRender {
         val band: BriefPolicy.Band?,
         /** One of [BriefPolicy.KINDS], or null. Chooses the row icon. */
         val kind: String?,
-        val clientId: String
+        val clientId: String,
+        /**
+         * Carried so the full-brief screen can open a row without going back
+         * to the raw sections and re-deriving the order. Already filtered to
+         * http(s) on write and on read; the screen filters once more before
+         * it starts an activity, because that is the line that actually acts
+         * on it.
+         */
+        val link: String?
     )
 
     /**
@@ -133,7 +141,8 @@ object BriefRender {
             ?: BriefPolicy.age(row.updatedAt, now),
         band = BriefPolicy.bandOf(row.dueAt, now, offsetMs),
         kind = row.kind,
-        clientId = row.clientId
+        clientId = row.clientId,
+        link = row.link
     )
 
     /**

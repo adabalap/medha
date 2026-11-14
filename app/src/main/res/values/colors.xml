@@ -68,4 +68,24 @@
     <!-- An item with no dueAt is unranked, not far away: a quiet bar, not a
          cool one, so it never reads as "due eventually". -->
     <color name="band_none">#9A93B8</color>
+    <!-- A 10% wash of the overdue colour, for the count pill. -->
+    <color name="band_overdue_tint">#1AC0341A</color>
+
+    <!-- =================================================================
+         USER-PICKED ACCENTS.
+
+         The accent is the only thing a theme choice changes. Surfaces
+         and text always follow the system, and the three urgency
+         colours never follow anything: a wallpaper, or a preference,
+         must not be able to make "overdue" look calm.
+
+         Each is a resource, never a runtime colour. The widget hands
+         the launcher a drawable id and the launcher resolves the
+         colour inside it, which is what keeps dark mode correct out
+         there; a picked colour resolved in Medha's process could not.
+         ================================================================= -->
+    <color name="accent_indigo">#4A38C4</color>
+    <color name="accent_teal">#116B5C</color>
+    <color name="accent_rose">#A52562</color>
+    <color name="accent_amber">#8A5A00</color>
 </resources>

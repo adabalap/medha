@@ -22,7 +22,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/brief_screen_bg"
+    android:background="?attr/colorSurface"
     android:fitsSystemWindows="true">
 
     <LinearLayout
@@ -63,19 +63,34 @@
                     android:layout_height="wrap_content"
                     android:paddingTop="4dp"
                     android:text="@string/brief_title"
-                    android:textSize="34sp"
-                    android:textStyle="bold"
-                    android:lineSpacingExtra="2dp"
-                    android:textColor="@color/brief_headline" />
+                    android:textAppearance="?attr/textAppearanceDisplaySmall"
+                    android:textColor="?android:attr/textColorPrimary" />
+
+                <!-- The same badge the widget leads with, in the same fixed
+                     red. Everything else on this screen takes the system
+                     palette; urgency never does. -->
+                <TextView
+                    android:id="@+id/briefOverdue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:paddingTop="5dp"
+                    android:paddingBottom="5dp"
+                    android:background="@drawable/bg_brief_overdue"
+                    android:textAppearance="?attr/textAppearanceLabelLarge"
+                    android:textColor="@color/band_overdue"
+                    android:visibility="gone"
+                    android:text="" />
 
                 <TextView
                     android:id="@+id/briefSubtitle"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:paddingTop="6dp"
-                    android:textSize="15sp"
-                    android:lineSpacingExtra="3dp"
-                    android:textColor="@color/text_secondary" />
+                    android:textAppearance="?attr/textAppearanceBodyLarge"
+                    android:textColor="?android:attr/textColorSecondary" />
 
                 <!-- Sections are generated into here; see BriefActivity. -->
                 <LinearLayout
@@ -90,9 +105,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:paddingTop="28dp"
-                    android:textSize="15sp"
-                    android:lineSpacingExtra="4dp"
-                    android:textColor="@color/text_secondary"
+                    android:textAppearance="?attr/textAppearanceBodyLarge"
+                    android:textColor="?android:attr/textColorSecondary"
                     android:text="@string/brief_empty"
                     android:visibility="gone" />
             </LinearLayout>

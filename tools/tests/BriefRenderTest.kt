@@ -97,6 +97,22 @@ fun main() {
     eq("and only then does it say nothing else is due",
         BriefRender.face(clear, T, 0L, 1).fold, BriefRender.Fold.Clear(2))
 
+    println("\nBriefRender — the link reaches the row")
+    // Added with the Material 3 brief screen: that screen renders from the
+    // same banded list the widget does, so it needs the link on the Line
+    // rather than re-deriving the order from raw sections to find it.
+    val linked = BriefPolicy.put(
+        emptyList(), "a",
+        listOf(
+            BriefPolicy.Item("with", "x", "https://example.test/1", T - DAY, "bill"),
+            BriefPolicy.Item("without", "x", null, T + DAY, null)
+        ),
+        T
+    )
+    val ls = BriefRender.face(linked, T, 0L, 5).lines
+    eq("a link survives the flatten", ls[0].link, "https://example.test/1")
+    eq("and absence stays absent", ls[1].link, null)
+
     println("\nBriefRender — undated and empty")
     val undated = BriefPolicy.put(emptyList(), "a", listOf(BriefPolicy.Item("note", "x")), T)
     val u = BriefRender.face(undated, T, 0L, BriefRender.ROWS_4X2)

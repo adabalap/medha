@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  One line of the full brief.
+
+  Deliberately the same anatomy as a widget row — urgency bar, kind icon,
+  title, detail, countdown — because the screen is what the widget opens
+  into, and a tap that rearranges everything makes the user re-find the row
+  they were already looking at. Same order, same colours, more room.
+
+  Inflated per row rather than built in code so the type comes from the
+  Material 3 scale by theme attribute (?attr/textAppearance*), which is what
+  makes it follow the device's font and dynamic colour instead of whatever
+  sizes someone typed into Kotlin.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/rowRoot"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:baselineAligned="false"
+    android:background="?attr/selectableItemBackground"
+    android:clickable="true"
+    android:focusable="true"
+    android:minHeight="56dp"
+    android:gravity="center_vertical"
+    android:paddingTop="10dp"
+    android:paddingBottom="10dp">
+
+    <ImageView android:id="@+id/rowBar"
+        android:layout_width="3dp" android:layout_height="match_parent"
+        android:layout_marginEnd="14dp"
+        android:layout_marginTop="2dp" android:layout_marginBottom="2dp"
+        android:scaleType="fitXY"
+        android:contentDescription="@null"
+        android:src="@drawable/bar_none" />
+
+    <ImageView android:id="@+id/rowIcon"
+        android:layout_width="20dp" android:layout_height="20dp"
+        android:layout_marginEnd="14dp"
+        android:contentDescription="@null"
+        android:src="@drawable/ic_kind_note" />
+
+    <LinearLayout android:layout_width="0dp" android:layout_weight="1"
+        android:layout_height="wrap_content" android:orientation="vertical">
+        <TextView android:id="@+id/rowTitle"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textAppearance="?attr/textAppearanceTitleMedium"
+            android:maxLines="2" android:ellipsize="end" android:text="" />
+        <TextView android:id="@+id/rowText"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:textColor="?android:attr/textColorSecondary"
+            android:maxLines="3" android:ellipsize="end" android:text="" />
+        <TextView android:id="@+id/rowFrom"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:paddingTop="2dp"
+            android:textAppearance="?attr/textAppearanceLabelSmall"
+            android:textColor="?android:attr/textColorSecondary"
+            android:visibility="gone" android:text="" />
+    </LinearLayout>
+
+    <TextView android:id="@+id/rowMark"
+        android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:paddingStart="14dp"
+        android:textAppearance="?attr/textAppearanceLabelMedium"
+        android:maxLines="1" android:text="" />
+</LinearLayout>

@@ -10,6 +10,7 @@
 
     <item android:title="@string/nav_group_access">
         <menu>
+            <item android:id="@+id/nav_brief_theme" android:icon="@drawable/ic_tune" android:title="@string/theme_title" />
             <item android:id="@+id/nav_clients" android:icon="@drawable/ic_client" android:title="@string/nav_clients" />
             <item android:id="@+id/nav_pair_web" android:icon="@drawable/ic_pair" android:title="@string/nav_pair_web" />
             <item android:id="@+id/nav_copy_token" android:icon="@drawable/ic_key" android:title="@string/nav_copy_token" />

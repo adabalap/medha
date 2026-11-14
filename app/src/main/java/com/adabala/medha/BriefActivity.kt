@@ -4,15 +4,19 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.adabala.medha.databinding.ActivityBriefBinding
 import com.adabala.medha.notify.BriefJson
+import com.adabala.medha.notify.BriefIcons
 import com.adabala.medha.notify.BriefPolicy
+import com.adabala.medha.notify.BriefRender
 import com.adabala.medha.notify.NotificationHub
+import com.google.android.material.color.DynamicColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 /**
@@ -41,6 +45,11 @@ class BriefActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Material You, on this screen too. Must run before any view is
+        // inflated: it swaps the theme's colour roles for the ones derived
+        // from the wallpaper, and anything already inflated keeps the old
+        // ones. A no-op below API 31, where there is no system palette.
+        DynamicColors.applyToActivityIfAvailable(this)
         binding = ActivityBriefBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
@@ -81,98 +90,87 @@ class BriefActivity : AppCompatActivity() {
         if (sections.isEmpty()) {
             binding.briefEmpty.visibility = View.VISIBLE
             binding.briefSubtitle.visibility = View.GONE
+            binding.briefOverdue.visibility = View.GONE
             return
         }
 
         binding.briefEmpty.visibility = View.GONE
         binding.briefSubtitle.visibility = View.VISIBLE
 
-        val rowCount = sections.sumOf { it.items.size }
-        binding.briefSubtitle.text = resources.getQuantityString(
-            R.plurals.brief_subtitle, sections.size, sections.size, rowCount
+        // The same ordering the widget draws, from the same function, with
+        // the capacity opened up. This screen is what a widget tap opens
+        // into, so a row must not move between the two: EVERYTHING is the
+        // widget's list without the cut.
+        val face = BriefRender.face(
+            sections, now, BriefPolicy.deviceOffset(now), EVERYTHING
         )
 
-        sections.forEach { section ->
-            // A sentence introducing the card, the way the system brief
-            // writes "1 event left for today." above its own. A bare label
-            // would read as a form field.
-            container.addView(
-                leadIn(
-                    getString(
-                        R.string.brief_section_lead,
-                        section.clientId,
-                        BriefPolicy.age(section.updatedAt, now)
-                    )
-                )
-            )
-            container.addView(card(section))
+        binding.briefSubtitle.text = resources.getQuantityString(
+            R.plurals.brief_subtitle, face.contributors, face.contributors, face.total
+        )
+
+        if (face.overdue > 0) {
+            binding.briefOverdue.visibility = View.VISIBLE
+            binding.briefOverdue.text = getString(R.string.widget_overdue, face.overdue)
+        } else {
+            binding.briefOverdue.visibility = View.GONE
+        }
+
+        // Grouped by band, in band order. groupBy preserves encounter order
+        // and the list is already banded, so the groups come out urgent
+        // first without a second sort.
+        face.lines.groupBy { it.band }.forEach { (band, lines) ->
+            container.addView(bandHeader(band, lines.size, container))
+            container.addView(bandCard(lines, face.contributors > 1, container))
         }
     }
 
-    private fun leadIn(text: String): View =
-        TextView(this).apply {
-            this.text = text
-            textSize = 14f
-            setTextColor(getColor(R.color.text_secondary))
-            setPadding(4, dp(24), 0, dp(8))
+    private fun bandHeader(band: BriefPolicy.Band?, count: Int, parent: ViewGroup): View =
+        layoutInflater.inflate(R.layout.item_brief_band, parent, false).apply {
+            findViewById<TextView>(R.id.bandLabel).also {
+                it.setText(BriefIcons.label(band))
+                // The one colour on this screen that does not follow the
+                // system palette, for the same reason it does not in the
+                // widget: a wallpaper must not be able to make "overdue"
+                // look calm.
+                it.setTextColor(getColor(BriefIcons.labelColor(band)))
+            }
+            findViewById<TextView>(R.id.bandCount).text =
+                getString(R.string.band_count, count)
         }
 
-    /** One app's items, in a rounded card. */
-    private fun card(section: BriefPolicy.Section): View =
-        LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = getDrawable(R.drawable.bg_brief_card)
-            setPadding(dp(18), dp(6), dp(18), dp(6))
-            section.items.forEach { addView(itemRow(it, section)) }
-        }
+    /** One band's lines, in a rounded card. */
+    private fun bandCard(
+        lines: List<BriefRender.Line>,
+        attribute: Boolean,
+        parent: ViewGroup
+    ): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        background = getDrawable(R.drawable.bg_brief_card)
+        setPadding(dp(16), dp(4), dp(16), dp(4))
+        lines.forEach { addView(row(it, attribute, parent)) }
+    }
 
-    private fun itemRow(item: BriefPolicy.Item, section: BriefPolicy.Section): View =
-        LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(12), 0, dp(12))
-            isClickable = true
-            isFocusable = true
-            // A ripple so the row looks tappable before it is tapped. Every
-            // row opens something — its link if it has one, a detail sheet
-            // otherwise — so there is no dead row to mislead anyone.
-            setBackgroundResource(selectableItemBackground())
-            setOnClickListener { openItem(item, section) }
-
-            addView(
-                View(this@BriefActivity).apply {
-                    background = getDrawable(R.drawable.bg_brief_accent)
-                },
-                LinearLayout.LayoutParams(dp(3), LinearLayout.LayoutParams.MATCH_PARENT)
-                    .apply { marginEnd = dp(13) }
-            )
-
-            addView(
-                LinearLayout(this@BriefActivity).apply {
-                    orientation = LinearLayout.VERTICAL
-                    addView(
-                        // No explicit colour: a plain TextView under
-                        // Theme.Medha already takes the theme's primary text
-                        // colour, and hardcoding one is what breaks in dark
-                        // mode. The secondary line below sets one because it
-                        // deliberately differs.
-                        TextView(this@BriefActivity).apply {
-                            text = item.title
-                            textSize = 16f
-                        }
-                    )
-                    if (item.text.isNotBlank()) {
-                        addView(
-                            TextView(this@BriefActivity).apply {
-                                text = item.text
-                                textSize = 14f
-                                setTextColor(getColor(R.color.text_secondary))
-                                setLineSpacing(dp(2).toFloat(), 1f)
-                            }
-                        )
-                    }
-                },
-                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            )
+    private fun row(line: BriefRender.Line, attribute: Boolean, parent: ViewGroup): View =
+        layoutInflater.inflate(R.layout.item_brief_row, parent, false).apply {
+            findViewById<ImageView>(R.id.rowBar).setImageResource(BriefIcons.bar(line.band))
+            findViewById<ImageView>(R.id.rowIcon).setImageResource(BriefIcons.icon(line.kind))
+            findViewById<TextView>(R.id.rowTitle).text = line.title
+            findViewById<TextView>(R.id.rowText).also {
+                it.text = line.text
+                it.visibility = if (line.text.isBlank()) View.GONE else View.VISIBLE
+            }
+            findViewById<TextView>(R.id.rowMark).also {
+                it.text = line.mark
+                it.setTextColor(getColor(BriefIcons.labelColor(line.band)))
+            }
+            // Attribution only when a second app is writing. With one writer
+            // the client id on every line is noise the user already knows.
+            findViewById<TextView>(R.id.rowFrom).also {
+                it.visibility = if (attribute) View.VISIBLE else View.GONE
+                if (attribute) it.text = getString(R.string.brief_from, line.clientId)
+            }
+            setOnClickListener { openItem(line) }
         }
 
     /**
@@ -188,14 +186,14 @@ class BriefActivity : AppCompatActivity() {
      * read; it is checked once more here because this is the line that
      * actually starts an activity.
      */
-    private fun openItem(item: BriefPolicy.Item, section: BriefPolicy.Section) {
-        val link = item.link?.takeIf { BriefJson.isSafeLink(it) }
+    private fun openItem(line: BriefRender.Line) {
+        val link = line.link?.takeIf { BriefJson.isSafeLink(it) }
         if (link != null) {
             if (launch(link)) return
             // Fall through to the sheet rather than failing silently: a
             // device with no browser is rare but a dead tap is worse.
         }
-        showDetail(item, section, link)
+        showDetail(line, link)
     }
 
     private fun launch(url: String): Boolean = runCatching {
@@ -208,31 +206,22 @@ class BriefActivity : AppCompatActivity() {
         if (e is ActivityNotFoundException) false else false
     }
 
-    private fun showDetail(
-        item: BriefPolicy.Item,
-        section: BriefPolicy.Section,
-        link: String?
-    ) {
-        val now = System.currentTimeMillis()
+    private fun showDetail(line: BriefRender.Line, link: String?) {
         val body = buildString {
-            if (item.text.isNotBlank()) append(item.text).append("\n\n")
-            append(
-                getString(
-                    R.string.brief_item_meta,
-                    section.clientId,
-                    BriefPolicy.age(section.updatedAt, now)
-                )
-            )
+            if (line.text.isNotBlank()) append(line.text).append("\n\n")
+            // The countdown, not the post age: when a thing is due is what
+            // the sheet is being opened to find out.
+            append(getString(R.string.brief_item_meta, line.clientId, line.mark))
             if (link != null) append("\n").append(link)
         }
 
         val b = MaterialAlertDialogBuilder(this)
-            .setTitle(item.title)
+            .setTitle(line.title)
             .setMessage(body)
             .setPositiveButton(R.string.close, null)
 
         // Only a paired web app has an origin Medha can offer to open.
-        val origin = webOriginFor(section.clientId)
+        val origin = webOriginFor(line.clientId)
         if (link != null) {
             b.setNeutralButton(R.string.brief_item_open) { _, _ -> launch(link) }
         } else if (origin != null) {
@@ -270,11 +259,16 @@ class BriefActivity : AppCompatActivity() {
             .show()
     }
 
-    /** The theme's ripple, resolved once per row. */
-    private fun selectableItemBackground(): Int {
-        val tv = android.util.TypedValue()
-        theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
-        return tv.resourceId
+    private companion object {
+        /**
+         * Capacity for "show me all of it".
+         *
+         * The store is bounded at eight sections of five, so this is the real
+         * ceiling rather than a generous guess, and the screen never silently
+         * drops a row the way a smaller number would.
+         */
+        const val EVERYTHING =
+            BriefPolicy.MAX_SECTIONS * BriefPolicy.MAX_ITEMS_PER_SECTION
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()

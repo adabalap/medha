@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The "later" bar, teal accent.
+
+     Only the LATER band follows the accent. Later is the absence of
+     urgency rather than a grade of it, so it is chrome; overdue and this
+     week are signal and keep their fixed colours under every theme. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/accent_teal" />
+    <corners android:radius="2dp" />
+</shape>
