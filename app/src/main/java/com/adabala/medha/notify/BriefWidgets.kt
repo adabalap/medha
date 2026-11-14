@@ -234,7 +234,10 @@ class MedhaWidget2x2Provider : BriefWidgetProvider() {
 /** 4x4 — the horizon. */
 class MedhaWidget4x4Provider : BriefWidgetProvider() {
     override val layout = R.layout.widget_brief_4x4
-    override val slots = (1..8).map { n ->
+    // Count comes from BriefRender, not a literal: the layout, the
+    // capacity and this list are three statements of one number, and
+    // check_widget_wiring.py compares all three.
+    override val slots = (1..BriefRender.ROWS_4X4).map { n ->
         Slot(
             ROW_IDS[n - 1], BAR_IDS[n - 1], ICON_IDS[n - 1],
             TITLE_IDS[n - 1], TEXT_IDS[n - 1], MARK_IDS[n - 1]
@@ -247,27 +250,27 @@ class MedhaWidget4x4Provider : BriefWidgetProvider() {
         // fails silently in a minified release build.
         val ROW_IDS = intArrayOf(
             R.id.widgetRow1, R.id.widgetRow2, R.id.widgetRow3, R.id.widgetRow4,
-            R.id.widgetRow5, R.id.widgetRow6, R.id.widgetRow7, R.id.widgetRow8
+            R.id.widgetRow5, R.id.widgetRow6, R.id.widgetRow7
         )
         val BAR_IDS = intArrayOf(
             R.id.widgetBar1, R.id.widgetBar2, R.id.widgetBar3, R.id.widgetBar4,
-            R.id.widgetBar5, R.id.widgetBar6, R.id.widgetBar7, R.id.widgetBar8
+            R.id.widgetBar5, R.id.widgetBar6, R.id.widgetBar7
         )
         val ICON_IDS = intArrayOf(
             R.id.widgetIcon1, R.id.widgetIcon2, R.id.widgetIcon3, R.id.widgetIcon4,
-            R.id.widgetIcon5, R.id.widgetIcon6, R.id.widgetIcon7, R.id.widgetIcon8
+            R.id.widgetIcon5, R.id.widgetIcon6, R.id.widgetIcon7
         )
         val TITLE_IDS = intArrayOf(
             R.id.widgetTitle1, R.id.widgetTitle2, R.id.widgetTitle3, R.id.widgetTitle4,
-            R.id.widgetTitle5, R.id.widgetTitle6, R.id.widgetTitle7, R.id.widgetTitle8
+            R.id.widgetTitle5, R.id.widgetTitle6, R.id.widgetTitle7
         )
         val TEXT_IDS = intArrayOf(
             R.id.widgetText1, R.id.widgetText2, R.id.widgetText3, R.id.widgetText4,
-            R.id.widgetText5, R.id.widgetText6, R.id.widgetText7, R.id.widgetText8
+            R.id.widgetText5, R.id.widgetText6, R.id.widgetText7
         )
         val MARK_IDS = intArrayOf(
             R.id.widgetMark1, R.id.widgetMark2, R.id.widgetMark3, R.id.widgetMark4,
-            R.id.widgetMark5, R.id.widgetMark6, R.id.widgetMark7, R.id.widgetMark8
+            R.id.widgetMark5, R.id.widgetMark6, R.id.widgetMark7
         )
     }
 }

@@ -37,7 +37,8 @@ fun main() {
     println("BriefRender — capacities match the layouts")
     eq("2x2 shows one line", BriefRender.ROWS_2X2, 1)
     eq("4x2 shows three", BriefRender.ROWS_4X2, 3)
-    eq("4x4 shows eight", BriefRender.ROWS_4X4, 8)
+    eq("4x4 shows seven -- what fits a real 4x4, not what fits a board",
+        BriefRender.ROWS_4X4, 7)
     check("and none exceeds what the store can hold",
         BriefRender.ROWS_4X4 <= BriefPolicy.MAX_SECTIONS * BriefPolicy.MAX_ITEMS_PER_SECTION)
 

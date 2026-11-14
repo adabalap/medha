@@ -39,10 +39,18 @@ object BriefRender {
      * 2x2 shows one line on purpose. At that size a second line is two
      * truncated titles instead of one readable one, and the whole point of
      * the small size is "what is next", not "what is there".
+     *
+     * These are counts that FIT, measured against a real 4x2 on a One UI
+     * home screen, not counts that look right on a design board. v0.13.0 put
+     * eight here for the 4x4 and three rows plus a footer into a 4x2 that
+     * holds about 180dp; the footer came out sliced in half. The layouts now
+     * also give the row area the flexible height, so if a denser launcher
+     * grid squeezes one of these the ROW clips -- which reads as "more
+     * below" -- and the footer, which is load-bearing, never does.
      */
     const val ROWS_2X2 = 1
     const val ROWS_4X2 = 3
-    const val ROWS_4X4 = 8
+    const val ROWS_4X4 = 7
 
     /**
      * The most rows the store can hold: every section full.

@@ -27,12 +27,12 @@
     android:background="@drawable/bg_widget"
     android:paddingStart="14dp"
     android:paddingEnd="14dp"
-    android:paddingTop="13dp"
-    android:paddingBottom="13dp">
+    android:paddingTop="12dp"
+    android:paddingBottom="12dp">
 
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
         android:orientation="horizontal" android:gravity="center_vertical"
-        android:paddingBottom="9dp">
+        android:paddingBottom="8dp">
 
         <FrameLayout android:layout_width="22dp" android:layout_height="22dp"
             android:background="@drawable/bg_brief_badge">
@@ -56,6 +56,18 @@
         android:layout_height="wrap_content" android:paddingTop="10dp"
         android:text="@string/widget_empty" android:textColor="@color/brief_widget_body"
         android:textSize="12.5sp" android:lineSpacingExtra="2dp" />
+
+    <!-- THE ROWS ABSORB THE SQUEEZE, NOT THE FOOTER.
+
+         height=0dp with weight=1 means this container takes whatever is left
+         after the header and the footer are laid out, so a widget shorter
+         than its content clips a ROW rather than the fold line. That matters:
+         the fold line is the entire reason a widget that does not rotate is
+         safe to trust, and v0.13.0 shipped with it sliced in half on a real
+         4x2. A half-drawn row, by contrast, is the honest "there is more
+         below" signal a list gives for free. -->
+    <LinearLayout android:layout_width="match_parent" android:layout_height="0dp"
+        android:layout_weight="1" android:orientation="vertical">
 
     <LinearLayout android:id="@+id/widgetRow1"
         android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -85,7 +97,7 @@
             <TextView android:id="@+id/widgetText1"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:textSize="12sp" android:textColor="@color/brief_widget_body"
-                android:maxLines="2" android:ellipsize="end"
+                android:maxLines="3" android:ellipsize="end"
                 android:lineSpacingExtra="1dp" android:text="" />
         </LinearLayout>
 
@@ -94,6 +106,8 @@
             android:paddingStart="10dp" android:textSize="10.5sp"
             android:textStyle="bold" android:textColor="@color/brief_widget_meta"
             android:maxLines="1" android:ellipsize="end" android:text="" />
+    </LinearLayout>
+
     </LinearLayout>
 
 </LinearLayout>
