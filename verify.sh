@@ -57,6 +57,8 @@ need "tools/tests/stubs/org/json/Stubs.kt"
 need "tools/check_workflows.py"
 need "tools/check_widget_layouts.py"
 need "tools/check_widget_wiring.py"
+need "tools/check_stale.py"
+need "tools/removed.txt"
 need "samples/medha-brief.js"
 need "samples/INTEGRATING.md"
 need "samples/medha_brief.py"
@@ -166,6 +168,11 @@ echo "Pure-logic tests (SchedulerConfig, Embedder — no Android SDK needed)"
 ./tools/tests/run.sh || { echo "Pure-logic tests failed."; exit 1; }
 
 echo
+# Before anything else: a file deleted by a release but left behind by a zip
+# extracted over an old checkout makes every check below report a symptom
+# rather than the cause.
+python3 tools/check_stale.py || { echo "Stale file check failed."; exit 1; }
+
 python3 tools/check_resources.py || { echo "Resource reference check failed."; exit 1; }
 
 # CI is the only way this project gets built, so a broken workflow means no

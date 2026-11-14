@@ -1,0 +1,43 @@
+# Files that must NOT exist in a checked-out tree.
+#
+# WHY THIS FILE EXISTS
+#
+# Medha is delivered as a zip of the source tree, and a zip extracted over an
+# existing checkout adds and overwrites but never deletes. Every file removed
+# in a release therefore survives in the consumer's repo, and the first thing
+# anyone hears about it is an error that points at a file they did not touch.
+#
+# v0.13.0 did exactly this. It deleted four files; extracting it over v0.12.2
+# left all four behind, and CI failed with:
+#
+#     MedhaWidgetProvider.kt: R.string.widget_footer not declared
+#
+# which names a file that no longer exists in the release, reports a string
+# that was deliberately retired, and says nothing at all about the actual
+# problem. The real failures underneath it were worse and would have surfaced
+# one at a time: MedhaWidgetProvider.kt declares a class that BriefWidgets.kt
+# also declares, so the Kotlin compiler would have reported a redeclaration;
+# BriefRotator.kt calls methods that no longer exist.
+#
+# So the removals are listed here and enforced, and the error becomes "delete
+# this file" instead of a scavenger hunt.
+#
+# HOW TO MAINTAIN IT
+#
+# When a release deletes a source file, add its repo-relative path below under
+# that version. Never remove entries: someone upgrading from an old version
+# still has the old files, and an entry costs one stat() per build. A path
+# listed here that the release also ships is a contradiction, and
+# check_stale.py reports it as one.
+
+# --- removed in v0.13.0 -----------------------------------------------------
+# The widget rebuild. Three sized providers replaced the single one, and all
+# three live in BriefWidgets.kt; MedhaWidgetProvider survives as a class name
+# there (so placed widgets are not orphaned) but not as a file.
+app/src/main/java/com/adabala/medha/notify/MedhaWidgetProvider.kt
+app/src/main/res/layout/widget_medha.xml
+app/src/main/res/xml/widget_medha_info.xml
+
+# Rotation is gone entirely: a brief read in a two-second glance must not
+# move, so there is no timer, no screen-on receiver and no interval setting.
+app/src/main/java/com/adabala/medha/notify/BriefRotator.kt
