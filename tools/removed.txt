@@ -41,6 +41,43 @@
 # listed here that the release also ships is a contradiction, and
 # check_stale.py reports it as one.
 
+# --- removed in v0.9.0 ------------------------------------------------------
+# Recorded in v0.18.3, nine releases late. These were found by the manifest,
+# not by this file, which is the whole reason the manifest exists: nobody
+# wrote them down at the time, and SmsConnector.kt went on being compiled
+# into every APK built from a zip-updated checkout until a fixed checker
+# finally read it properly.
+#
+# The SMS connector. Play Protect blocks a sideloaded APK that declares SMS
+# permissions, evaluated on the manifest rather than on use, so the feature
+# could not ship at all. Its icon and its quarantine flavour went with it.
+app/src/main/java/com/adabala/medha/connectors/SmsConnector.kt
+app/src/main/res/drawable/ic_sms.xml
+app/src/full/AndroidManifest.xml
+
+# --- removed in an unrecorded release before v0.13.0 ------------------------
+# Found by the manifest in v0.18.3. The version each one went in is not
+# recorded anywhere in the tree, and guessing it would be worse than saying
+# so, but what they were for is clear enough.
+#
+# A one-shot patch script for a specific build failure, kept in docs/ long
+# after the failure it patched stopped existing.
+docs/apply-minimal-fix.sh
+
+# Hand-written Kotlin test scaffolding pasted into .txt files so it would not
+# be compiled. tools/tests/ replaced all three with harnesses that run against
+# the real sources, which is the only version of this idea that catches
+# anything.
+docs/verification-harness.kt.txt
+docs/verification-harness-rag.kt.txt
+docs/verification-harness-sched.kt.txt
+
+# A redaction pass over logs and diagnostics, superseded by doing it at the
+# source: drop reasons are logged without content, and the brief never
+# persists raw notification text.
+tools/REDACTION.md
+tools/redact.py
+
 # --- removed in v0.13.0 -----------------------------------------------------
 # The widget rebuild. Three sized providers replaced the single one, and all
 # three live in BriefWidgets.kt; MedhaWidgetProvider survives as a class name

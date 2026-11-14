@@ -192,6 +192,7 @@ tools/check_symbols.py
 tools/check_widget_layouts.py
 tools/check_widget_wiring.py
 tools/check_workflows.py
+tools/local.txt
 tools/make_manifest.py
 tools/manifest.txt
 tools/removed.txt
