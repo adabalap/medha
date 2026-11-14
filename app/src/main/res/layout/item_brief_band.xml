@@ -34,4 +34,15 @@
         android:textAppearance="?attr/textAppearanceLabelSmall"
         android:textColor="?android:attr/textColorSecondary"
         android:text="" />
+
+    <!-- Dismiss the whole band. Sits ON the heading because that is the
+         only place a "group" is visible: the user can see exactly which
+         rows are about to go. -->
+    <ImageView android:id="@+id/bandDismiss"
+        android:layout_width="34dp" android:layout_height="34dp"
+        android:padding="8dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:clickable="true" android:focusable="true"
+        android:contentDescription="@string/dismiss_group"
+        android:src="@drawable/ic_close" />
 </LinearLayout>

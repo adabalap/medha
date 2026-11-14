@@ -63,6 +63,15 @@ kotlinc "$SRC/notify/BriefPolicy.kt" "$SRC/notify/BriefRender.kt" \
 java -jar "$WORK/render.jar"
 
 echo
+echo "== BriefDismissTest =="
+# Removing a line from your own brief and having it STAY removed. Clients
+# own their section and re-post it whole, so a dismissal cannot live in the
+# content; it is applied on every read instead.
+kotlinc "$SRC/notify/BriefPolicy.kt" "$SRC/notify/BriefDismiss.kt" BriefDismissTest.kt \
+  -include-runtime -d "$WORK/dismiss.jar"
+java -jar "$WORK/dismiss.jar"
+
+echo
 echo "== BriefNudgeTest =="
 # Whether Medha should interrupt you. The easiest thing in an app to get
 # wrong, and the wrongness is invisible in review: a nudge that fires twice,

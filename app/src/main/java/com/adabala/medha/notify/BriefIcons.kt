@@ -24,21 +24,26 @@ import com.adabala.medha.R
 object BriefIcons {
 
     /**
-     * The wash behind a row's kind glyph.
+     * The tile behind a row's glyph, keyed on KIND.
      *
-     * Replaced the hairline bar in v0.16.0. A bar is a reading aid for a
-     * list; a tile is the thing the eye lands on first, which is what makes
-     * a brief read as a card rather than as rows of text.
+     * Changed from band to kind in v0.18.0. Colouring the tile by urgency
+     * as well as the pill gave four colours and a wall of red whenever
+     * several things were late, which is both ugly and less informative:
+     * every row shouted the same thing. A row now says two things at once
+     * — the tile what it IS, the pill when it is DUE — and the urgency
+     * signal is clearer for having the pill to itself.
      *
-     * Not themed. The accent picker moves the mark badge and the `later`
-     * bar, which are decoration; these carry urgency, and no preference
-     * recolours urgency.
+     * Kind is description rather than warning, so unlike the bands these
+     * are free to be pretty and there is no rule against theming them. They
+     * are simply not themed yet.
      */
-    fun tile(band: BriefPolicy.Band?): Int = when (band) {
-        BriefPolicy.Band.OVERDUE -> R.drawable.tile_overdue
-        BriefPolicy.Band.SOON -> R.drawable.tile_soon
-        BriefPolicy.Band.LATER -> R.drawable.tile_later
-        null -> R.drawable.tile_none
+    fun tile(kind: String?): Int = when (kind) {
+        "bill" -> R.drawable.tile_bill
+        "date" -> R.drawable.tile_date
+        "event" -> R.drawable.tile_event
+        "alert" -> R.drawable.tile_alert
+        "done" -> R.drawable.tile_done
+        else -> R.drawable.tile_note
     }
 
     /** The wash behind the countdown. Same rule, same colours. */

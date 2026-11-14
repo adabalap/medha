@@ -99,4 +99,32 @@
     <color name="band_soon_tint">#1A8A5A00</color>
     <color name="band_later_tint">#1A4A38C4</color>
     <color name="band_none_tint">#12000000</color>
+
+    <!-- ===================================================================
+         KIND COLOURS.
+
+         The second axis, and the one that makes the brief look like
+         something rather than a list. A row now says two things at once:
+         the TILE says what it is, the PILL says when it is due.
+
+         That split is deliberate. Putting urgency in both places gave four
+         colours and a wall of red when several things were late; putting
+         identity in the tile gives six, and the urgency signal stays
+         unambiguous because it has the pill to itself.
+
+         Kind is description, not warning, so unlike the bands these are
+         free to be pretty.
+         =================================================================== -->
+    <color name="kind_bill">#1A5FB4</color>          <!-- money owed -->
+    <color name="kind_bill_wash">#141A5FB4</color>
+    <color name="kind_date">#6A3FB5</color>          <!-- a dated obligation -->
+    <color name="kind_date_wash">#146A3FB5</color>
+    <color name="kind_event">#0F6E63</color>          <!-- something at a time -->
+    <color name="kind_event_wash">#140F6E63</color>
+    <color name="kind_alert">#B3412A</color>          <!-- something wrong now -->
+    <color name="kind_alert_wash">#14B3412A</color>
+    <color name="kind_done">#157A3A</color>          <!-- finished -->
+    <color name="kind_done_wash">#14157A3A</color>
+    <color name="kind_note">#4A5568</color>          <!-- everything else -->
+    <color name="kind_note_wash">#144A5568</color>
 </resources>

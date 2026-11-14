@@ -87,7 +87,16 @@ abstract class BriefWidgetProvider : AppWidgetProvider() {
             .getString(NotificationHub.WIDGET_KEY, null)
 
         val now = System.currentTimeMillis()
-        val sections = if (raw == null) emptyList() else BriefJson.parse(raw, now)
+        // Dismissals are applied HERE as well as in NotificationHub.brief().
+        // This path deliberately does not go through the hub -- a widget
+        // redraw should not construct one -- so the filter has to be applied
+        // on both reads or a dismissal would work on the screen and not on
+        // the home screen, which is the surface it was performed from.
+        val sections = BriefDismiss.apply(
+            if (raw == null) emptyList() else BriefJson.parse(raw, now),
+            NotificationHub.dismissals(context),
+            now
+        )
         // Read per render, not cached: the offset changes under DST and when
         // the phone crosses a timezone, and a brief that bands "today"
         // against last month's offset is wrong in exactly the hours that
@@ -160,7 +169,7 @@ abstract class BriefWidgetProvider : AppWidgetProvider() {
                         // out here. Any call that takes a resolved colour int
                         // would bake in Medha's configuration instead and be
                         // wrong in one of the two themes, invisibly.
-                        v.setImageViewResource(slot.tile, BriefIcons.tile(line.band))
+                        v.setImageViewResource(slot.tile, BriefIcons.tile(line.kind))
                         v.setImageViewResource(slot.pill, BriefIcons.pill(line.band))
                         v.setImageViewResource(slot.icon, BriefIcons.icon(line.kind))
                     }

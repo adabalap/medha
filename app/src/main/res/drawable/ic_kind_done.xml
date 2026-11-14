@@ -10,7 +10,7 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp" android:height="24dp"
     android:viewportWidth="24" android:viewportHeight="24"
-    android:tint="@color/brief_widget_meta">
+    android:tint="@color/kind_done">
     <path android:pathData="M4.5,12.8 9.6,17.9 19.5,7.2"
         android:strokeColor="#FFFFFFFF" android:strokeWidth="1.7"
         android:strokeLineCap="round" android:strokeLineJoin="round" />

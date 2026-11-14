@@ -137,7 +137,16 @@ class MainActivity : AppCompatActivity() {
             prefs.edit().putString(InferenceService.KEY_BACKEND, v).apply()
         }
 
-        binding.btnStart.setOnClickListener { startMedha() }
+        binding.btnStart.setOnClickListener {
+            // With no model chosen, Start IS the model picker.
+            //
+            // v0.17.0 moved the picker into Settings and left this button
+            // disabled with "Tap Start to load the model" above it: a screen
+            // that tells you to press a button you cannot press, and no hint
+            // that the fix is two taps away in another tab. The button now
+            // always does the next useful thing.
+            if (hasModel()) startMedha() else pickModel.launch(arrayOf("*/*"))
+        }
         binding.btnStop.setOnClickListener { stopMedha() }
         binding.btnCopyToken.setOnClickListener { copyToken() }
 
@@ -190,6 +199,7 @@ class MainActivity : AppCompatActivity() {
         // Apps
         binding.appsClientList.layoutManager = LinearLayoutManager(this)
         binding.appsClientList.adapter = clientAdapter
+        binding.btnAddClient.setOnClickListener { showAddClientDialog() }
         binding.btnPairWeb.setOnClickListener { showPairWebDialog() }
         binding.btnOpenDemo.setOnClickListener { openDemo() }
 
@@ -198,6 +208,7 @@ class MainActivity : AppCompatActivity() {
         binding.rowBriefTheme.setOnClickListener { showBriefThemeDialog() }
         binding.rowNotifListen.setOnClickListener { showNotificationListenDialog() }
         binding.rowNudge.setOnClickListener { showNudgeDialog() }
+        binding.rowUndismiss.setOnClickListener { confirmUndismissAll() }
         binding.rowMultimodal.setOnClickListener { showMultimodalDialog() }
         binding.rowThermal.setOnClickListener { showThermalDialog() }
         binding.rowScheduler.setOnClickListener { showSchedulerDialog() }
@@ -258,19 +269,26 @@ class MainActivity : AppCompatActivity() {
      * UI tracks the service even when it is started or stopped from elsewhere
      * (the notification's Stop action, or the system killing it).
      */
+    /** Whether a model file has been chosen. */
+    private fun hasModel(): Boolean =
+        prefs.getString(InferenceService.KEY_MODEL_PATH, null) != null
+
     private fun applyState(state: UiState) {
         uiState = state
         val hasModel = prefs.getString(InferenceService.KEY_MODEL_PATH, null) != null
         val busy = state == UiState.STARTING || state == UiState.LOADING
         val live = state == UiState.RUNNING || busy
 
-        binding.btnStart.isEnabled = hasModel && (state == UiState.IDLE || state == UiState.ERROR)
-        binding.btnStart.text = when (state) {
-            UiState.STARTING -> getString(R.string.btn_starting)
-            UiState.LOADING -> getString(R.string.btn_loading)
-            UiState.RUNNING -> getString(R.string.btn_running)
-            UiState.ERROR -> getString(R.string.btn_retry)
-            UiState.IDLE -> getString(R.string.btn_start)
+        // Never disabled for want of a model: without one it becomes the
+        // picker instead. Only a run already in progress disables it.
+        binding.btnStart.isEnabled = state == UiState.IDLE || state == UiState.ERROR
+        binding.btnStart.text = when {
+            !hasModel -> getString(R.string.btn_pick_model_first)
+            state == UiState.STARTING -> getString(R.string.btn_starting)
+            state == UiState.LOADING -> getString(R.string.btn_loading)
+            state == UiState.RUNNING -> getString(R.string.btn_running)
+            state == UiState.ERROR -> getString(R.string.btn_retry)
+            else -> getString(R.string.btn_start)
         }
 
         binding.btnStop.isEnabled = live
@@ -485,6 +503,24 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * A way back from a dismissal.
+     *
+     * Every destructive gesture in this app needs one. Dismissals expire on
+     * their own after thirty days, but "wait a month" is not an undo.
+     */
+    private fun confirmUndismissAll() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.undismiss_all)
+            .setIcon(R.drawable.ic_refresh)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.undismiss_all) { _, _ ->
+                NotificationHub(applicationContext).undismissAll()
+                toast(getString(R.string.undismiss_all_done))
+            }
+            .show()
+    }
+
     /** Medha's own reminder about overdue items. */
     private fun showNudgeDialog() {
         val on = prefs.getBoolean(NotificationHub.KEY_NUDGE, NotificationHub.NUDGE_DEFAULT)
@@ -538,35 +574,6 @@ class MainActivity : AppCompatActivity() {
                 dialog.dismiss()
             }
             .setNegativeButton(R.string.close, null)
-            .show()
-    }
-
-    private fun showClientsDialog() {
-        val clients = registry.all()
-        if (clients.isEmpty()) {
-            showAddClientDialog()
-            return
-        }
-        // Deliberately no token preview here.
-        //
-        // The previous list showed "ac0328c9d6…e4b4", which is selectable text.
-        // People copied that, pasted it into a consumer app, and got a generic
-        // 401 — the ellipsis was invisible in a password field. Showing no
-        // token at all forces the one path that yields a working value: tap the
-        // client, then Copy token.
-        val view = layoutInflater.inflate(R.layout.dialog_clients, null)
-        val list = view.findViewById<RecyclerView>(R.id.clientList)
-        list.layoutManager = LinearLayoutManager(this)
-        val adapter = ClientListAdapter { client -> showClientActions(client) }
-        list.adapter = adapter
-        adapter.submitList(clients)
-
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.clients_title)
-            .setIcon(R.drawable.ic_client)
-            .setView(view)
-            .setPositiveButton(R.string.close, null)
-            .setNeutralButton(R.string.client_add) { _, _ -> showAddClientDialog() }
             .show()
     }
 
@@ -1371,8 +1378,13 @@ class MainActivity : AppCompatActivity() {
             binding.statusText.setTextColor(Color.parseColor(COLOR_IDLE))
             binding.statusText.text =
                 if (starting) getString(R.string.status_starting) else getString(R.string.status_not_running)
-            binding.statusDetail.text =
-                if (starting) getString(R.string.status_waiting_for_service) else getString(R.string.status_tap_start)
+            binding.statusDetail.text = when {
+                starting -> getString(R.string.status_waiting_for_service)
+                // Say the actual problem. "Tap Start" when Start cannot
+                // start anything is how a screen becomes a dead end.
+                !hasModel() -> getString(R.string.status_no_model)
+                else -> getString(R.string.status_tap_start)
+            }
             binding.systemText.text = getString(R.string.runtime_placeholder)
             binding.metricsText.text = getString(R.string.metrics_placeholder)
             if (!starting) startRequestedAt = 0L

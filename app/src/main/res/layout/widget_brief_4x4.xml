@@ -91,7 +91,7 @@
             <ImageView android:id="@+id/widgetTile1"
                 android:layout_width="match_parent" android:layout_height="match_parent"
                 android:scaleType="fitXY" android:contentDescription="@null"
-                android:src="@drawable/tile_none" />
+                android:src="@drawable/tile_note" />
             <ImageView android:id="@+id/widgetIcon1"
                 android:layout_width="16dp" android:layout_height="16dp"
                 android:layout_gravity="center"
@@ -139,7 +139,7 @@
             <ImageView android:id="@+id/widgetTile2"
                 android:layout_width="match_parent" android:layout_height="match_parent"
                 android:scaleType="fitXY" android:contentDescription="@null"
-                android:src="@drawable/tile_none" />
+                android:src="@drawable/tile_note" />
             <ImageView android:id="@+id/widgetIcon2"
                 android:layout_width="16dp" android:layout_height="16dp"
                 android:layout_gravity="center"
@@ -187,7 +187,7 @@
             <ImageView android:id="@+id/widgetTile3"
                 android:layout_width="match_parent" android:layout_height="match_parent"
                 android:scaleType="fitXY" android:contentDescription="@null"
-                android:src="@drawable/tile_none" />
+                android:src="@drawable/tile_note" />
             <ImageView android:id="@+id/widgetIcon3"
                 android:layout_width="16dp" android:layout_height="16dp"
                 android:layout_gravity="center"
@@ -235,7 +235,7 @@
             <ImageView android:id="@+id/widgetTile4"
                 android:layout_width="match_parent" android:layout_height="match_parent"
                 android:scaleType="fitXY" android:contentDescription="@null"
-                android:src="@drawable/tile_none" />
+                android:src="@drawable/tile_note" />
             <ImageView android:id="@+id/widgetIcon4"
                 android:layout_width="16dp" android:layout_height="16dp"
                 android:layout_gravity="center"
@@ -283,7 +283,7 @@
             <ImageView android:id="@+id/widgetTile5"
                 android:layout_width="match_parent" android:layout_height="match_parent"
                 android:scaleType="fitXY" android:contentDescription="@null"
-                android:src="@drawable/tile_none" />
+                android:src="@drawable/tile_note" />
             <ImageView android:id="@+id/widgetIcon5"
                 android:layout_width="16dp" android:layout_height="16dp"
                 android:layout_gravity="center"
@@ -331,7 +331,7 @@
             <ImageView android:id="@+id/widgetTile6"
                 android:layout_width="match_parent" android:layout_height="match_parent"
                 android:scaleType="fitXY" android:contentDescription="@null"
-                android:src="@drawable/tile_none" />
+                android:src="@drawable/tile_note" />
             <ImageView android:id="@+id/widgetIcon6"
                 android:layout_width="16dp" android:layout_height="16dp"
                 android:layout_gravity="center"
@@ -379,7 +379,7 @@
             <ImageView android:id="@+id/widgetTile7"
                 android:layout_width="match_parent" android:layout_height="match_parent"
                 android:scaleType="fitXY" android:contentDescription="@null"
-                android:src="@drawable/tile_none" />
+                android:src="@drawable/tile_note" />
             <ImageView android:id="@+id/widgetIcon7"
                 android:layout_width="16dp" android:layout_height="16dp"
                 android:layout_gravity="center"

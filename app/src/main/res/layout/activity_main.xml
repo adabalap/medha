@@ -181,10 +181,21 @@
                 android:layout_marginTop="12dp"
                 android:nestedScrollingEnabled="false" />
 
+            <!-- Adding an API client. This was the neutral button on the
+                 clients DIALOG, and when that dialog stopped being reachable
+                 in v0.17.0 the whole flow went with it: there was no longer
+                 any way to add a client at all. -->
             <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnPairWeb"
+                android:id="@+id/btnAddClient"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:layout_marginTop="18dp"
+                android:text="@string/add_client" app:icon="@drawable/ic_client" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnPairWeb"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
                 android:text="@string/pair_web" app:icon="@drawable/ic_pair" />
 
             <com.google.android.material.button.MaterialButton
@@ -372,6 +383,20 @@
                     android:layout_height="wrap_content"
                     android:textAppearance="?attr/textAppearanceBodyLarge"
                     android:text="@string/nudge_setting" />
+            </LinearLayout>
+            <LinearLayout android:id="@+id/rowUndismiss"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal" android:gravity="center_vertical"
+                android:minHeight="56dp" android:paddingStart="4dp" android:paddingEnd="4dp"
+                android:background="?attr/selectableItemBackground"
+                android:clickable="true" android:focusable="true">
+                <ImageView android:layout_width="22dp" android:layout_height="22dp"
+                    android:layout_marginEnd="18dp" android:contentDescription="@null"
+                    android:src="@drawable/ic_refresh" />
+                <TextView android:layout_width="0dp" android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="?attr/textAppearanceBodyLarge"
+                    android:text="@string/undismiss_all" />
             </LinearLayout>
         </LinearLayout>
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"

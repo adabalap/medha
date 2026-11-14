@@ -303,4 +303,17 @@ Licensed under the terms in the project repository.</string>
     <string name="apps_empty">Nothing is paired yet. Pair a web app to let it use Medha.</string>
     <string name="endpoint_fmt">http://127.0.0.1:%1$d</string>
     <string name="endpoint_idle">Start Medha to get an address</string>
+
+    <!-- Dismissing. -->
+    <string name="dismiss">Dismiss</string>
+    <string name="dismiss_group">Dismiss this group</string>
+    <string name="dismiss_group_title">Dismiss %1$s?</string>
+    <string name="dismiss_group_body">Removes %1$d item(s) from your brief. They come back if an app posts them again with a new date, and the dismissal is forgotten after 30 days.</string>
+    <string name="dismissed_one">Dismissed</string>
+    <string name="dismissed_many">Dismissed %1$d</string>
+    <string name="undismiss_all">Bring back dismissed items</string>
+    <string name="undismiss_all_done">Dismissed items restored</string>
+    <string name="btn_pick_model_first">Choose model file</string>
+    <string name="status_no_model">No model chosen yet. Tap below to pick a .litertlm file.</string>
+    <string name="add_client">Add an API client</string>
 </resources>

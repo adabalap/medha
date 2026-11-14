@@ -89,7 +89,7 @@
             <ImageView android:id="@+id/widgetTile1"
                 android:layout_width="match_parent" android:layout_height="match_parent"
                 android:scaleType="fitXY" android:contentDescription="@null"
-                android:src="@drawable/tile_none" />
+                android:src="@drawable/tile_note" />
             <ImageView android:id="@+id/widgetIcon1"
                 android:layout_width="16dp" android:layout_height="16dp"
                 android:layout_gravity="center"

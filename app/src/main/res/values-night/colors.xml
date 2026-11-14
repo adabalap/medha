@@ -62,4 +62,18 @@
     <color name="band_soon_tint">#26FFB657</color>
     <color name="band_later_tint">#268B7DF7</color>
     <color name="band_none_tint">#1FFFFFFF</color>
+
+    <!-- Kind colours, dark. Lifted ink, stronger wash. -->
+    <color name="kind_bill">#8FBCF7</color>
+    <color name="kind_bill_wash">#2B8FBCF7</color>
+    <color name="kind_date">#C4ADF2</color>
+    <color name="kind_date_wash">#2BC4ADF2</color>
+    <color name="kind_event">#63D6C4</color>
+    <color name="kind_event_wash">#2B63D6C4</color>
+    <color name="kind_alert">#FF9E7E</color>
+    <color name="kind_alert_wash">#2BFF9E7E</color>
+    <color name="kind_done">#74D492</color>
+    <color name="kind_done_wash">#2B74D492</color>
+    <color name="kind_note">#A7B2C4</color>
+    <color name="kind_note_wash">#2BA7B2C4</color>
 </resources>

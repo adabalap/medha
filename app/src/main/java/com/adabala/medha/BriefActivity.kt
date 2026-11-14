@@ -12,6 +12,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.adabala.medha.databinding.ActivityBriefBinding
 import com.adabala.medha.notify.BriefJson
+import com.adabala.medha.notify.BriefDismiss
 import com.adabala.medha.notify.BriefIcons
 import com.adabala.medha.notify.BriefPolicy
 import com.adabala.medha.notify.BriefRender
@@ -137,7 +138,37 @@ class BriefActivity : AppCompatActivity() {
             }
             findViewById<TextView>(R.id.bandCount).text =
                 getString(R.string.band_count, count)
+            findViewById<View>(R.id.bandDismiss).setOnClickListener {
+                confirmDismissBand(band, count)
+            }
         }
+
+    /**
+     * Dismissing a whole band.
+     *
+     * Confirmed, because it removes several things at once and the user
+     * cannot see what a mistake cost until the next render. Not confirmed
+     * for a single row: one item is cheap to lose and the sheet already
+     * showed exactly what it was.
+     */
+    private fun confirmDismissBand(band: BriefPolicy.Band?, count: Int) {
+        val label = getString(BriefIcons.label(band))
+        MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.dismiss_group_title, label))
+            .setMessage(getString(R.string.dismiss_group_body, count))
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.dismiss) { _, _ ->
+                val now = System.currentTimeMillis()
+                val offset = BriefPolicy.deviceOffset(now)
+                val keys = BriefDismiss.keysOf(hub.brief()) { _, item ->
+                    BriefPolicy.bandOf(item.dueAt, now, offset) == band
+                }
+                hub.dismiss(keys)
+                toast(getString(R.string.dismissed_many, keys.size))
+                render()
+            }
+            .show()
+    }
 
     /** One band's lines, in a rounded card. */
     private fun bandCard(
@@ -153,7 +184,7 @@ class BriefActivity : AppCompatActivity() {
 
     private fun row(line: BriefRender.Line, attribute: Boolean, parent: ViewGroup): View =
         layoutInflater.inflate(R.layout.item_brief_row, parent, false).apply {
-            findViewById<ImageView>(R.id.rowTile).setImageResource(BriefIcons.tile(line.band))
+            findViewById<ImageView>(R.id.rowTile).setImageResource(BriefIcons.tile(line.kind))
             findViewById<ImageView>(R.id.rowPill).setImageResource(BriefIcons.pill(line.band))
             findViewById<ImageView>(R.id.rowIcon).setImageResource(BriefIcons.icon(line.kind))
             findViewById<TextView>(R.id.rowTitle).text = line.title
@@ -220,6 +251,14 @@ class BriefActivity : AppCompatActivity() {
             .setTitle(line.title)
             .setMessage(body)
             .setPositiveButton(R.string.close, null)
+            // Not confirmed: one item is cheap to lose, the sheet showed
+            // exactly what it was, and a confirmation on every single
+            // dismissal is how a feature becomes one nobody uses.
+            .setNegativeButton(R.string.dismiss) { _, _ ->
+                hub.dismiss(listOf(BriefDismiss.key(line.clientId, line.title, line.dueAt)))
+                toast(getString(R.string.dismissed_one))
+                render()
+            }
 
         // Only a paired web app has an origin Medha can offer to open.
         val origin = webOriginFor(line.clientId)

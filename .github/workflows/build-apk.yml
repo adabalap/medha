@@ -124,6 +124,13 @@ jobs:
       - name: Check widget wiring
         run: python3 tools/check_widget_wiring.py
 
+      # v0.17.0 replaced a sixteen-item drawer with three destinations and
+      # wired every entry to its new home except one -- "Add an API client"
+      # had only ever been a button on a dialog that stopped being
+      # reachable, so the whole flow disappeared with a green build.
+      - name: Check every screen can be opened
+        run: python3 tools/check_reachable.py
+
       # Adding an endpoint is three lines and forgetting the capability
       # check is one of them -- the route then works, the tests pass, and
       # any paired client can call it. This found exactly that on

@@ -49,3 +49,11 @@ app/src/main/java/com/adabala/medha/notify/BriefRotator.kt
 # dead header in the APK.
 app/src/main/res/menu/drawer_menu.xml
 app/src/main/res/layout/nav_header.xml
+
+# --- removed in v0.18.0 -----------------------------------------------------
+# Row tiles moved from being keyed on urgency to being keyed on kind, so the
+# four band tiles have no callers. Urgency still colours the pill.
+app/src/main/res/drawable/tile_overdue.xml
+app/src/main/res/drawable/tile_soon.xml
+app/src/main/res/drawable/tile_later.xml
+app/src/main/res/drawable/tile_none.xml

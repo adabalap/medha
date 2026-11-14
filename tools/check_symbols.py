@@ -57,6 +57,12 @@ RECEIVER_BLOCK = re.compile(
 # Kotlin/Java/Android names that are legitimately unqualified.
 BUILTIN = set("""
 sin cos tan asin acos atan atan2 sqrt cbrt exp ln log log10 log2 hypot floor ceil sign truncate
+# Ktor extensions on ApplicationCall. Called bare inside this project's own
+# `ApplicationCall.xxx()` helpers, where the receiver is implicit. These were
+# invisible until the literal-stripping bug above was fixed, because the
+# region of LocalServer.kt they live in was being read as string contents.
+respond respondText respondBytes respondRedirect respondFile
+receive receiveText receiveMultipart receiveParameters
 if for while when return throw try catch finally else do run let apply also with
 takeIf takeUnless require requireNotNull check checkNotNull error TODO
 listOf mutableListOf arrayListOf setOf mutableSetOf mapOf mutableMapOf hashMapOf
@@ -87,6 +93,79 @@ escapeLike createFts createStore
 # Extension functions declared on external receivers (e.g. `fun Cursor.getX()`)
 # are project code and must still be found, so they are added to `declared`
 # separately below rather than being ignored here.
+
+
+
+def strip_literals(src):
+    """Blank out strings, chars and comments in ONE left-to-right pass.
+
+    The previous version ran a sequence of regexes: block comments, then
+    line comments, then strings. That ordering is wrong and it bit us. A
+    line comment is stripped from the first `//` on the line -- including a
+    `//` that is INSIDE a string, so `"http://127.0.0.1:$port/health"` lost
+    everything from the slashes onward and left a `"` with no partner. Every
+    quote after it in the file then paired up shifted by one, and whole
+    regions of real code were read as string contents while string contents
+    were read as code.
+
+    It passed anyway for a long time, because the file happened to contain
+    an even number of such URLs and the damage cancelled out. Adding one
+    comment in v0.18.1 moved the boundary and the checker started reporting
+    `found()` and `ready()` as undeclared functions -- both of which were
+    fragments of `append("classes NOT found (")` and `"Model ready (...)"`.
+    A checker that passes by luck is worse than no checker.
+
+    Scanning once, in order, makes the question unambiguous: whatever opens
+    first wins, so a `//` inside a string is text and a `"` inside a comment
+    is nothing at all.
+
+    String TEMPLATES are deliberately kept as code. `"${foo()}"` really does
+    call foo(), and dropping the braces would hide genuine call sites.
+    """
+    out, i, n = [], 0, len(src)
+    while i < n:
+        if src.startswith('"""', i):
+            end = src.find('"""', i + 3)
+            out.append('""')
+            i = n if end == -1 else end + 3
+        elif src[i] == '"':
+            out.append('""')
+            i += 1
+            while i < n and src[i] != '"' and src[i] != '\n':
+                if src[i] == '\\':
+                    i += 2
+                elif src.startswith('${', i):
+                    # Template expression: real code, kept and scanned.
+                    depth, j = 1, i + 2
+                    while j < n and depth:
+                        if src[j] == '{':
+                            depth += 1
+                        elif src[j] == '}':
+                            depth -= 1
+                        j += 1
+                    out.append(' ' + src[i + 2:j - 1] + ' ')
+                    i = j
+                else:
+                    i += 1
+            i += 1
+        elif src[i] == "'":
+            out.append("''")
+            i += 1
+            while i < n and src[i] != "'" and src[i] != '\n':
+                i += 2 if src[i] == '\\' else 1
+            i += 1
+        elif src.startswith('//', i):
+            end = src.find('\n', i)
+            out.append(' ')
+            i = n if end == -1 else end
+        elif src.startswith('/*', i):
+            end = src.find('*/', i + 2)
+            out.append(' ')
+            i = n if end == -1 else end + 2
+        else:
+            out.append(src[i])
+            i += 1
+    return ''.join(out)
 
 
 def implicit_receiver_spans(code):
@@ -136,12 +215,7 @@ def scan(root):
     problems = []
     for f, src in sources.items():
         # Strip comments and strings so their contents are not read as code.
-        code = re.sub(r"/\*.*?\*/", " ", src, flags=re.S)
-        code = re.sub(r"//[^\n]*", " ", code)
-        # Raw strings hold regexes whose alternations look exactly like calls,
-        # e.g. "store(/.*)?|sessions(/.*)?" -- strip them before matching.
-        code = re.sub(r'"""(?:.|\n)*?"""', '""', code, flags=re.S)
-        code = re.sub(r'"(?:\\.|[^"\\])*"', '""', code)
+        code = strip_literals(src)
         # A multi-line string built by concatenation still leaves fragments like
         # `store(/.*)?|sessions(/.*)?` behind; those are regex alternations, not
         # calls. Anything immediately preceded by | or ( inside such a fragment

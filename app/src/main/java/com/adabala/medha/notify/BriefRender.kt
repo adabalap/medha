@@ -72,8 +72,17 @@ object BriefRender {
          * the only freshness signal available.
          */
         val mark: String,
-        /** null for an undated item. Chooses the bar colour, nothing else. */
+        /** null for an undated item. Chooses the pill colour, nothing else. */
         val band: BriefPolicy.Band?,
+        /**
+         * The raw instant, carried alongside the derived [band] and [mark].
+         *
+         * Needed because a dismissal's identity includes the due date — so
+         * dismissing November's bill does not also dismiss December's — and
+         * the screen dismisses from a Line rather than going back to the
+         * raw sections to find the item again.
+         */
+        val dueAt: Long?,
         /** One of [BriefPolicy.KINDS], or null. Chooses the row icon. */
         val kind: String?,
         val clientId: String,
@@ -140,6 +149,7 @@ object BriefRender {
         mark = BriefPolicy.relative(row.dueAt, now, offsetMs)
             ?: BriefPolicy.age(row.updatedAt, now),
         band = BriefPolicy.bandOf(row.dueAt, now, offsetMs),
+        dueAt = row.dueAt,
         kind = row.kind,
         clientId = row.clientId,
         link = row.link

@@ -297,8 +297,37 @@ class NotificationHub(private val appContext: Context) {
      * a WorkManager job to delete text nobody is looking at would be a wakeup
      * and a reason for the OS to keep Medha alive, for no benefit.
      */
-    fun brief(): List<BriefPolicy.Section> =
-        BriefPolicy.prune(readSections(), System.currentTimeMillis())
+    /**
+     * The brief as the user should see it: live, and minus whatever they
+     * have dismissed.
+     *
+     * Dismissals are applied on READ rather than by deleting from the
+     * store, because clients own their section and re-post it whole. An
+     * item deleted here reappears on the next sync; a dismissal applied
+     * here holds until it expires. See [BriefDismiss].
+     */
+    fun brief(): List<BriefPolicy.Section> {
+        val now = System.currentTimeMillis()
+        return BriefDismiss.apply(
+            BriefPolicy.prune(readSections(), now),
+            dismissals(appContext),
+            now
+        )
+    }
+
+    /** Records [keys] as dismissed and redraws. */
+    fun dismiss(keys: Collection<String>) {
+        if (keys.isEmpty()) return
+        val now = System.currentTimeMillis()
+        saveDismissals(appContext, BriefDismiss.add(dismissals(appContext), keys, now))
+        BriefWidgets.refresh(appContext)
+    }
+
+    /** Forgets every dismissal, so everything still live comes back. */
+    fun undismissAll() {
+        saveDismissals(appContext, emptyList())
+        BriefWidgets.refresh(appContext)
+    }
 
     // One reader and one writer of the on-disk shape, both delegating to
     // BriefJson so the format -- including the v0.9.0 migration -- lives in a
@@ -322,6 +351,29 @@ class NotificationHub(private val appContext: Context) {
         const val WIDGET_PREFS = "medha_widget"
 
         /** Medha's own nudge about overdue items. */
+        private const val KEY_DISMISSED = "brief_dismissed"
+
+        /**
+         * Read and written through here rather than inside [BriefDismiss]
+         * so that file stays free of Android and the harness can execute
+         * every rule in it.
+         */
+        fun dismissals(context: Context): List<BriefDismiss.Mark> = runCatching {
+            BriefDismiss.decode(
+                context.getSharedPreferences(WIDGET_PREFS, Context.MODE_PRIVATE)
+                    .getString(KEY_DISMISSED, null)
+            )
+        }.getOrDefault(emptyList())
+
+        fun saveDismissals(context: Context, marks: List<BriefDismiss.Mark>) {
+            runCatching {
+                context.getSharedPreferences(WIDGET_PREFS, Context.MODE_PRIVATE)
+                    .edit()
+                    .putString(KEY_DISMISSED, BriefDismiss.encode(marks))
+                    .apply()
+            }
+        }
+
         const val KEY_NUDGE = "brief_nudge"
         const val NUDGE_DEFAULT = true
         private const val KEY_NUDGE_AT = "brief_nudge_at"

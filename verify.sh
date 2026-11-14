@@ -57,6 +57,7 @@ need "tools/tests/stubs/org/json/Stubs.kt"
 need "tools/check_workflows.py"
 need "tools/check_widget_layouts.py"
 need "tools/check_widget_wiring.py"
+need "tools/check_reachable.py"
 need "tools/check_stale.py"
 need "tools/removed.txt"
 need "samples/medha-brief.js"
@@ -190,6 +191,9 @@ python3 tools/check_widget_layouts.py || { echo "Widget layout check failed."; e
 # appwidget-provider xml, the layout and the provider class all name each
 # other, and nothing but this compares them.
 python3 tools/check_widget_wiring.py || { echo "Widget wiring check failed."; exit 1; }
+
+# A dialog nobody can open is a feature removed without anyone saying so.
+python3 tools/check_reachable.py || { echo "Reachability check failed."; exit 1; }
 
 # The Python client is the only thing here that can be exercised over a
 # REAL HTTP round trip -- a stdlib http.server stands in for Medha -- so
