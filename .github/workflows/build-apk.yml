@@ -107,6 +107,15 @@ jobs:
       - name: Check widget layouts
         run: python3 tools/check_widget_layouts.py
 
+      # A widget is wired through a manifest receiver, a provider xml, a
+      # layout and a provider class, which reference each other by name
+      # across three languages. check_widget_layouts catches a disallowed
+      # view; this catches a receiver pointing at a layout the class does
+      # not draw into, or a bound R.id that compiles because R.id is global
+      # and then is simply absent at inflation.
+      - name: Check widget wiring
+        run: python3 tools/check_widget_wiring.py
+
       # Adding an endpoint is three lines and forgetting the capability
       # check is one of them -- the route then works, the tests pass, and
       # any paired client can call it. This found exactly that on

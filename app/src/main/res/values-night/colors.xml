@@ -44,4 +44,10 @@
     <color name="brief_screen_bg">#14111C</color>
     <color name="brief_card_bg">#221D2E</color>
     <color name="brief_headline">#F4F0FF</color>
+
+    <!-- Urgency bands, dark. Same three roles, lifted for a dark card. -->
+    <color name="band_overdue">#FF7A5C</color>
+    <color name="band_soon">#FFB657</color>
+    <color name="band_later">#8B7DF7</color>
+    <color name="band_none">#6F6793</color>
 </resources>

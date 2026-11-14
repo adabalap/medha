@@ -1,0 +1,379 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Brief, 4x4 - the horizon.
+
+  GENERATED SHAPE, HAND-OWNED CONTENT. All three brief layouts carry the
+  identical row block — bar, kind icon, title, text, mark — so a row looks
+  the same at every size and the provider can bind any of them with one
+  piece of code. tools/check_widget_wiring.py counts the row ids here and
+  compares them with BriefRender.ROWS_4X4; if they disagree the widget
+  silently drops items, which is the v0.9.0 bug.
+
+  NOTHING HERE ROTATES. Earlier versions paged through the brief and showed
+  "1/2" in the footer, which meant the row you came to check might not be on
+  screen when you looked. The rows are now ordered by urgency and fixed, and
+  the footer names what is below the fold instead of numbering pages.
+
+  Every colour is a resource reference, never a literal, so the LAUNCHER
+  resolves it: that is what makes values-night and the Material You palette
+  in values-v31 work on a home screen. The provider only ever sends resource
+  ids and strings.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widgetRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/bg_widget"
+    android:paddingStart="18dp"
+    android:paddingEnd="18dp"
+    android:paddingTop="16dp"
+    android:paddingBottom="16dp">
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:gravity="center_vertical"
+        android:paddingBottom="12dp">
+
+        <FrameLayout android:layout_width="26dp" android:layout_height="26dp"
+            android:background="@drawable/bg_brief_badge">
+            <ImageView android:layout_width="16dp" android:layout_height="16dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_medha_mark"
+                android:contentDescription="@string/app_name" />
+        </FrameLayout>
+
+        <TextView android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:paddingStart="10dp" android:text="@string/widget_header"
+            android:textColor="@color/brief_widget_title" android:textSize="15sp"
+            android:textStyle="bold" />
+
+        <TextView android:id="@+id/widgetOverdue"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:paddingStart="8dp" android:textSize="10.5sp" android:textStyle="bold"
+            android:textColor="@color/band_overdue" android:text="" />
+    </LinearLayout>
+
+    <TextView android:id="@+id/widgetEmpty" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:paddingTop="10dp"
+        android:text="@string/widget_empty" android:textColor="@color/brief_widget_body"
+        android:textSize="12.5sp" android:lineSpacingExtra="2dp" />
+
+    <LinearLayout android:id="@+id/widgetRow1"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:baselineAligned="false">
+
+        <ImageView android:id="@+id/widgetBar1"
+            android:layout_width="3dp" android:layout_height="match_parent"
+            android:layout_marginEnd="10dp"
+            android:layout_marginTop="2dp" android:layout_marginBottom="2dp"
+            android:scaleType="fitXY"
+            android:contentDescription="@null"
+            android:src="@drawable/bar_none" />
+
+        <ImageView android:id="@+id/widgetIcon1"
+            android:layout_width="15dp" android:layout_height="15dp"
+            android:layout_marginEnd="9dp" android:layout_marginTop="2dp"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_kind_note" />
+
+        <LinearLayout android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:orientation="vertical">
+            <TextView android:id="@+id/widgetTitle1"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:textSize="14sp" android:textStyle="bold"
+                android:textColor="@color/brief_widget_title"
+                android:maxLines="1" android:ellipsize="end" android:text="" />
+            <TextView android:id="@+id/widgetText1"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:textSize="12.5sp" android:textColor="@color/brief_widget_body"
+                android:maxLines="2" android:ellipsize="end"
+                android:lineSpacingExtra="1dp" android:text="" />
+        </LinearLayout>
+
+        <TextView android:id="@+id/widgetMark1"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:paddingStart="10dp" android:textSize="10.5sp"
+            android:textStyle="bold" android:textColor="@color/brief_widget_meta"
+            android:maxLines="1" android:ellipsize="end" android:text="" />
+    </LinearLayout>
+
+    <LinearLayout android:id="@+id/widgetRow2"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:baselineAligned="false" android:paddingTop="9dp">
+
+        <ImageView android:id="@+id/widgetBar2"
+            android:layout_width="3dp" android:layout_height="match_parent"
+            android:layout_marginEnd="10dp"
+            android:layout_marginTop="2dp" android:layout_marginBottom="2dp"
+            android:scaleType="fitXY"
+            android:contentDescription="@null"
+            android:src="@drawable/bar_none" />
+
+        <ImageView android:id="@+id/widgetIcon2"
+            android:layout_width="15dp" android:layout_height="15dp"
+            android:layout_marginEnd="9dp" android:layout_marginTop="2dp"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_kind_note" />
+
+        <LinearLayout android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:orientation="vertical">
+            <TextView android:id="@+id/widgetTitle2"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:textSize="14sp" android:textStyle="bold"
+                android:textColor="@color/brief_widget_title"
+                android:maxLines="1" android:ellipsize="end" android:text="" />
+            <TextView android:id="@+id/widgetText2"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:textSize="12.5sp" android:textColor="@color/brief_widget_body"
+                android:maxLines="2" android:ellipsize="end"
+                android:lineSpacingExtra="1dp" android:text="" />
+        </LinearLayout>
+
+        <TextView android:id="@+id/widgetMark2"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:paddingStart="10dp" android:textSize="10.5sp"
+            android:textStyle="bold" android:textColor="@color/brief_widget_meta"
+            android:maxLines="1" android:ellipsize="end" android:text="" />
+    </LinearLayout>
+
+    <LinearLayout android:id="@+id/widgetRow3"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:baselineAligned="false" android:paddingTop="9dp">
+
+        <ImageView android:id="@+id/widgetBar3"
+            android:layout_width="3dp" android:layout_height="match_parent"
+            android:layout_marginEnd="10dp"
+            android:layout_marginTop="2dp" android:layout_marginBottom="2dp"
+            android:scaleType="fitXY"
+            android:contentDescription="@null"
+            android:src="@drawable/bar_none" />
+
+        <ImageView android:id="@+id/widgetIcon3"
+            android:layout_width="15dp" android:layout_height="15dp"
+            android:layout_marginEnd="9dp" android:layout_marginTop="2dp"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_kind_note" />
+
+        <LinearLayout android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:orientation="vertical">
+            <TextView android:id="@+id/widgetTitle3"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:textSize="14sp" android:textStyle="bold"
+                android:textColor="@color/brief_widget_title"
+                android:maxLines="1" android:ellipsize="end" android:text="" />
+            <TextView android:id="@+id/widgetText3"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:textSize="12.5sp" android:textColor="@color/brief_widget_body"
+                android:maxLines="2" android:ellipsize="end"
+                android:lineSpacingExtra="1dp" android:text="" />
+        </LinearLayout>
+
+        <TextView android:id="@+id/widgetMark3"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:paddingStart="10dp" android:textSize="10.5sp"
+            android:textStyle="bold" android:textColor="@color/brief_widget_meta"
+            android:maxLines="1" android:ellipsize="end" android:text="" />
+    </LinearLayout>
+
+    <LinearLayout android:id="@+id/widgetRow4"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:baselineAligned="false" android:paddingTop="9dp">
+
+        <ImageView android:id="@+id/widgetBar4"
+            android:layout_width="3dp" android:layout_height="match_parent"
+            android:layout_marginEnd="10dp"
+            android:layout_marginTop="2dp" android:layout_marginBottom="2dp"
+            android:scaleType="fitXY"
+            android:contentDescription="@null"
+            android:src="@drawable/bar_none" />
+
+        <ImageView android:id="@+id/widgetIcon4"
+            android:layout_width="15dp" android:layout_height="15dp"
+            android:layout_marginEnd="9dp" android:layout_marginTop="2dp"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_kind_note" />
+
+        <LinearLayout android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:orientation="vertical">
+            <TextView android:id="@+id/widgetTitle4"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:textSize="14sp" android:textStyle="bold"
+                android:textColor="@color/brief_widget_title"
+                android:maxLines="1" android:ellipsize="end" android:text="" />
+            <TextView android:id="@+id/widgetText4"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:textSize="12.5sp" android:textColor="@color/brief_widget_body"
+                android:maxLines="2" android:ellipsize="end"
+                android:lineSpacingExtra="1dp" android:text="" />
+        </LinearLayout>
+
+        <TextView android:id="@+id/widgetMark4"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:paddingStart="10dp" android:textSize="10.5sp"
+            android:textStyle="bold" android:textColor="@color/brief_widget_meta"
+            android:maxLines="1" android:ellipsize="end" android:text="" />
+    </LinearLayout>
+
+    <LinearLayout android:id="@+id/widgetRow5"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:baselineAligned="false" android:paddingTop="9dp">
+
+        <ImageView android:id="@+id/widgetBar5"
+            android:layout_width="3dp" android:layout_height="match_parent"
+            android:layout_marginEnd="10dp"
+            android:layout_marginTop="2dp" android:layout_marginBottom="2dp"
+            android:scaleType="fitXY"
+            android:contentDescription="@null"
+            android:src="@drawable/bar_none" />
+
+        <ImageView android:id="@+id/widgetIcon5"
+            android:layout_width="15dp" android:layout_height="15dp"
+            android:layout_marginEnd="9dp" android:layout_marginTop="2dp"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_kind_note" />
+
+        <LinearLayout android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:orientation="vertical">
+            <TextView android:id="@+id/widgetTitle5"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:textSize="14sp" android:textStyle="bold"
+                android:textColor="@color/brief_widget_title"
+                android:maxLines="1" android:ellipsize="end" android:text="" />
+            <TextView android:id="@+id/widgetText5"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:textSize="12.5sp" android:textColor="@color/brief_widget_body"
+                android:maxLines="2" android:ellipsize="end"
+                android:lineSpacingExtra="1dp" android:text="" />
+        </LinearLayout>
+
+        <TextView android:id="@+id/widgetMark5"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:paddingStart="10dp" android:textSize="10.5sp"
+            android:textStyle="bold" android:textColor="@color/brief_widget_meta"
+            android:maxLines="1" android:ellipsize="end" android:text="" />
+    </LinearLayout>
+
+    <LinearLayout android:id="@+id/widgetRow6"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:baselineAligned="false" android:paddingTop="9dp">
+
+        <ImageView android:id="@+id/widgetBar6"
+            android:layout_width="3dp" android:layout_height="match_parent"
+            android:layout_marginEnd="10dp"
+            android:layout_marginTop="2dp" android:layout_marginBottom="2dp"
+            android:scaleType="fitXY"
+            android:contentDescription="@null"
+            android:src="@drawable/bar_none" />
+
+        <ImageView android:id="@+id/widgetIcon6"
+            android:layout_width="15dp" android:layout_height="15dp"
+            android:layout_marginEnd="9dp" android:layout_marginTop="2dp"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_kind_note" />
+
+        <LinearLayout android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:orientation="vertical">
+            <TextView android:id="@+id/widgetTitle6"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:textSize="14sp" android:textStyle="bold"
+                android:textColor="@color/brief_widget_title"
+                android:maxLines="1" android:ellipsize="end" android:text="" />
+            <TextView android:id="@+id/widgetText6"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:textSize="12.5sp" android:textColor="@color/brief_widget_body"
+                android:maxLines="2" android:ellipsize="end"
+                android:lineSpacingExtra="1dp" android:text="" />
+        </LinearLayout>
+
+        <TextView android:id="@+id/widgetMark6"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:paddingStart="10dp" android:textSize="10.5sp"
+            android:textStyle="bold" android:textColor="@color/brief_widget_meta"
+            android:maxLines="1" android:ellipsize="end" android:text="" />
+    </LinearLayout>
+
+    <LinearLayout android:id="@+id/widgetRow7"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:baselineAligned="false" android:paddingTop="9dp">
+
+        <ImageView android:id="@+id/widgetBar7"
+            android:layout_width="3dp" android:layout_height="match_parent"
+            android:layout_marginEnd="10dp"
+            android:layout_marginTop="2dp" android:layout_marginBottom="2dp"
+            android:scaleType="fitXY"
+            android:contentDescription="@null"
+            android:src="@drawable/bar_none" />
+
+        <ImageView android:id="@+id/widgetIcon7"
+            android:layout_width="15dp" android:layout_height="15dp"
+            android:layout_marginEnd="9dp" android:layout_marginTop="2dp"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_kind_note" />
+
+        <LinearLayout android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:orientation="vertical">
+            <TextView android:id="@+id/widgetTitle7"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:textSize="14sp" android:textStyle="bold"
+                android:textColor="@color/brief_widget_title"
+                android:maxLines="1" android:ellipsize="end" android:text="" />
+            <TextView android:id="@+id/widgetText7"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:textSize="12.5sp" android:textColor="@color/brief_widget_body"
+                android:maxLines="2" android:ellipsize="end"
+                android:lineSpacingExtra="1dp" android:text="" />
+        </LinearLayout>
+
+        <TextView android:id="@+id/widgetMark7"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:paddingStart="10dp" android:textSize="10.5sp"
+            android:textStyle="bold" android:textColor="@color/brief_widget_meta"
+            android:maxLines="1" android:ellipsize="end" android:text="" />
+    </LinearLayout>
+
+    <LinearLayout android:id="@+id/widgetRow8"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:baselineAligned="false" android:paddingTop="9dp">
+
+        <ImageView android:id="@+id/widgetBar8"
+            android:layout_width="3dp" android:layout_height="match_parent"
+            android:layout_marginEnd="10dp"
+            android:layout_marginTop="2dp" android:layout_marginBottom="2dp"
+            android:scaleType="fitXY"
+            android:contentDescription="@null"
+            android:src="@drawable/bar_none" />
+
+        <ImageView android:id="@+id/widgetIcon8"
+            android:layout_width="15dp" android:layout_height="15dp"
+            android:layout_marginEnd="9dp" android:layout_marginTop="2dp"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_kind_note" />
+
+        <LinearLayout android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:orientation="vertical">
+            <TextView android:id="@+id/widgetTitle8"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:textSize="14sp" android:textStyle="bold"
+                android:textColor="@color/brief_widget_title"
+                android:maxLines="1" android:ellipsize="end" android:text="" />
+            <TextView android:id="@+id/widgetText8"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:textSize="12.5sp" android:textColor="@color/brief_widget_body"
+                android:maxLines="2" android:ellipsize="end"
+                android:lineSpacingExtra="1dp" android:text="" />
+        </LinearLayout>
+
+        <TextView android:id="@+id/widgetMark8"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:paddingStart="10dp" android:textSize="10.5sp"
+            android:textStyle="bold" android:textColor="@color/brief_widget_meta"
+            android:maxLines="1" android:ellipsize="end" android:text="" />
+    </LinearLayout>
+
+    <TextView android:id="@+id/widgetFold" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:paddingTop="10dp"
+        android:textSize="10.5sp" android:textColor="@color/brief_widget_meta"
+        android:maxLines="1" android:ellipsize="end" android:text="" />
+
+</LinearLayout>

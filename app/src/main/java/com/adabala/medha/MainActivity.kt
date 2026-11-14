@@ -30,7 +30,6 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.core.app.NotificationManagerCompat
 import com.adabala.medha.auth.ClientRegistry
 import com.adabala.medha.auth.PairingManager
-import com.adabala.medha.notify.BriefRotator
 import com.adabala.medha.diag.Diagnostics
 import com.adabala.medha.sched.InferenceScheduler
 import com.adabala.medha.ui.ClientListAdapter
@@ -179,7 +178,6 @@ class MainActivity : AppCompatActivity() {
                 R.id.nav_clients -> showClientsDialog()
                 R.id.nav_pair_web -> showPairWebDialog()
                 R.id.nav_brief -> openBrief()
-                R.id.nav_brief_rotate -> showBriefRotationDialog()
                 R.id.nav_scheduler -> showSchedulerDialog()
                 R.id.nav_thermal -> showThermalDialog()
                 R.id.nav_copy_token -> copyToken()
@@ -648,35 +646,6 @@ class MainActivity : AppCompatActivity() {
      * launcher on each tick, and a slider invites someone to pick 2 seconds
      * and then wonder about battery.
      */
-    private fun showBriefRotationDialog() {
-        val seconds = listOf(0L, 3L, 5L, 10L, 30L)
-        val labels = seconds.map {
-            if (it == 0L) getString(R.string.brief_rotate_off)
-            else getString(R.string.brief_rotate_interval, it.toInt())
-        }.toTypedArray()
-
-        val current = prefs.getString(InferenceService.KEY_BRIEF_ROTATE, null)?.toLongOrNull()
-            ?: BriefRotator.DEFAULT_INTERVAL_SECONDS
-        val checked = seconds.indexOf(current).takeIf { it >= 0 } ?: 1
-
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.brief_rotate_title)
-            .setIcon(R.drawable.ic_pair)
-            .setMessage(R.string.brief_rotate_body)
-            .setSingleChoiceItems(labels, checked) { dialog, which ->
-                prefs.edit()
-                    .putString(InferenceService.KEY_BRIEF_ROTATE, seconds[which].toString())
-                    .apply()
-                // The service re-reads this on every start, so nudging it is
-                // what makes the choice take effect now rather than next time
-                // Medha is started.
-                restartServiceIfLive()
-                toast(getString(R.string.brief_rotate_saved, labels[which]))
-                dialog.dismiss()
-            }
-            .setNegativeButton(R.string.close, null)
-            .show()
-    }
 
     private fun showSchedulerDialog() {
         val js = lastSchedulerJson

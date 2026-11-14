@@ -50,11 +50,13 @@ need "tools/tests/MultimodalProbeTest.kt"
 need "app/src/main/java/com/adabala/medha/oai/ChatRequestParser.kt"
 need "app/src/main/java/com/adabala/medha/oai/MultimodalProbe.kt"
 need "app/src/main/java/com/adabala/medha/BriefActivity.kt"
-need "app/src/main/java/com/adabala/medha/notify/BriefRotator.kt"
+need "app/src/main/java/com/adabala/medha/notify/BriefWidgets.kt"
+need "app/src/main/java/com/adabala/medha/notify/BriefRender.kt"
 need "app/src/main/res/layout/activity_brief.xml"
 need "tools/tests/stubs/org/json/Stubs.kt"
 need "tools/check_workflows.py"
 need "tools/check_widget_layouts.py"
+need "tools/check_widget_wiring.py"
 need "samples/medha-brief.js"
 need "samples/INTEGRATING.md"
 need "samples/medha_brief.py"
@@ -138,22 +140,13 @@ if gradle_code | grep -q "applicationIdSuffix"; then
   fail=1
 else say OK "applicationId is com.adabala.medha for every variant"; fi
 
-# The widget layout's row count has to equal BriefPolicy.PAGE_ROWS. v0.9.0
-# shipped a three-row layout against a server that accepted five items and
-# dropped two in silence, so this is checked rather than trusted.
-PAGE_ROWS=$(grep -oE 'const val PAGE_ROWS = [0-9]+' \
-  app/src/main/java/com/adabala/medha/notify/BriefPolicy.kt 2>/dev/null \
-  | grep -oE '[0-9]+$')
-LAYOUT_ROWS=$(grep -cE 'android:id="@\+id/widgetRow[0-9]+"' \
-  app/src/main/res/layout/widget_medha.xml 2>/dev/null || echo 0)
-SLOT_ROWS=$(grep -cE 'Slot\(R\.id\.widgetRow[0-9]+' \
-  app/src/main/java/com/adabala/medha/notify/MedhaWidgetProvider.kt 2>/dev/null || echo 0)
-if [ -n "$PAGE_ROWS" ] && [ "$PAGE_ROWS" = "$LAYOUT_ROWS" ] && [ "$PAGE_ROWS" = "$SLOT_ROWS" ]; then
-  say OK "widget rows agree ($PAGE_ROWS): PAGE_ROWS, layout, provider slots"
-else
-  say BAD "widget row mismatch - PAGE_ROWS=$PAGE_ROWS layout=$LAYOUT_ROWS slots=$SLOT_ROWS"
-  fail=1
-fi
+# The widget row count used to be checked here, against one layout and one
+# provider. There are three of each now, so it moved into
+# tools/check_widget_wiring.py (run above), which compares the manifest
+# receiver, the provider xml, the layout and the provider class for every
+# size -- and catches the v0.9.0 failure this block was written for, where a
+# three-row layout faced a server accepting five items and dropped two in
+# silence.
 
 if gradle_code | grep -q "productFlavors"; then
   say BAD "product flavours are back -- v0.9.0 collapsed them to one variant"
@@ -185,6 +178,11 @@ python3 tools/check_workflows.py || { echo "Workflow check failed."; exit 1; }
 # "Couldn't add widget." and the app logs nothing. v0.9.7 shipped exactly
 # that. Nothing else here can see it.
 python3 tools/check_widget_layouts.py || { echo "Widget layout check failed."; exit 1; }
+
+# The same widget, checked the other way: the manifest receiver, the
+# appwidget-provider xml, the layout and the provider class all name each
+# other, and nothing but this compares them.
+python3 tools/check_widget_wiring.py || { echo "Widget wiring check failed."; exit 1; }
 
 # The Python client is the only thing here that can be exercised over a
 # REAL HTTP round trip -- a stdlib http.server stands in for Medha -- so

@@ -93,6 +93,19 @@
             </intent-filter>
         </activity>
 
+        <!-- ===============================================================
+             THREE BRIEF WIDGETS, THREE RECEIVERS.
+
+             The widget picker lists one entry per provider, so three sizes
+             have to be three receivers; a single resizable provider is still
+             a single thing to pick. All three share BriefWidgetProvider and
+             differ only in layout and row count.
+
+             MedhaWidgetProvider keeps the name it had when it was the only
+             one, so widgets already on a home screen survive the upgrade and
+             redraw in the new design instead of disappearing.
+             =============================================================== -->
+        <!-- 4x2 — the default. -->
         <receiver
             android:name=".notify.MedhaWidgetProvider"
             android:exported="false">
@@ -101,7 +114,31 @@
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
-                android:resource="@xml/widget_medha_info" />
+                android:resource="@xml/widget_brief_4x2_info" />
+        </receiver>
+
+        <!-- 2x2 — the next item only. -->
+        <receiver
+            android:name=".notify.MedhaWidget2x2Provider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_brief_2x2_info" />
+        </receiver>
+
+        <!-- 4x4 — the horizon. -->
+        <receiver
+            android:name=".notify.MedhaWidget4x4Provider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_brief_4x4_info" />
         </receiver>
 
         <service

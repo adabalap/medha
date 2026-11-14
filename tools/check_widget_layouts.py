@@ -4,7 +4,7 @@ Checks that every app-widget layout uses only view classes RemoteViews can
 actually inflate.
 
 WHY THIS EXISTS: v0.9.7 added `<View>` elements as accent bars to
-widget_medha.xml. `android.view.View` is not annotated @RemoteView, so
+a widget layout. `android.view.View` is not annotated @RemoteView, so
 RemoteViews' inflation filter rejects it and the launcher refuses the widget
 with "Couldn't add widget." -- no stack trace in the app, nothing in logcat
 from Medha, and the layout is perfectly valid XML that passes every other

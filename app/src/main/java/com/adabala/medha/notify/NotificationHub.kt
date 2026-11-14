@@ -59,20 +59,6 @@ class NotificationHub(private val appContext: Context) {
 
     private val manager get() = NotificationManagerCompat.from(appContext)
 
-    /**
-     * Called after any write to the brief.
-     *
-     * Set by InferenceService to [BriefRotator.onBriefChanged], so a brief
-     * that has just grown past one page starts rotating immediately rather
-     * than at the next service start, and one that has shrunk back stops.
-     *
-     * A plain nullable hook rather than the rotator as a constructor
-     * dependency: BriefActivity builds its own hub for a read-only glance and
-     * has no rotator to give it, and a hub that could not be built without
-     * one would force a singleton nobody else needs.
-     */
-    @Volatile var onBriefChanged: (() -> Unit)? = null
-
     fun capabilities(): Map<String, Any> = mapOf(
         "sdk" to Build.VERSION.SDK_INT,
         // Live Updates landed in Android 16 (API 36). Below that, an ongoing
@@ -230,8 +216,7 @@ class NotificationHub(private val appContext: Context) {
             ttlMs = ttlMs
         )
         writeSections(merged)
-        MedhaWidgetProvider.refresh(appContext)
-        onBriefChanged?.invoke()
+        BriefWidgets.refresh(appContext)
         return merged.firstOrNull { it.clientId == clientId }?.items?.size ?: 0
     }
 
@@ -245,8 +230,7 @@ class NotificationHub(private val appContext: Context) {
      */
     fun clearAllBrief() = synchronized(briefLock) {
         writeSections(emptyList())
-        MedhaWidgetProvider.refresh(appContext)
-        onBriefChanged?.invoke()
+        BriefWidgets.refresh(appContext)
     }
 
     /** Withdraws [clientId]'s section. Returns true if there was one. */
@@ -254,8 +238,7 @@ class NotificationHub(private val appContext: Context) {
         val before = readSections()
         val had = before.any { it.clientId == clientId }
         writeSections(BriefPolicy.remove(before, clientId, System.currentTimeMillis()))
-        MedhaWidgetProvider.refresh(appContext)
-        onBriefChanged?.invoke()
+        BriefWidgets.refresh(appContext)
         return had
     }
 

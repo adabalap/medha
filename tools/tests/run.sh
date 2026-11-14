@@ -54,14 +54,23 @@ kotlinc "$SRC/notify/BriefPolicy.kt" BriefPolicyTest.kt \
 java -jar "$WORK/brief.jar"
 
 echo
+echo "== BriefRenderTest =="
+# What the widget decides to draw. Lived inside the provider until v0.13.0,
+# where nothing short of Gradle could compile it and so nothing tested it --
+# which is how dueAt went two releases being stored and ignored.
+kotlinc "$SRC/notify/BriefPolicy.kt" "$SRC/notify/BriefRender.kt" \
+  BriefRenderTest.kt -include-runtime -d "$WORK/render.jar"
+java -jar "$WORK/render.jar"
+
+echo
 echo "== WidgetCallShapesTest =="
-# The BriefPolicy call shapes used by MedhaWidgetProvider, BriefRotator and
+# The BriefPolicy and BriefRender call shapes used by BriefWidgets.kt and
 # LocalServer. Those three need an Android classpath, so no stage before
 # Gradle type-checks them; this compiles the same argument shapes against the
 # real BriefPolicy so a signature change fails here in seconds instead of in
 # CI minutes later.
-kotlinc "$SRC/notify/BriefPolicy.kt" WidgetCallShapesTest.kt \
-  -include-runtime -d "$WORK/shapes.jar"
+kotlinc "$SRC/notify/BriefPolicy.kt" "$SRC/notify/BriefRender.kt" \
+  WidgetCallShapesTest.kt -include-runtime -d "$WORK/shapes.jar"
 java -jar "$WORK/shapes.jar"
 
 echo

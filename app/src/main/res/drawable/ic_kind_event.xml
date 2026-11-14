@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  A clock, for something that happens at a time rather than by a date.
+
+  Tinted here, in the vector, rather than from the provider: android:tint is
+  resolved when the launcher loads the drawable, so values-night applies on
+  the home screen. The BAR carries the urgency colour; the icon stays neutral
+  so two signals never argue about the same row.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24"
+    android:tint="@color/brief_widget_meta">
+    <path android:pathData="M12,3.4a8.6,8.6 0 1,0 0.01,0M12,7.4v4.8l3,2.1"
+        android:strokeColor="#FFFFFFFF" android:strokeWidth="1.7"
+        android:strokeLineCap="round" android:strokeLineJoin="round" />
+</vector>

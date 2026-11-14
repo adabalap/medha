@@ -134,7 +134,8 @@ fun main() {
     // v0.9.0 accepted 5 items and had 3 layout rows, silently dropping two.
     // The widget now draws PAGE_ROWS at a time and rotates through the rest,
     // so MAX_ROWS is deliberately larger than what fits on screen.
-    eq("PAGE_ROWS is 3, matching widget_medha.xml", BriefPolicy.PAGE_ROWS, 3)
+    eq("PAGE_ROWS is 3 (now only page()'s business; sizes live in BriefRender)",
+        BriefPolicy.PAGE_ROWS, 3)
     check("MAX_ROWS exceeds PAGE_ROWS, so overflow is reachable not discarded",
         BriefPolicy.MAX_ROWS > BriefPolicy.PAGE_ROWS)
     val full = BriefPolicy.put(emptyList(), "one", items("a", "b", "c", "d", "e"), now)

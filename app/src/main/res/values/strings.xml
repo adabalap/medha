@@ -152,7 +152,6 @@ Licensed under the terms in the project repository.</string>
     <string name="widget_header">Brief</string>
     <string name="widget_empty">No updates yet. Apps using Medha can post here.</string>
     <string name="widget_count">%1$d app(s)</string>
-    <string name="widget_footer">%1$s · %2$d items · tap for all</string>
 
     <!-- full brief screen -->
     <string name="brief_title">Brief</string>
@@ -177,11 +176,6 @@ Licensed under the terms in the project repository.</string>
     <string name="off">off</string>
 
     <!-- brief rotation -->
-    <string name="brief_rotate_title">Brief rotation</string>
-    <string name="brief_rotate_body">The widget shows 3 lines at a time. When there are more, it cycles through them while the screen is on.</string>
-    <string name="brief_rotate_interval">Every %1$d seconds</string>
-    <string name="brief_rotate_off">Don\'t rotate — show the first 3 only</string>
-    <string name="brief_rotate_saved">Brief rotation: %1$s</string>
     <string name="nav_brief">Brief</string>
     <string name="widget_description">Cards pushed by apps using Medha</string>
     <string name="client_edit">Edit permissions</string>
@@ -230,4 +224,20 @@ Licensed under the terms in the project repository.</string>
         <item quantity="one">%1$d app · %2$d items</item>
         <item quantity="other">%1$d apps · %2$d items</item>
     </plurals>
+    <!-- ===================================================================
+         BRIEF WIDGET, v0.13.0.
+
+         The fold strings replace the old page indicator. A page number told
+         you there was another page; these tell you what is ON it, which is
+         the only reason a widget that never moves is safe to trust.
+         =================================================================== -->
+    <string name="widget_overdue">%1$d overdue</string>
+    <string name="widget_fold_overdue">%1$d more · %2$d overdue</string>
+    <string name="widget_fold_soon">%1$d more · %2$d due this week</string>
+    <string name="widget_fold_clear">%1$d more · nothing else due this week</string>
+
+    <!-- Shown under each size in the widget picker. -->
+    <string name="widget_desc_2x2">The next thing on your plate, and nothing else.</string>
+    <string name="widget_desc_4x2">Three lines, most urgent first, from the apps using Medha.</string>
+    <string name="widget_desc_4x4">Everything live, grouped by how soon it is due.</string>
 </resources>

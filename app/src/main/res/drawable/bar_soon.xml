@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The urgency bar at the left of a brief row.
+
+  One drawable per band, rather than one drawable tinted at runtime, because
+  RemoteViews can only tint with an already-resolved colour int — which the
+  provider would resolve against ITS configuration, not the launcher's, and
+  values-night would stop working on the home screen with nothing to see
+  unless you switched themes while watching. setImageViewResource marshals a
+  resource id instead, so the launcher resolves @color/band_soon exactly as it
+  resolves every colour in the layout.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/band_soon" />
+    <corners android:radius="2dp" />
+</shape>

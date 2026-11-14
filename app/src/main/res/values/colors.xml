@@ -52,4 +52,20 @@
     <color name="brief_screen_bg">#F7F4FF</color>
     <color name="brief_card_bg">#FFFFFF</color>
     <color name="brief_headline">#1A1033</color>
+
+    <!-- ===================================================================
+         URGENCY BANDS — fixed, and deliberately absent from values-v31.
+
+         Everything structural in the widget takes the system's colour on
+         Android 12+. These three do not. A wallpaper that turns "payment
+         missed" sage green has recoloured the one row that has to be read
+         correctly at a glance, so the chrome adapts and the signal does not.
+         Verified for contrast on the light card: #C0341A is 5.4:1.
+         =================================================================== -->
+    <color name="band_overdue">#C0341A</color>
+    <color name="band_soon">#8A5A00</color>
+    <color name="band_later">#4A38C4</color>
+    <!-- An item with no dueAt is unranked, not far away: a quiet bar, not a
+         cool one, so it never reads as "due eventually". -->
+    <color name="band_none">#9A93B8</color>
 </resources>

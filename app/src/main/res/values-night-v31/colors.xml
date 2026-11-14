@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MATERIAL YOU — Android 12 and up, dark.
+
+  The dark half of values-v31/colors.xml; read that file's comment first.
+  Both qualifiers are needed because resource qualifiers do not compose:
+  values-night/ alone would win over values-v31/ on a dark Android 13 phone
+  and the widget would fall back to the fixed indigo exactly where dynamic
+  colour was supposed to apply. This file is the intersection.
+
+  Same rule as the light file: band_overdue and band_soon are deliberately
+  absent and resolve from values-night/.
+-->
+<resources>
+    <color name="brief_widget_bg">@android:color/system_neutral1_900</color>
+    <color name="brief_widget_title">@android:color/system_neutral1_50</color>
+    <color name="brief_widget_body">@android:color/system_neutral2_200</color>
+    <color name="brief_widget_meta">@android:color/system_neutral2_300</color>
+
+    <color name="brief_widget_brand">@android:color/system_accent1_200</color>
+    <color name="brief_accent">@android:color/system_accent1_200</color>
+    <color name="band_later">@android:color/system_accent1_200</color>
+</resources>

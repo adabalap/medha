@@ -258,6 +258,16 @@ object BriefPolicy {
     /**
      * One screenful of the widget.
      *
+     * NO LONGER DRAWN BY ANYTHING, and kept as pure arithmetic rather than
+     * deleted because the tests around it also pin [pageCount]'s wrapping.
+     * v0.13.0 stopped the widget rotating: a brief is read in a two-second
+     * glance, so a page that moves means the row you came to check may not
+     * be on screen when you look. [BriefRender] takes the first N rows of an
+     * urgency-ordered list instead, and names what is under the fold.
+     *
+     * If you are here because you want paging back, the answer is almost
+     * certainly a bigger widget: there are three sizes now.
+     *
      * @param rows the rows on this page, at most [PAGE_ROWS].
      * @param index zero-based page number.
      * @param pageCount how many pages the brief currently has.
@@ -431,7 +441,9 @@ object BriefPolicy {
     const val MAX_ITEMS_PER_SECTION = 5
 
     /**
-     * Rows the widget layout draws at once. Keep this and `widget_medha.xml`
+     * Formerly the rows one page of the widget drew. Nothing pages any
+     * more; the sizes carry their own capacities in `BriefRender`. Kept
+     * because `page()` is kept. The old note read: keep this and the layout
      * in step: v0.9.0 had the server accepting five items against a
      * three-row layout and dropped two in silence. BriefPolicyTest pins the
      * number and check_resources.py confirms the ids exist.
