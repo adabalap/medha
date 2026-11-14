@@ -43,35 +43,81 @@ def listed():
     return out
 
 
+ROOTS = ("app/src", "tools", "docs", "samples", ".github")
+IGNORE_PARTS = {"build", "node_modules", ".git", "__pycache__", ".gradle", ".idea"}
+IGNORE_SUFFIX = {".jar", ".apk", ".class", ".pyc", ".keystore", ".log"}
+
+
+def orphans():
+    """Files on disk that this release does not ship.
+
+    tools/removed.txt only catches deletions somebody wrote down, and only
+    from v0.13.0 on. This catches the rest: connectors/SmsConnector.kt was
+    deleted in v0.9.0 and survived in a consumer repo for nine releases,
+    because nothing ever asked "should this file be here at all?".
+
+    No manifest means no answer, not a failure: a checkout that predates
+    tools/manifest.txt is not broken, it just cannot be checked this way.
+    """
+    mf = pathlib.Path(__file__).resolve().parent / "manifest.txt"
+    if not mf.exists():
+        return None
+    known = {
+        line.strip() for line in mf.read_text().splitlines()
+        if line.strip() and not line.startswith("#")
+    }
+    found = []
+    for top in ROOTS:
+        base = ROOT / top
+        if not base.exists():
+            continue
+        for p in base.rglob("*"):
+            if not p.is_file():
+                continue
+            rel = p.relative_to(ROOT)
+            if IGNORE_PARTS & set(rel.parts) or p.suffix in IGNORE_SUFFIX:
+                continue
+            if rel.as_posix() not in known:
+                found.append(rel.as_posix())
+    return sorted(found)
+
+
 def main():
     entries = listed()
-    if not entries:
-        print("check_stale: tools/removed.txt lists nothing; nothing to check")
-        return 0
-
     stale = [(p, why) for p, why in entries if (ROOT / p).exists()]
-    if not stale:
-        print(f"check_stale: none of the {len(entries)} removed file(s) are present")
+    extra = orphans() or []
+
+    if not stale and not extra:
+        print(f"check_stale: {len(entries)} known removal(s) absent, "
+              f"nothing outside the manifest")
         return 0
 
-    print("Files that were deleted from this project are still in the tree.\n")
-    print("This happens when a release zip is extracted over an existing")
-    print("checkout: extracting adds and overwrites, it never deletes. The")
-    print("leftovers then break the build from behind, reported against files")
-    print("you did not edit.\n")
+    print("Files on disk that this release does not ship.\n")
+    print("A release zip extracted over an existing checkout adds and")
+    print("overwrites but never deletes, so anything removed upstream stays")
+    print("in your repo and breaks the build from behind -- reported against")
+    print("files you did not edit.\n")
 
-    by_why = {}
-    for p, why in stale:
-        by_why.setdefault(why, []).append(p)
-    for why, paths in by_why.items():
-        print(f"  {why}:")
-        for p in paths:
-            print(f"    {p}")
+    if stale:
+        by_why = {}
+        for path, why in stale:
+            by_why.setdefault(why, []).append(path)
+        for why, paths in by_why.items():
+            print(f"  {why}:")
+            for path in paths:
+                print(f"    {path}")
+            print()
+
+    if extra:
+        print("  not shipped by this release:")
+        for e in extra:
+            print(f"    {e}")
         print()
 
+    everything = [p for p, _ in stale] + extra
     print("Delete them:\n")
-    print("  git rm " + " \\\n         ".join(p for p, _ in stale))
-    print(f"\ncheck_stale: {len(stale)} stale file(s)")
+    print("  git rm " + " \\\n         ".join(everything))
+    print(f"\ncheck_stale: {len(everything)} stale file(s)")
     return 1
 
 

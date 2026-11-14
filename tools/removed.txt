@@ -22,6 +22,17 @@
 # So the removals are listed here and enforced, and the error becomes "delete
 # this file" instead of a scavenger hunt.
 #
+# SUPERSEDED, BUT KEPT
+#
+# tools/manifest.txt now lists every file a release DOES ship, and
+# check_stale.py reports anything on disk that is not in it. That catches
+# removals nobody wrote down, including connectors/SmsConnector.kt — deleted
+# in v0.9.0, still present in a consumer repo nine releases later, and found
+# only when a checker was fixed enough to read it.
+#
+# This file stays because a list of what went and WHY is worth having; the
+# manifest knows what is orphaned but not what it was for.
+#
 # HOW TO MAINTAIN IT
 #
 # When a release deletes a source file, add its repo-relative path below under
