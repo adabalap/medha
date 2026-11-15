@@ -9,6 +9,7 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.adabala.medha.databinding.ActivityBriefBinding
 import com.adabala.medha.notify.BriefJson
@@ -312,4 +313,11 @@ class BriefActivity : AppCompatActivity() {
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
+    // Deliberately a second copy of MainActivity's helper rather than a shared
+    // extension. A one-line wrapper is not worth a new file, and moving
+    // MainActivity's would mean editing a 1500-line Activity to fix a compile
+    // error in this one -- which is exactly how v0.17.0 lost the add-client
+    // flow.
+    private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 }

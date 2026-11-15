@@ -15,8 +15,25 @@ That is exactly the failure that shipped: a text splice removed a `val` and two
 valid, braces balanced, and every other check passed — the build only broke on a
 machine with the real classpath.
 
+What it does NOT see
+--------------------
+Declarations that are not at the start of a line. DECL is anchored with
+`^\\s*`, so a member written inline -- `class X { fun y() = 1 }` -- is not
+recorded, and a call to it is reported as undeclared. Kotlin style puts
+members on their own line, so this has never fired on real code; it showed up
+writing the mutation fixtures, where three cases passed for the wrong reason
+until they were spread over several lines.
+
+Scope rules it DOES apply
+-------------------------
+`private` is file-scoped. A private declaration in one file does not satisfy
+a call in another, for plain functions, extension functions and vals alike.
+`internal`, `protected`, `open` and public all stay module-wide.
+
 Usage:
     python3 tools/check_symbols.py app/src/main/java
+
+Its own tests live in tools/tests/checker_mutations.sh.
 """
 
 import os
@@ -54,8 +71,50 @@ RECEIVER_BLOCK = re.compile(
 # Too noisy to check in general, so only identifiers that are declared SOMEWHERE
 # in the module are considered, and everything else is assumed external.
 
+def _names(block):
+    """Whitespace-separated names from a block, ignoring `#` comment lines."""
+    return {
+        w
+        for line in block.splitlines()
+        if not line.strip().startswith("#")
+        for w in line.split()
+    }
+
+
+# A project name may shadow a Kotlin/Android one for real. Each entry here is
+# a deliberate decision, not a parking space for anything audit_builtin()
+# complains about: adding a name here turns the check off for it, which is
+# precisely how `toast` hid.
+EXPECTED_COLLISIONS = {
+    # kotlinx.coroutines.launch, called bare inside a CoroutineScope, vs
+    # BriefActivity's `private fun launch(url: String): Boolean`. Both are
+    # real and both are called bare. Dropping `launch` from BUILTIN would
+    # report every coroutine launch in the project.
+    "launch",
+}
+
+
 # Kotlin/Java/Android names that are legitimately unqualified.
-BUILTIN = set("""
+#
+# HOW THIS LIST IS BUILT, AND WHY IT IS NOT `.split()`
+#
+# It used to be `set("""...""".split())`, which splits the comment lines in
+# the block below along with the names -- so every English word inside them
+# became an allowlisted symbol. 39 of 235 entries were prose: `read`, `live`,
+# `where`, `on`, `of`, `region`, `bare`, `own`, `string`, `receiver`. Any
+# project function with one of those names was invisible to this checker,
+# and the list grew another few every time someone explained something.
+#
+# Comment lines are dropped before splitting now. A `#` line is documentation;
+# only the rest contributes names.
+#
+# NOTHING IN HERE MAY BE A NAME THIS PROJECT DECLARES PRIVATELY. That is what
+# `toast` was: Medha's own `private fun toast` in MainActivity, sitting in a
+# row of real Activity methods where it looked like one. It made every
+# unresolved toast() call resolve, in every file, for five releases.
+# audit_builtin() below enforces this, with EXPECTED_COLLISIONS for the one
+# case where a project name genuinely shadows a Kotlin one.
+BUILTIN = _names("""
 sin cos tan asin acos atan atan2 sqrt cbrt exp ln log log10 log2 hypot floor ceil sign truncate
 # Ktor extensions on ApplicationCall. Called bare inside this project's own
 # `ApplicationCall.xxx()` helpers, where the receiver is implicit. These were
@@ -70,13 +129,13 @@ linkedMapOf linkedSetOf sortedMapOf sortedSetOf emptyMap emptyList emptySet
 sequenceOf emptySequence generateSequence buildList buildSet buildMap
 emptyList emptySet emptyMap emptyArray arrayOf intArrayOf booleanArrayOf floatArrayOf
 byteArrayOf longArrayOf doubleArrayOf charArrayOf buildString buildList buildMap
-lazy synchronized runCatching runBlocking launch async await withContext withTimeout delay
+lazy synchronized runCatching runBlocking async await withContext withTimeout delay
 println print readLine repeat maxOf minOf abs max min sqrt ln exp pow round
 floor ceil String Int Long Float Double Boolean Char Byte Short Any Unit Nothing
 super this it super setOf to arrayOfNulls Regex Pair Triple Result
 getString getSystemService startActivity startService stopService bindService
 findViewById setContentView registerForActivityResult requireContext
-toast finish recreate invalidateOptionsMenu openFileInput openFileOutput
+finish recreate invalidateOptionsMenu openFileInput openFileOutput
 intArrayOf enumValues enumValueOf lazyOf assert
 startForeground stopSelf stopForeground or and xor shl shr inv emit collect
 get set invoke plus minus times div rem compareTo equals hashCode toString
@@ -86,9 +145,12 @@ setResult setPackage getCallingPackage getApplicationLabel getApplicationInfo
 resolveActivity finishActivity
 embeddedServer constructor copy suspend val var isNull getLong getInt getString
 getBlob getFloat getDouble getColumnIndex moveToFirst moveToNext close
-getStringOrNull toChunk toMessage toConversation queryChunks simpleCount
-escapeLike createFts createStore
-""".split())
+# kotlinx.coroutines.launch, called bare inside a CoroutineScope. This is the
+# one entry that knowingly collides with a private project declaration --
+# BriefActivity's `private fun launch(url: String)` -- so it is listed in
+# EXPECTED_COLLISIONS rather than being quietly tolerated.
+launch
+""")
 
 # Extension functions declared on external receivers (e.g. `fun Cursor.getX()`)
 # are project code and must still be found, so they are added to `declared`
@@ -196,21 +258,87 @@ def scan(root):
         print(f"no .kt files under {root}", file=sys.stderr)
         return 1
 
+    # `private` is file-scoped, so a private declaration in one file must NOT
+    # satisfy a call in another. Keeping one flat set of declarations made the
+    # checker blind to a whole class of real failure, and it stayed blind for
+    # five releases: MainActivity's `private fun toast` silently resolved
+    # BriefActivity's `toast(...)`, and the first thing anyone heard about it
+    # was :app:compileDebugKotlin failing on two lines the checker had read
+    # and approved.
     declared = set()
+    private_by_file = {}
     sources = {}
     for f in files:
         src = open(f, encoding="utf-8").read()
         sources[f] = src
-        declared |= set(DECL.findall(src))
+        pub, priv = set(), set()
+        for m in DECL.finditer(src):
+            # `fun String.zzExt()` makes DECL capture the RECEIVER, not the
+            # function. Recording it would declare the type `String`, and a
+            # private extension would then declare it privately -- which the
+            # allowlist audit below reads as "BUILTIN is hiding a project
+            # symbol called String". The extension's real name is picked up
+            # by the extension patterns further down.
+            if src[m.end():m.end() + 1] == ".":
+                continue
+            (priv if "private " in m.group(0) else pub).add(m.group(1))
+        declared |= pub
+        private_by_file[f] = priv
 
-    # Lambda and function parameters count as declarations too.
+    # Lambda and function parameters count as declarations too. These stay
+    # module-wide on purpose: a parameter name is far more local than that,
+    # but tightening it would reject ordinary code, and a parameter is almost
+    # never the thing being CALLED.
     for src in sources.values():
         declared |= set(re.findall(r"(\w+)\s*:\s*[A-Z]\w*", src))          # params
         declared |= set(re.findall(r"\(\s*([a-z_]\w*)\s*,\s*[a-z_]\w*\s*\)\s*->", src))
-        declared |= set(re.findall(r"\b(?:val|var)\s+\(?\s*([a-z_]\w*)", src))
-        # Extension functions: `private fun Cursor.toChunk()` declares toChunk.
-        declared |= set(re.findall(r"\bfun\s+[A-Z]\w*(?:<[^>]+>)?\.([a-z_]\w*)", src))
-        declared |= set(re.findall(r"\bfun\s+<[^>]+>\s*[A-Z]\w*\.([a-z_]\w*)", src))
+
+    # Extension functions, and vals that carry a modifier. Both honour
+    # `private` the same way DECL does above -- the old code did not, and its
+    # own comment gave `private fun Cursor.toChunk()` as the example while
+    # filing it module-wide.
+    for f, src in sources.items():
+        priv = private_by_file[f]
+        for rx in (r"\b(?:val|var)\s+\(?\s*([a-z_]\w*)",
+                   r"\bfun\s+[A-Z]\w*(?:<[^>]+>)?\.([a-z_]\w*)",
+                   r"\bfun\s+<[^>]+>\s*[A-Z]\w*\.([a-z_]\w*)"):
+            for m in re.finditer(rx, src):
+                start = src.rfind("\n", 0, m.start()) + 1
+                head = src[start:m.start()]
+                (priv if re.search(r"\bprivate\b", head) else declared).add(m.group(1))
+
+    # Before checking any call: is the allowlist itself lying?
+    #
+    # A name in BUILTIN that this project declares ONLY as private is the
+    # `toast` defect exactly. BUILTIN says "external, assume it resolves";
+    # `private` says "resolves in one file only". Together they resolve it
+    # everywhere, which is wrong everywhere but the one file -- and it fails
+    # at compile time, long after this checker has said OK.
+    #
+    # A name also declared non-private is harmless: it resolves module-wide
+    # through `declared` whether or not BUILTIN mentions it.
+    private_only = set()
+    for f, priv in private_by_file.items():
+        private_only |= priv
+    private_only -= declared
+    masked = sorted((BUILTIN & private_only) - EXPECTED_COLLISIONS)
+    if masked:
+        print("The allowlist is hiding this project's own private symbols:\n")
+        for name in masked:
+            where = sorted(
+                os.path.basename(f) for f, p in private_by_file.items() if name in p
+            )
+            print(f"  FAIL  {name}()   declared private in {', '.join(where)}, "
+                  f"and listed in BUILTIN")
+        print(
+            "\nBUILTIN means 'external API, assume it resolves anywhere'. A\n"
+            "private declaration resolves in one file. A name in both resolves\n"
+            "everywhere and compiles nowhere but that file.\n\n"
+            "Remove it from BUILTIN -- it already resolves where it is visible.\n"
+            "Add it to EXPECTED_COLLISIONS only if a real external API shares\n"
+            "the name, and say which one."
+        )
+        return 1
 
     problems = []
     for f, src in sources.items():
@@ -223,10 +351,11 @@ def scan(root):
         code = re.sub(r'[|(]\s*[a-z_]\w*\(/', ' (', code)
 
         receiver_spans = implicit_receiver_spans(code)
+        visible_here = private_by_file[f]
 
         for m in CALL.finditer(code):
             name = m.group(1)
-            if name in BUILTIN or name in declared:
+            if name in BUILTIN or name in declared or name in visible_here:
                 continue
             if name[:1].isupper():
                 continue

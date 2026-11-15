@@ -182,6 +182,7 @@ samples/medha-brief.js
 samples/medha_brief.py
 samples/notify-pwa/README.md
 samples/notify-pwa/index.html
+tools/check_imports.py
 tools/check_ktor_api.py
 tools/check_overrides.py
 tools/check_reachable.py
@@ -216,6 +217,9 @@ tools/tests/TokenCapTest.kt
 tools/tests/TranscriptionRequestTest.kt
 tools/tests/WavTest.kt
 tools/tests/WidgetCallShapesTest.kt
+tools/tests/check_imports_mutations.sh
+tools/tests/check_stale_mutations.sh
+tools/tests/check_symbols_mutations.sh
 tools/tests/hg_agent_transcribe_test.py
 tools/tests/medha_brief_client_test.js
 tools/tests/medha_brief_py_test.py

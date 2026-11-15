@@ -98,6 +98,14 @@ jobs:
       - name: Check for missing declarations
         run: python3 tools/check_symbols.py app/src/main/java
 
+      # The other half of an "Unresolved reference". check_symbols above
+      # answers "is this function declared where I can see it"; this answers
+      # "is this type imported". v0.18.3 shipped both halves of the same
+      # break at once -- BriefActivity had neither `private fun toast` nor
+      # `import android.widget.Toast` -- and nothing here could see either.
+      - name: Check imports
+        run: python3 tools/check_imports.py app/src/main/java
+
       - name: Check lifecycle overrides
         run: python3 tools/check_overrides.py app/src
 

@@ -23,6 +23,22 @@ SRC="../../app/src/main/java/com/adabala/medha"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
+# The checkers themselves, FIRST and before the kotlinc guard below, because
+# these need nothing but python3 and because a wrong checker is worse than no
+# checker -- its green is read as evidence. Four of them were wrong in two
+# days, and every one was found by a build failing instead of by a test.
+echo "== check_stale_mutations =="
+./check_stale_mutations.sh
+
+echo
+echo "== check_symbols_mutations =="
+./check_symbols_mutations.sh
+
+echo
+echo "== check_imports_mutations =="
+./check_imports_mutations.sh
+echo
+
 if ! command -v kotlinc >/dev/null 2>&1; then
   echo "kotlinc not found on PATH — skipping pure-logic test run."
   echo "Get it from https://github.com/JetBrains/kotlin/releases (kotlin-compiler-*.zip)."
