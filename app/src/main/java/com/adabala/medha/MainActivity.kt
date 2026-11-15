@@ -39,6 +39,7 @@ import androidx.preference.PreferenceManager
 import com.adabala.medha.databinding.ActivityMainBinding
 import com.google.android.material.color.DynamicColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.slider.Slider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -53,6 +54,7 @@ import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
 class MainActivity : AppCompatActivity() {
 
@@ -332,12 +334,32 @@ class MainActivity : AppCompatActivity() {
 
     // --------------------------- scheduler UI ---------------------------
 
+    /**
+     * Put a value on this slider without any chance of killing the process.
+     *
+     * A Material Slider throws IllegalStateException for a value that is not
+     * valueFrom plus a whole number of stepSize, and it checks when it DRAWS,
+     * not when the value is set. So a bad value is stored silently and the
+     * crash arrives later, wherever that view first becomes visible -- which
+     * is why an invalid thermal setting presented as "the Settings tab
+     * minimises the app".
+     *
+     * Clamping alone is not enough. prefs are written by whatever version ran
+     * last; a 0.83 left behind by an older build clamps to 0.83, lands
+     * between two ticks, and crashes exactly the same way. Snapping to the
+     * nearest tick is what makes the value always drawable, whatever is on
+     * disk.
+     */
+    private fun Slider.setSnapped(raw: Float) {
+        val safe = raw.coerceIn(valueFrom, valueTo)
+        val steps = ((safe - valueFrom) / stepSize).roundToInt()
+        value = (valueFrom + steps * stepSize).coerceIn(valueFrom, valueTo)
+    }
+
     private fun setupScheduler() {
         val p = prefs
-        binding.pauseSlider.value =
-            p.getFloat(InferenceService.KEY_THERMAL_PAUSE, 0.85f).coerceIn(0.30f, 1.20f)
-        binding.resumeSlider.value =
-            p.getFloat(InferenceService.KEY_THERMAL_RESUME, 0.70f).coerceIn(0.20f, 1.10f)
+        binding.pauseSlider.setSnapped(p.getFloat(InferenceService.KEY_THERMAL_PAUSE, 0.85f))
+        binding.resumeSlider.setSnapped(p.getFloat(InferenceService.KEY_THERMAL_RESUME, 0.70f))
         binding.switchCharging.isChecked = p.getBoolean(InferenceService.KEY_BATCH_CHARGING, false)
         renderSliderLabels()
 
@@ -345,14 +367,13 @@ class MainActivity : AppCompatActivity() {
             // Keep resume strictly below pause in the UI too, so the user never
             // sees a configuration the service will silently rewrite.
             if (binding.resumeSlider.value >= v - 0.05f) {
-                binding.resumeSlider.value = (v - 0.05f).coerceAtLeast(0.20f)
+                binding.resumeSlider.setSnapped(v - 0.05f)
             }
             persistScheduler(); renderSliderLabels()
         }
         binding.resumeSlider.addOnChangeListener { _, v, _ ->
             if (v >= binding.pauseSlider.value - 0.05f) {
-                binding.resumeSlider.value =
-                    (binding.pauseSlider.value - 0.05f).coerceAtLeast(0.20f)
+                binding.resumeSlider.setSnapped(binding.pauseSlider.value - 0.05f)
             }
             persistScheduler(); renderSliderLabels()
         }
@@ -1180,6 +1201,37 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         polling = true
         pollHandler.post(pollRunnable)
+        refreshCrashBanner()
+    }
+
+    /**
+     * Surface the newest crash dump on Home, once, until it is dismissed.
+     *
+     * Everything here is best-effort and wrapped: a banner about a crash
+     * must not be able to cause one. If the dump directory cannot be read,
+     * the banner simply stays hidden.
+     */
+    private fun refreshCrashBanner() {
+        val newest = runCatching {
+            Diagnostics.listDumps(this).maxByOrNull { it.lastModified() }
+        }.getOrNull()
+
+        val seen = prefs.getLong(KEY_CRASH_SEEN, 0L)
+        if (newest == null || newest.lastModified() <= seen) {
+            binding.crashBanner.visibility = View.GONE
+            return
+        }
+
+        binding.crashDetail.text = getString(
+            R.string.crash_body,
+            SimpleDateFormat("MMM d, HH:mm", Locale.US).format(Date(newest.lastModified()))
+        )
+        binding.crashBanner.visibility = View.VISIBLE
+        binding.btnCrashShare.setOnClickListener { shareDiagnosticsFile(newest) }
+        binding.btnCrashDismiss.setOnClickListener {
+            prefs.edit().putLong(KEY_CRASH_SEEN, newest.lastModified()).apply()
+            binding.crashBanner.visibility = View.GONE
+        }
     }
 
     override fun onPause() {
@@ -1347,8 +1399,8 @@ class MainActivity : AppCompatActivity() {
     private fun renderSchedulerCard(sched: String?) {
         if (sched == null) {
             binding.schedState.text = getString(R.string.sched_idle)
-            binding.statQueue.text = "—"
-            binding.statThermal.text = "—"
+            binding.statQueue.text = getString(R.string.stat_placeholder)
+            binding.statThermal.text = getString(R.string.stat_placeholder)
             return
         }
         runCatching {
@@ -1450,9 +1502,21 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        if (metrics == null) binding.statSpeed.text = getString(R.string.stat_placeholder)
+
         metrics?.let {
             runCatching {
                 val m = JSONObject(it)
+
+                // Set here, NOT inside the buildString below. A view update
+                // hidden in a string builder only runs when that string gets
+                // built, so this pill stayed empty for the whole of every
+                // session where metrics were never fetched -- while the two
+                // beside it showed an em dash. One blank box in a row of
+                // three, and nothing in the code looked wrong.
+                binding.statSpeed.text =
+                    String.format(Locale.US, "%.0f", m.optDouble("lastTokensPerSec", 0.0))
+
                 binding.metricsText.text = buildString {
                     append("Requests: ").append(m.optLong("totalRequests"))
                     val fails = m.optLong("totalFailures")
@@ -1461,8 +1525,6 @@ class MainActivity : AppCompatActivity() {
                     append(String.format(Locale.US, "%.1f", m.optDouble("avgTokensPerSec", 0.0)))
                     append(" tok/s  ·  last ")
                     append(String.format(Locale.US, "%.1f", m.optDouble("lastTokensPerSec", 0.0)))
-                    binding.statSpeed.text =
-                        String.format(Locale.US, "%.0f", m.optDouble("lastTokensPerSec", 0.0))
                     append("\nStored: ").append(m.optInt("db_conversations")).append(" chats, ")
                     append(m.optInt("db_messages")).append(" msgs, ")
                     append(m.optInt("db_chunks")).append(" chunks")
@@ -1496,5 +1558,8 @@ class MainActivity : AppCompatActivity() {
         private const val COLOR_WARN = "#F5E4B7"
         private const val COLOR_ERR = "#F5C0B7"
         private const val COLOR_IDLE = "#B9A9EC"
+
+        // Timestamp of the newest crash dump the user has already been shown.
+        private const val KEY_CRASH_SEEN = "crash_banner_seen_at"
     }
 }

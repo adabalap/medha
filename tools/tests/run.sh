@@ -37,6 +37,10 @@ echo "== check_symbols_mutations =="
 echo
 echo "== check_imports_mutations =="
 ./check_imports_mutations.sh
+
+echo
+echo "== check_sliders_mutations =="
+./check_sliders_mutations.sh
 echo
 
 if ! command -v kotlinc >/dev/null 2>&1; then

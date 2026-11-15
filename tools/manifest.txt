@@ -95,6 +95,7 @@ app/src/main/res/drawable/ic_nav_home.xml
 app/src/main/res/drawable/ic_nav_settings.xml
 app/src/main/res/drawable/ic_open_in_new.xml
 app/src/main/res/drawable/ic_pair.xml
+app/src/main/res/drawable/ic_play.xml
 app/src/main/res/drawable/ic_refresh.xml
 app/src/main/res/drawable/ic_stat_medha.xml
 app/src/main/res/drawable/ic_stop.xml
@@ -188,6 +189,7 @@ tools/check_overrides.py
 tools/check_reachable.py
 tools/check_resources.py
 tools/check_route_auth.py
+tools/check_sliders.py
 tools/check_stale.py
 tools/check_symbols.py
 tools/check_widget_layouts.py
@@ -218,6 +220,7 @@ tools/tests/TranscriptionRequestTest.kt
 tools/tests/WavTest.kt
 tools/tests/WidgetCallShapesTest.kt
 tools/tests/check_imports_mutations.sh
+tools/tests/check_sliders_mutations.sh
 tools/tests/check_stale_mutations.sh
 tools/tests/check_symbols_mutations.sh
 tools/tests/hg_agent_transcribe_test.py

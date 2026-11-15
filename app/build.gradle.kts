@@ -42,8 +42,8 @@ android {
         applicationId = "com.adabala.medha"
         minSdk = 27
         targetSdk = 34
-        versionCode = 43
-        versionName = "0.18.4"
+        versionCode = 44
+        versionName = "0.18.5"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

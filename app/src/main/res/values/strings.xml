@@ -91,6 +91,14 @@ Licensed under the terms in the project repository.</string>
     <string name="toast_battery_ok">Already allowed</string>
 
     <!-- stat pills -->
+    <!-- Shown in a stat pill before there is a number to put there. -->
+    <!-- The post-crash banner on Home. Deliberately not in Settings: the
+         report has to be reachable when a screen is what crashed. -->
+    <string name="crash_title">Medha stopped unexpectedly</string>
+    <string name="crash_body">A report from %1$s was saved on this phone. Nothing leaves the device unless you share it.</string>
+    <string name="crash_share">Share report</string>
+    <string name="crash_dismiss">Dismiss</string>
+    <string name="stat_placeholder">&#8212;</string>
     <string name="stat_speed">SPEED</string>
     <string name="stat_queue">QUEUE</string>
     <string name="stat_thermal">THERMAL</string>

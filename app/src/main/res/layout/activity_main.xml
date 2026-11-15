@@ -61,6 +61,51 @@
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
             android:orientation="vertical">
 
+            <!--
+              Shown only after a crash, and only until it is dismissed.
+
+              Every crash already writes a dump, but the one way to reach
+              those dumps was Settings › Diagnostics. When the thing that
+              crashes IS the Settings tab, the report is sealed inside the
+              screen that cannot open: three rounds of "please send me the
+              trace" with no way for anyone to send it. A crash notice
+              belongs somewhere that does not depend on the app still
+              working.
+            -->
+            <LinearLayout android:id="@+id/crashBanner"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:background="@drawable/bg_brief_card"
+                android:padding="18dp" android:layout_marginTop="12dp"
+                android:visibility="gone">
+
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:textAppearance="?attr/textAppearanceTitleSmall"
+                    android:textColor="?attr/colorError"
+                    android:text="@string/crash_title" />
+
+                <TextView android:id="@+id/crashDetail"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:paddingTop="6dp"
+                    android:textAppearance="?attr/textAppearanceBodyMedium"
+                    android:textColor="?android:attr/textColorSecondary"
+                    android:text="" />
+
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="horizontal" android:layout_marginTop="12dp">
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCrashShare"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="@string/crash_share" app:icon="@drawable/ic_open_in_new" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCrashDismiss"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:text="@string/crash_dismiss" />
+                </LinearLayout>
+            </LinearLayout>
+
             <!-- One question, answered at the top: is it running. -->
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="vertical" android:background="@drawable/bg_brief_card"
@@ -85,43 +130,100 @@
                     android:indeterminate="true" android:visibility="gone"
                     app:trackCornerRadius="4dp" />
 
+                <!--
+                  Two buttons that stay the same size as each other.
+
+                  layout_height="match_parent" inside a wrap_content row is
+                  the equal-height idiom: the row takes the height of its
+                  tallest child and both children then fill it. Without it,
+                  Start was taller than Stop whenever its label ran to two
+                  lines — and its label changes with state ("Start Medha",
+                  "Loading model…", "Choose model file"), so the row went
+                  uneven on its own, in some states and not others.
+
+                  maxLines + ellipsize keeps a long label on one line rather
+                  than growing the whole row to fit it.
+                -->
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:orientation="horizontal" android:layout_marginTop="18dp">
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnStart"
                         android:layout_width="0dp" android:layout_weight="1"
-                        android:layout_height="wrap_content"
-                        android:text="@string/start" app:icon="@drawable/ic_medha_mark" />
+                        android:layout_height="match_parent" android:minHeight="52dp"
+                        android:maxLines="1" android:ellipsize="end"
+                        android:text="@string/btn_start" app:icon="@drawable/ic_play" />
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnStop"
                         style="@style/Widget.Material3.Button.TonalButton"
                         android:layout_width="0dp" android:layout_weight="1"
-                        android:layout_height="wrap_content" android:layout_marginStart="10dp"
+                        android:layout_height="match_parent" android:minHeight="52dp"
+                        android:layout_marginStart="10dp"
+                        android:maxLines="1" android:ellipsize="end"
                         android:text="@string/stop" app:icon="@drawable/ic_stop" />
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- Live numbers, and only while there are any. -->
+            <!--
+              Live numbers, each one labelled.
+
+              The redesign dropped the labels and left three identical grey
+              pills showing a bare number, or in statSpeed's case nothing at
+              all, because only the streaming path ever wrote to it while the
+              other two were given an em dash when idle. Three grey boxes, one
+              of them blank, is not a readout.
+
+              The strings were already here; nothing had used them since.
+            -->
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal" android:layout_marginTop="12dp"
                 android:baselineAligned="false">
-                <TextView android:id="@+id/statSpeed"
-                    android:layout_width="0dp" android:layout_weight="1"
-                    android:layout_height="wrap_content" android:gravity="center"
-                    android:background="@drawable/bg_stat" android:padding="14dp"
-                    android:textAppearance="?attr/textAppearanceLabelLarge" android:text="" />
-                <TextView android:id="@+id/statQueue"
-                    android:layout_width="0dp" android:layout_weight="1"
-                    android:layout_height="wrap_content" android:gravity="center"
-                    android:layout_marginStart="10dp"
-                    android:background="@drawable/bg_stat" android:padding="14dp"
-                    android:textAppearance="?attr/textAppearanceLabelLarge" android:text="" />
-                <TextView android:id="@+id/statThermal"
-                    android:layout_width="0dp" android:layout_weight="1"
-                    android:layout_height="wrap_content" android:gravity="center"
-                    android:layout_marginStart="10dp"
-                    android:background="@drawable/bg_stat" android:padding="14dp"
-                    android:textAppearance="?attr/textAppearanceLabelLarge" android:text="" />
+
+                <LinearLayout android:layout_width="0dp" android:layout_weight="1"
+                    android:layout_height="wrap_content" android:orientation="vertical"
+                    android:gravity="center" android:background="@drawable/bg_stat"
+                    android:paddingTop="12dp" android:paddingBottom="12dp">
+                    <TextView android:id="@+id/statSpeed"
+                        android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:textAppearance="?attr/textAppearanceTitleMedium"
+                        android:maxLines="1" android:text="@string/stat_placeholder" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:paddingTop="2dp"
+                        android:textAppearance="?attr/textAppearanceLabelSmall"
+                        android:textColor="?android:attr/textColorSecondary"
+                        android:text="@string/stat_speed" />
+                </LinearLayout>
+
+                <LinearLayout android:layout_width="0dp" android:layout_weight="1"
+                    android:layout_height="wrap_content" android:orientation="vertical"
+                    android:gravity="center" android:layout_marginStart="10dp"
+                    android:background="@drawable/bg_stat"
+                    android:paddingTop="12dp" android:paddingBottom="12dp">
+                    <TextView android:id="@+id/statQueue"
+                        android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:textAppearance="?attr/textAppearanceTitleMedium"
+                        android:maxLines="1" android:text="@string/stat_placeholder" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:paddingTop="2dp"
+                        android:textAppearance="?attr/textAppearanceLabelSmall"
+                        android:textColor="?android:attr/textColorSecondary"
+                        android:text="@string/stat_queue" />
+                </LinearLayout>
+
+                <LinearLayout android:layout_width="0dp" android:layout_weight="1"
+                    android:layout_height="wrap_content" android:orientation="vertical"
+                    android:gravity="center" android:layout_marginStart="10dp"
+                    android:background="@drawable/bg_stat"
+                    android:paddingTop="12dp" android:paddingBottom="12dp">
+                    <TextView android:id="@+id/statThermal"
+                        android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:textAppearance="?attr/textAppearanceTitleMedium"
+                        android:maxLines="1" android:text="@string/stat_placeholder" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:paddingTop="2dp"
+                        android:textAppearance="?attr/textAppearanceLabelSmall"
+                        android:textColor="?android:attr/textColorSecondary"
+                        android:text="@string/stat_thermal" />
+                </LinearLayout>
             </LinearLayout>
 
             <!-- The second question: how does an app reach it. -->
@@ -293,10 +395,25 @@
             <TextView android:id="@+id/pauseLabel"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:textAppearance="?attr/textAppearanceLabelLarge" android:text="" />
+            <!--
+              These two carry THERMAL HEADROOM, a fraction roughly 0.2-1.2,
+              not a 0-10 count. The range has to say so.
+
+              A Slider whose value does not land on a step tick throws
+              IllegalStateException - and it checks at DRAW time, not when
+              the value is set. While this said 0..10 step 1, setupScheduler
+              assigned 0.85 at startup without complaint, because a GONE
+              view never draws; the app then died the instant the Settings
+              tab was shown and Android dropped the user on the launcher.
+              It read as "Settings minimises the app".
+
+              (valueTo - valueFrom) must also be a whole number of steps:
+              (1.20 - 0.30) / 0.05 = 18. tools/check_sliders.py enforces both.
+            -->
             <com.google.android.material.slider.Slider
                 android:id="@+id/pauseSlider"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:valueFrom="0" android:valueTo="10" android:stepSize="1" />
+                android:valueFrom="0.30" android:valueTo="1.20" android:stepSize="0.05" />
 
             <TextView android:id="@+id/resumeLabel"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -305,7 +422,7 @@
             <com.google.android.material.slider.Slider
                 android:id="@+id/resumeSlider"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:valueFrom="0" android:valueTo="10" android:stepSize="1" />
+                android:valueFrom="0.20" android:valueTo="1.10" android:stepSize="0.05" />
 
             <com.google.android.material.materialswitch.MaterialSwitch
                 android:id="@+id/switchCharging"
