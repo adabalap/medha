@@ -162,7 +162,16 @@ Licensed under the terms in the project repository.</string>
     <string name="widget_count">%1$d app(s)</string>
 
     <!-- full brief screen -->
+    <!-- Kept short: this is also the activity's android:label, which is what
+         the recents switcher shows under the app card. -->
     <string name="brief_title">Brief</string>
+    <!-- The headline on the brief screen itself. Telugu, in the system font
+         (Samsung and AOSP both ship Telugu coverage, so no bundled face is
+         needed and none should be added). Drawn with a gradient across the
+         same palette the rows use, so it is the brightest thing on the
+         screen without being a colour that appears nowhere else.
+         "Quicksilver: I am my thoughts." -->
+    <string name="brief_headline">పాదరసం: నేను నా ఆలోచనలు.</string>
     <string name="brief_empty">Nothing in the brief right now.\n\nApps you have paired with Medha post here, and whatever they post shows on the home-screen widget. Nothing has in the last day.</string>
     <string name="brief_refresh">Refresh</string>
     <string name="brief_clear_all">Clear everything</string>
@@ -207,6 +216,20 @@ Licensed under the terms in the project repository.</string>
     <!-- primary status line, shown on the main screen -->
     <string name="status_starting">● Starting…</string>
     <string name="status_not_running">● Not running</string>
+    <!-- Distinct from "Not running": the difference between nobody has
+         pressed Start and Start cannot work until something changes. -->
+    <string name="status_cannot_start">● Cannot start</string>
+    <!-- Appended to a port-in-use message. The port field is in Settings,
+         which is not where someone reading an error on Home would look. -->
+    <string name="status_port_where">Change it in Settings › Port.</string>
+    <!-- Live status lines. Previously built by string concatenation in
+         MainActivity, which put four user-visible sentences outside
+         strings.xml where nothing could translate or review them. The
+         leading ● is coloured by a span; the rest is ordinary text. -->
+    <string name="status_running_loaded">● Running · model loaded</string>
+    <string name="status_running_generating">● Running · generating</string>
+    <string name="status_load_failed">● Load failed</string>
+    <string name="status_loading_model">● Loading model…</string>
     <string name="status_waiting_for_service">Waiting for the service</string>
     <string name="status_tap_start">Tap Start to load the model</string>
 

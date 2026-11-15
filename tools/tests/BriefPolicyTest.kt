@@ -125,9 +125,17 @@ fun main() {
     check("the OLDEST were evicted, not the newest",
         many.any { it.clientId == "client20" } && many.none { it.clientId == "client1" })
 
+    // Built FROM the constant, not from a literal eight. The fixture used to
+    // post a fixed eight items against a cap of five; raising the cap to 20
+    // left it posting fewer items than the limit, so it asserted a trim that
+    // could no longer happen and failed on correct code. A bounds test has to
+    // overshoot whatever the bound currently is.
+    val overCap = (1..BriefPolicy.MAX_ITEMS_PER_SECTION + 3).map { "item $it" }
     val greedyItems = BriefPolicy.put(emptyList(), "loud",
-        items("a", "b", "c", "d", "e", "f", "g", "h"), now).first()
+        items(*overCap.toTypedArray()), now).first()
     eq("items per section capped", greedyItems.items.size, BriefPolicy.MAX_ITEMS_PER_SECTION)
+    check("and it is the FIRST ones that survive",
+        greedyItems.items.first().title == "item 1")
 
     // ------------------------------------------------- the 5-vs-3 bug, pinned
     println("\nBriefPolicy — row budget matches the layout")

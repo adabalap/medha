@@ -6,11 +6,13 @@ import com.adabala.medha.data.MedhaDatabase
 import com.adabala.medha.auth.ClientRegistry
 import com.adabala.medha.auth.PairingManager
 import com.adabala.medha.net.CorsPolicy
+import com.adabala.medha.net.PortProbe
 import com.adabala.medha.net.RateLimiter
 import com.adabala.medha.net.WebOrigin
 import com.adabala.medha.notify.BriefJson
 import com.adabala.medha.audio.Wav
 import com.adabala.medha.oai.ChatRequestParser
+import com.adabala.medha.oai.EngineFailure
 import com.adabala.medha.oai.MultimodalProbe
 import com.adabala.medha.oai.TokenCap
 import com.adabala.medha.oai.TranscriptionRequest
@@ -275,12 +277,37 @@ class LocalServer(
 
     fun start() {
         if (server != null) return
+
+        // Ask before Ktor does.
+        //
+        // CIO binds inside its accept job, on another coroutine, after
+        // start(wait = false) has returned -- so a BindException from it
+        // reaches the default uncaught handler instead of this function's
+        // caller, and the process dies. Probing here makes the common case
+        // (something else is already on this port) a synchronous throw that
+        // InferenceService's runCatching can report like any other failure.
+        // See PortProbe for the trace this came from.
+        if (!PortProbe.isFree(LOOPBACK, port)) {
+            throw java.net.BindException(PortProbe.explain(LOOPBACK, port))
+        }
+
         server = embeddedServer(CIO, port = port, host = LOOPBACK) {
 
             install(ContentNegotiation) { json(jsonFormat) }
 
             install(StatusPages) {
                 exception<Throwable> { call, cause ->
+                    // A limit the engine reports is not a server fault. Hand
+                    // back the 4xx the client can act on instead of a 500 it
+                    // can only retry -- see EngineFailure for the trace.
+                    EngineFailure.map(cause)?.let { m ->
+                        Diagnostics.w(TAG, "${call.request.path()}: ${m.code} — ${m.message}")
+                        call.respond(
+                            HttpStatusCode.fromValue(m.status),
+                            ErrorResponse(error = m.message, code = m.code)
+                        )
+                        return@exception
+                    }
                     SystemInfo.recordFailure()
                     Diagnostics.e(TAG, "Unhandled server error on ${call.request.path()}", cause)
                     // Return structured JSON, not a bare string: clients were
@@ -525,6 +552,18 @@ class LocalServer(
                             put("hasSessionPath", mm.hasSessionPath)
                             put("hasConversationPath", mm.hasConversationPath)
                             put("sdkMethodCount", mm.allMethods.size)
+                            // The Message accessors specifically. 225 methods
+                            // were already being collected and only their
+                            // COUNT reported, so three diagnostics in a row
+                            // said "no known text accessor on Message" while
+                            // carrying the answer in a field nobody printed.
+                            // Entries read "Message.getX(): Type" —
+                            // MultimodalProbe keys them by simple name.
+                            putJsonArray("messageMethods") {
+                                mm.allMethods
+                                    .filter { it.startsWith("Message.") }
+                                    .forEach { add(it) }
+                            }
                         }
                         put("vectorSearch", retriever.vectorEnabled)
                         put("embeddedChunks", db.countEmbedded(retriever.embeddingId))

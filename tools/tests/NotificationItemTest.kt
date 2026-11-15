@@ -111,8 +111,13 @@ fun main() {
     check("the unrelated item survives", merged.any { it.title == "Payslip" })
     eq("case and padding do not defeat it",
         NotificationItem.merge(listOf(a), a.copy(title = "  STANDUP ")).size, 1)
+    // Derived from the cap, not a literal nine. The fixture used to push a
+    // fixed nine items at a cap of five; raising the cap to 20 left it
+    // under the limit, so it asserted a trim that could not happen and
+    // failed on correct code. The second fixture in this suite to do it --
+    // a bounds test has to overshoot whatever the bound currently is.
     eq("the section stays inside the store's per-client cap",
-        (1..9).fold(emptyList<BriefPolicy.Item>()) { acc, i ->
+        (1..BriefPolicy.MAX_ITEMS_PER_SECTION + 4).fold(emptyList<BriefPolicy.Item>()) { acc, i ->
             NotificationItem.merge(acc, c.copy(title = "item $i"))
         }.size,
         BriefPolicy.MAX_ITEMS_PER_SECTION)

@@ -85,7 +85,7 @@ a bug: a client can honestly say "3 of your 7 showing" instead of guessing.
 
 | Condition | Status | Body `code` |
 |---|---|---|
-| More than 5 items | 400 | `bad_request` |
+| More than 20 items | 400 | `bad_request` |
 | A title over 80 chars | 400 | `bad_request` |
 | A text over 200 chars | 400 | `bad_request` |
 | Missing or unknown token | 401 | `unauthorized` |
@@ -185,7 +185,7 @@ against what you sent to detect a dropped URL.
 
 | Limit | Value | Constant |
 |---|---|---|
-| Items per client | 5 | `BriefPolicy.MAX_ITEMS_PER_SECTION` |
+| Items per client | 20 | `BriefPolicy.MAX_ITEMS_PER_SECTION` |
 | Title length | 80 | `MAX_BRIEF_TITLE` |
 | Text length | 200 | `MAX_BRIEF_TEXT` |
 | Link length | 2000 | `BriefJson.MAX_LINK_LENGTH` |
@@ -208,13 +208,19 @@ Two facts worth designing around.
 
 **Rows are interleaved round-robin, one item per client per pass.** Every
 app gets its first line before any app gets its second. So **your first item
-is the one most likely to be seen**, and your fifth may never be. Order by
-importance, not chronology.
+is the one most likely to be seen**, and your last may never be on the
+widget. Order by importance, not chronology.
 
 Section-by-section rendering was the alternative, and it meant one app
-posting five items filled the entire widget and every other app was
+posting its whole list filled the entire widget and every other app was
 invisible — the exact failure the per-client split exists to prevent,
 reintroduced at the drawing step.
+
+**Post the real items; do not summarise them yourself.** The widget shows a
+few and folds the rest into "N more", and tapping it opens the full brief,
+which lists everything. A client that trims its own list and posts a final
+"+2 more — open my app" row turns that screen into a pointer somewhere else.
+The limit was 5 until v0.18.7 and that was too low to avoid; it is 20 now.
 
 **Within each pass, the most recently updated client goes first.** Sections
 are ordered by `updatedAt` descending, so with two clients A (older) and B

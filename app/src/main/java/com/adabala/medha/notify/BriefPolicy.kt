@@ -438,7 +438,23 @@ object BriefPolicy {
     const val MAX_TTL_MS = 7 * 24 * 60 * 60 * 1000L
 
     const val MAX_SECTIONS = 8
-    const val MAX_ITEMS_PER_SECTION = 5
+
+    /**
+     * Items one client may post.
+     *
+     * Was 5, which was sized for the WIDGET and wrong for the screen behind
+     * it. PUT /brief rejects anything over this, so a client with six things
+     * to say could not say them -- and hg_agent did the only thing left,
+     * posting five rows where the fifth was a synthetic "+2 more · Open
+     * Quicksilver". The full brief then listed a pointer to another app
+     * instead of the two items it existed to show.
+     *
+     * Nothing downstream needed 5. The widget sizes carry their own
+     * capacities (BriefRender.ROWS_*, at most 7) and fold the remainder; the
+     * full screen takes EVERYTHING and scrolls. The cap only ever decided
+     * what a client was allowed to SEND.
+     */
+    const val MAX_ITEMS_PER_SECTION = 20
 
     /**
      * Formerly the rows one page of the widget drew. Nothing pages any

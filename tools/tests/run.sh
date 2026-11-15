@@ -216,6 +216,24 @@ kotlinc "$SRC/oai/TokenCap.kt" TokenCapTest.kt -include-runtime -d "$WORK/tokenc
 java -jar "$WORK/tokencap.jar"
 
 echo
+echo "== EngineFailureTest =="
+# An engine limit is not a server fault. "Input token ids are too long:
+# 4275 >= 4096" reached the generic Throwable handler and came back as 500
+# internal_error, which a client can only retry -- identically, forever.
+kotlinc "$SRC/oai/EngineFailure.kt" EngineFailureTest.kt \
+  -include-runtime -d "$WORK/enginefail.jar"
+java -jar "$WORK/enginefail.jar"
+
+echo
+echo "== PortProbeTest =="
+# Whether a port is bindable, asked before Ktor asks. Real sockets, because
+# the bug it guards is a disagreement between two socket configurations:
+# Ktor's CIO sets SO_REUSEADDR, and a stricter probe would call a port taken
+# whenever Medha's own last run left one in TIME_WAIT.
+kotlinc "$SRC/net/PortProbe.kt" PortProbeTest.kt -include-runtime -d "$WORK/port.jar"
+java -jar "$WORK/port.jar"
+
+echo
 echo "== NetPolicyTest =="
 # Origin matching, the CORS decision, the Private Network Access preflight,
 # the notify rate limiter and the pairing-code state machine. This is the

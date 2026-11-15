@@ -18,6 +18,7 @@ import com.adabala.medha.auth.ClientRegistry
 import com.adabala.medha.auth.PairingManager
 import com.adabala.medha.notify.NotificationHub
 import com.adabala.medha.sched.InferenceScheduler
+import com.adabala.medha.net.PortProbe
 import com.adabala.medha.sched.SchedulerConfig
 import com.adabala.medha.rag.AiEdgeEmbedder
 import com.adabala.medha.rag.Embedder
@@ -99,7 +100,11 @@ class InferenceService : Service() {
                 applicationContext, engine, port, db, requireAuth, embedder,
                 registry, scheduler, notifier, PairingManager.shared()
             )
-                .also { runCatching { it.start() }.onFailure { e -> onServerFailed(e, port) } }
+                .also {
+                    runCatching { it.start() }
+                        .onSuccess { clearServerError() }
+                        .onFailure { e -> onServerFailed(e, port) }
+                }
             currentPort = port
         }
 
@@ -151,8 +156,33 @@ class InferenceService : Service() {
 
     private fun onServerFailed(e: Throwable, port: Int) {
         Diagnostics.e(TAG, "Server failed to bind on port $port", e)
-        engine.recordError("port $port unavailable: ${e.message}")
-        updateNotification("Port $port unavailable — pick another")
+
+        // The sentence worth showing is on the BindException, which by the
+        // time it arrives here may be wrapped in the JobCancellationException
+        // that Ktor's scope raises as it tears down.
+        var c: Throwable? = e
+        var bind: java.net.BindException? = null
+        while (c != null && bind == null) {
+            if (c is java.net.BindException) bind = c
+            c = c.cause
+        }
+        val msg = bind?.message?.takeIf { it.isNotBlank() }
+            ?: PortProbe.explain(PortProbe.LOOPBACK, port)
+
+        engine.recordError(msg)
+        PreferenceManager.getDefaultSharedPreferences(this).edit()
+            .putString(KEY_LAST_SERVER_ERROR, msg)
+            .putLong(KEY_LAST_SERVER_ERROR_AT, System.currentTimeMillis())
+            .apply()
+        updateNotification(msg.take(96))
+    }
+
+    /** Clears the stored reason once a start succeeds, so it cannot outlive it. */
+    private fun clearServerError() {
+        PreferenceManager.getDefaultSharedPreferences(this).edit()
+            .remove(KEY_LAST_SERVER_ERROR)
+            .remove(KEY_LAST_SERVER_ERROR_AT)
+            .apply()
     }
 
     private fun readyText(port: Int): String =
@@ -266,6 +296,25 @@ class InferenceService : Service() {
 
         const val KEY_MODEL_PATH = "model_path"
         const val KEY_PORT = "server_port"
+
+        // Why the server is not running, written where the UI can read it
+        // WITHOUT the server.
+        //
+        // engine.recordError() puts the reason behind /health, which is
+        // served by the thing that failed to start -- so when the port was
+        // taken, the Home screen polled, got nothing, and said "Not running
+        // · Tap Start" forever. Tapping Start then failed the same way, in
+        // silence. The one fact that explains everything lived in a place
+        // that could only be reached if the problem did not exist.
+        const val KEY_LAST_SERVER_ERROR = "last_server_error"
+
+        // When it was written. Home gives a freshly started service 25
+        // seconds of grace before calling it dead, which is right for a cold
+        // model load and wrong for a bind that failed in microseconds: the
+        // screen said "Starting…" for 25 seconds about an attempt that was
+        // already over. A failure stamped after the start request ends the
+        // grace period immediately.
+        const val KEY_LAST_SERVER_ERROR_AT = "last_server_error_at"
         const val KEY_BACKEND = "backend"
         const val KEY_MODEL_URI = "model_uri"
         /** Legacy single token. Read once by ClientRegistry to seed the admin client. */

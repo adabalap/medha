@@ -127,4 +127,26 @@
     <color name="kind_done_wash">#14157A3A</color>
     <color name="kind_note">#4A5568</color>          <!-- everything else -->
     <color name="kind_note_wash">#144A5568</color>
+
+    <!-- ===================================================================
+         RUN / STOP, and the status dot.
+
+         The status line used to be drawn in #B7F5C8, #F5E4B7, #F5C0B7 and
+         #B9A9EC: four pale tints chosen when the card behind them was deep
+         purple. On today's light card they are nearly invisible, which is
+         what "the colour isn't looking great" meant. The TEXT is now
+         ordinary primary text and only the leading dot carries colour, so
+         state is still readable at a glance without the sentence fading out.
+
+         These are the saturated versions, contrast-checked against the card
+         rather than against the old purple.
+         =================================================================== -->
+    <color name="run_green">#1B7A3C</color>          <!-- go, and running -->
+    <color name="run_green_on">#FFFFFF</color>
+    <color name="stop_maroon">#8C1D2B</color>        <!-- stop -->
+    <color name="stop_maroon_on">#FFFFFF</color>
+    <color name="dot_running">#1B7A3C</color>
+    <color name="dot_working">#9A6400</color>        <!-- starting, loading -->
+    <color name="dot_error">#A8261B</color>
+    <color name="dot_idle">#6B6880</color>
 </resources>

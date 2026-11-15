@@ -24,7 +24,12 @@ import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import android.content.res.ColorStateList
+import android.text.Spannable
+import android.text.SpannableString
+import android.text.style.ForegroundColorSpan
 import androidx.core.content.ContextCompat
+import com.google.android.material.button.MaterialButton
 import androidx.core.content.FileProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -275,6 +280,63 @@ class MainActivity : AppCompatActivity() {
     private fun hasModel(): Boolean =
         prefs.getString(InferenceService.KEY_MODEL_PATH, null) != null
 
+    /**
+     * The status line, with colour on the dot and nowhere else.
+     *
+     * It used to be drawn entirely in one of four pale tints -- #B7F5C8 for
+     * running, and so on -- picked when the card behind it was deep purple.
+     * The card is light now and those tints are barely legible on it: the
+     * most important sentence on the screen was the hardest one to read.
+     *
+     * Leaving the TEXT alone means it inherits textColorPrimary, so it is
+     * black on light and white on dark without this function knowing which.
+     * The leading dot keeps the state readable at a glance.
+     */
+    private fun setStatus(text: String, dotColorRes: Int) {
+        val s = SpannableString(text)
+        if (text.isNotEmpty() && text[0] == '●') {
+            s.setSpan(
+                ForegroundColorSpan(ContextCompat.getColor(this, dotColorRes)),
+                0, 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
+        binding.statusText.text = s
+    }
+
+    /**
+     * Paints a MaterialButton, or hands it back to the theme.
+     *
+     * [fillRes] null restores the default tint and label colour rather than
+     * leaving the last state's paint on the view. applyState runs on every
+     * poll, so a button that is only ever painted and never un-painted keeps
+     * whichever colour it was given first and stops tracking state at all.
+     */
+    private val originalTints = mutableMapOf<Int, Pair<ColorStateList?, ColorStateList>>()
+
+    private fun tintButton(button: MaterialButton, fillRes: Int?, onFillRes: Int) {
+        // Captured on the first call, which happens before anything has been
+        // painted, so this is the tint the theme gave the button. It cannot
+        // be rebuilt from a colour resource: Material's default background
+        // tint is a ColorStateList with a disabled state in it, and a flat
+        // colour in its place makes a disabled button look pressable.
+        val (bg, fg) = originalTints.getOrPut(button.id) {
+            button.backgroundTintList to button.textColors
+        }
+        if (fillRes == null) {
+            button.backgroundTintList = bg
+            button.setTextColor(fg)
+            button.iconTint = fg
+            return
+        }
+        // A flat fill is safe here only because these are applied when the
+        // button is enabled and removed when it is not; see applyState.
+        button.backgroundTintList =
+            ColorStateList.valueOf(ContextCompat.getColor(this, fillRes))
+        val on = ColorStateList.valueOf(ContextCompat.getColor(this, onFillRes))
+        button.setTextColor(on)
+        button.iconTint = on
+    }
+
     private fun applyState(state: UiState) {
         uiState = state
         val hasModel = prefs.getString(InferenceService.KEY_MODEL_PATH, null) != null
@@ -294,6 +356,24 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.btnStop.isEnabled = live
+
+        // Colour follows what the button will DO, not what it is called.
+        //
+        // Green only when pressing it starts something: with no model it is
+        // the file picker, and while a run is in progress it does nothing at
+        // all, so in both of those it stays the neutral theme fill. A green
+        // button that is disabled, or that opens a file chooser, teaches
+        // people to stop reading the colour.
+        //
+        // Maroon on Stop whenever there is something to stop. A disabled
+        // button keeps the theme fill rather than a greyed maroon: Material
+        // already dims a disabled button, and dimming a strong red produces
+        // a muddy brown that looks like a rendering fault.
+        val startIsGo = hasModel && (state == UiState.IDLE || state == UiState.ERROR)
+        tintButton(binding.btnStart, if (startIsGo) R.color.run_green else null,
+            R.color.run_green_on)
+        tintButton(binding.btnStop, if (live) R.color.stop_maroon else null,
+            R.color.stop_maroon_on)
 
         // Config that only takes effect on (re)start is locked while live, so a
         // change cannot silently disagree with what the service is actually
@@ -1425,15 +1505,46 @@ class MainActivity : AppCompatActivity() {
         if (health == null) {
             // Give a freshly started service a grace period before calling it
             // dead; the model load can take a while on a cold cache.
-            val starting = startRequestedAt > 0 &&
+            // A failure stamped after this start request means the attempt is
+            // already over, so the grace period has nothing left to wait for.
+            val failedAt = prefs.getLong(InferenceService.KEY_LAST_SERVER_ERROR_AT, 0L)
+            val alreadyFailed = failedAt > startRequestedAt
+            val starting = startRequestedAt > 0 && !alreadyFailed &&
                 System.currentTimeMillis() - startRequestedAt < START_GRACE_MS
-            binding.statusText.setTextColor(Color.parseColor(COLOR_IDLE))
-            binding.statusText.text =
-                if (starting) getString(R.string.status_starting) else getString(R.string.status_not_running)
+            // Why the server is not up, from the one place that does not need
+            // the server. Without this the screen said "Not running · Tap
+            // Start" while every Start failed on a port another app held --
+            // the reason sat behind /health, which only answers when the
+            // problem is absent.
+            val serverError = prefs.getString(InferenceService.KEY_LAST_SERVER_ERROR, null)
+                ?.takeIf { it.isNotBlank() && !starting }
+
+            setStatus(
+                when {
+                    starting -> getString(R.string.status_starting)
+                    serverError != null -> getString(R.string.status_cannot_start)
+                    else -> getString(R.string.status_not_running)
+                },
+                when {
+                    starting -> R.color.dot_working
+                    serverError != null -> R.color.dot_error
+                    else -> R.color.dot_idle
+                }
+            )
             binding.statusDetail.text = when {
                 starting -> getString(R.string.status_waiting_for_service)
                 // Say the actual problem. "Tap Start" when Start cannot
                 // start anything is how a screen becomes a dead end.
+                // Say where the fix is, not just what is wrong. The port
+                // field is in Settings, which is two taps away and not
+                // obviously the place to look when the Home screen is the
+                // one reporting the problem.
+                serverError != null ->
+                    if (serverError.contains("in use")) {
+                        serverError + " " + getString(R.string.status_port_where)
+                    } else {
+                        serverError
+                    }
                 !hasModel() -> getString(R.string.status_no_model)
                 else -> getString(R.string.status_tap_start)
             }
@@ -1459,19 +1570,17 @@ class MainActivity : AppCompatActivity() {
                 else -> UiState.LOADING
             }
             when (next) {
-                UiState.RUNNING -> {
-                    binding.statusText.setTextColor(Color.parseColor(COLOR_OK))
-                    binding.statusText.text =
-                        if (busy) "● Running · generating" else "● Running · model loaded"
-                }
-                UiState.ERROR -> {
-                    binding.statusText.setTextColor(Color.parseColor(COLOR_ERR))
-                    binding.statusText.text = "● Load failed"
-                }
-                else -> {
-                    binding.statusText.setTextColor(Color.parseColor(COLOR_WARN))
-                    binding.statusText.text = "● Loading model…"
-                }
+                UiState.RUNNING -> setStatus(
+                    if (busy) getString(R.string.status_running_generating)
+                    else getString(R.string.status_running_loaded),
+                    R.color.dot_running
+                )
+                UiState.ERROR -> setStatus(
+                    getString(R.string.status_load_failed), R.color.dot_error
+                )
+                else -> setStatus(
+                    getString(R.string.status_loading_model), R.color.dot_working
+                )
             }
             binding.statusDetail.text = if (err.isNotEmpty()) err else "Backend: $backend"
         }

@@ -76,4 +76,16 @@
     <color name="kind_done_wash">#2B74D492</color>
     <color name="kind_note">#A7B2C4</color>
     <color name="kind_note_wash">#2BA7B2C4</color>
+
+    <!-- Run / stop and the status dot, lifted for a dark card. The fills
+         stay deep enough that white label text still reads on them; the
+         dots are brightened, because a dot has no text to help it. -->
+    <color name="run_green">#2E9E55</color>
+    <color name="run_green_on">#06210F</color>
+    <color name="stop_maroon">#B83B4A</color>
+    <color name="stop_maroon_on">#2A0A0F</color>
+    <color name="dot_running">#74D492</color>
+    <color name="dot_working">#F0C048</color>
+    <color name="dot_error">#FF8E7E</color>
+    <color name="dot_idle">#A7A2C0</color>
 </resources>

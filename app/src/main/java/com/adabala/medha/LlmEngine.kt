@@ -615,24 +615,84 @@ class LlmEngine(private val appContext: Context) {
         }
 
         runCatching {
-            val content = listOf("getContent", "getContents")
+            val content = listOf("getContent", "getContents", "getParts", "getItems")
                 .firstNotNullOfOrNull { name ->
                     runCatching { msg.javaClass.getMethod(name).invoke(msg) }.getOrNull()
                 }
-            if (content is Iterable<*>) {
-                val text = content.mapNotNull(::extractTextFromContentItem).joinToString("")
+            val text = textFrom(content)
+            if (!text.isNullOrEmpty()) return text
+        }
+
+        warnOnce(msg.javaClass)
+        return msg.toString()
+    }
+
+    /**
+     * Text out of a content holder, whether it is a list or wraps one.
+     *
+     * `getContents()` on 0.13.1's Message does not return a List -- it
+     * returns a `Contents`, which the SDK probe reports as its own class.
+     * The previous version tested `content is Iterable<*>`, that was false,
+     * and every generation fell through to Message.toString(): a Kotlin
+     * data-class rendering, so chat output carried `Message(role=..., ...)`
+     * scaffolding around the real answer and the only sign was a log line.
+     *
+     * Rather than hard-code an accessor name for one version, this unwraps
+     * one level by looking for any no-argument getter that yields an
+     * Iterable. That survives the SDK renaming it.
+     */
+    private fun textFrom(content: Any?): String? {
+        if (content == null) return null
+
+        if (content is Iterable<*>) {
+            val text = content.mapNotNull(::extractTextFromContentItem).joinToString("")
+            return text.ifEmpty { null }
+        }
+
+        // A single content item, not a collection of them.
+        extractTextFromContentItem(content)?.let { if (it.isNotEmpty()) return it }
+
+        // A wrapper. Any no-arg getter returning an Iterable will do.
+        for (m in runCatching { content.javaClass.methods }.getOrNull().orEmpty()) {
+            if (m.parameterTypes.isNotEmpty()) continue
+            if (!m.name.startsWith("get") && m.name != "iterator") continue
+            if (m.name == "getClass") continue
+            val v = runCatching { m.invoke(content) }.getOrNull() ?: continue
+            if (v is Iterable<*> || v is Iterator<*>) {
+                val items = if (v is Iterator<*>) v.asSequence().toList() else (v as Iterable<*>).toList()
+                val text = items.mapNotNull(::extractTextFromContentItem).joinToString("")
                 if (text.isNotEmpty()) return text
             }
         }
+        return null
+    }
 
+    /**
+     * The fallback warning, once per class rather than once per generation.
+     *
+     * It fired on every message, so a device log was six identical lines
+     * saying the output might be wrong and not one saying what to do about
+     * it. The method list is what actually ends the guessing: it names the
+     * accessor this build should be reading.
+     */
+    private fun warnOnce(cls: Class<*>) {
+        if (!warnedClasses.add(cls.name)) return
+        val methods = runCatching {
+            cls.methods.filter { it.parameterTypes.isEmpty() }
+                .map { "${it.name}(): ${it.returnType.simpleName}" }
+                .sorted()
+        }.getOrNull().orEmpty()
         Diagnostics.w(
             TAG,
-            "extractText: no known text accessor on ${msg.javaClass.name}; " +
-                "falling back to toString(). Streamed/generated text may be wrong " +
-                "until this is updated for the installed litertlm-android version."
+            "extractText: no known text accessor on ${cls.name}; falling back to " +
+                "toString(), so generated text may carry wrapper scaffolding. " +
+                "No-arg methods on it: ${methods.joinToString(", ").ifEmpty { "none" }}"
         )
-        return msg.toString()
     }
+
+    private val warnedClasses = java.util.Collections.newSetFromMap(
+        java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+    )
 
     /** One item of a Message's content list; null if it isn't a text item. */
     private fun extractTextFromContentItem(item: Any?): String? {

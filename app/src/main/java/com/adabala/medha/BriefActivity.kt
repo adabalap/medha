@@ -2,6 +2,8 @@ package com.adabala.medha
 
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.graphics.LinearGradient
+import android.graphics.Shader
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
@@ -11,6 +13,8 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
+import androidx.core.view.doOnLayout
 import com.adabala.medha.databinding.ActivityBriefBinding
 import com.adabala.medha.notify.BriefJson
 import com.adabala.medha.notify.BriefDismiss
@@ -59,6 +63,8 @@ class BriefActivity : AppCompatActivity() {
         // widget, so there is no parent in the back stack to go up to. Back
         // and the close button both return to the launcher, which is what
         // the system brief does.
+        paintHeadline()
+
         binding.briefToolbar.setNavigationOnClickListener { finish() }
         binding.briefToolbar.setOnMenuItemClickListener { item ->
             when (item.itemId) {
@@ -81,6 +87,39 @@ class BriefActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         render()
+    }
+
+    /**
+     * Sweeps the headline through the brief's own palette.
+     *
+     * The colours are the kind_* ones the rows already use, not a set picked
+     * for this one view, so the headline reads as the top of the same screen
+     * rather than decoration bolted onto it. They carry values-night
+     * variants, so dark mode re-resolves them when the activity is recreated
+     * and nothing here has to know which mode it is in.
+     *
+     * doOnLayout, not post: a shader needs the view's width, and at the end
+     * of onCreate that is still zero. The Telugu headline wraps to two lines
+     * on a narrow screen, so the sweep runs across the VIEW rather than the
+     * measured text, which would run off the end of the first line.
+     */
+    private fun paintHeadline() {
+        binding.briefHeadline.doOnLayout { v ->
+            val tv = v as android.widget.TextView
+            val w = tv.width.toFloat()
+            if (w <= 0f) return@doOnLayout
+            tv.paint.shader = LinearGradient(
+                0f, 0f, w, 0f,
+                intArrayOf(
+                    ContextCompat.getColor(this, R.color.kind_date),
+                    ContextCompat.getColor(this, R.color.kind_bill),
+                    ContextCompat.getColor(this, R.color.kind_event)
+                ),
+                floatArrayOf(0f, 0.55f, 1f),
+                Shader.TileMode.CLAMP
+            )
+            tv.invalidate()
+        }
     }
 
     private fun render() {

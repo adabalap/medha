@@ -153,10 +153,15 @@ fun main() {
     println("\nBriefJson — bounds are enforced on read, not just on write")
     // A hand-edited or downgraded-then-upgraded preference file could hold
     // more items than the layout can draw.
+    // Built FROM the cap. Hand-written literals here were a fixed seven
+    // against a cap of five; raising the cap to 20 left the fixture under
+    // the limit, asserting a trim that could not happen. Third fixture in
+    // this harness to do it -- a bounds test has to overshoot whatever the
+    // bound currently is, so it is generated rather than typed.
+    val overfullItems = (1..BriefPolicy.MAX_ITEMS_PER_SECTION + 2)
+        .joinToString(",") { """{"title":"$it"}""" }
     val overfull = """{"sections":[{"clientId":"a","updatedAt":$NOW,
-        "expiresAt":${NOW + DAY},"items":[
-        {"title":"1"},{"title":"2"},{"title":"3"},
-        {"title":"4"},{"title":"5"},{"title":"6"},{"title":"7"}]}]}""".replace("\n", "")
+        "expiresAt":${NOW + DAY},"items":[$overfullItems]}]}""".replace("\n", "")
     eq("items capped at MAX_ITEMS_PER_SECTION on parse",
         BriefJson.parse(overfull, NOW).firstOrNull()?.items?.size,
         BriefPolicy.MAX_ITEMS_PER_SECTION)
