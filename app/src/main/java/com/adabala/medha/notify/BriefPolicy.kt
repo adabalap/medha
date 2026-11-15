@@ -217,9 +217,29 @@ object BriefPolicy {
                 .filter { (_, items) -> items.isNotEmpty() }
             if (queues.isEmpty()) continue
 
-            val deepest = queues.maxOf { (_, items) -> items.size }
+            // Source breaks ties INSIDE a band; it never crosses one.
+            //
+            // A paired app DECLARES an item: it chose the title, the due
+            // date, the kind, the link. The notification listener INFERS
+            // one by parsing a notification written for something else
+            // entirely. Declared beats inferred when the two are equally
+            // urgent, which is what this ordering says.
+            //
+            // What it deliberately does NOT say is that inferred items rank
+            // below everything. An overdue bill Medha read out of a bank
+            // notification outranks an undated note a paired app posted,
+            // and sorting by source first would bury it under the pile the
+            // brief exists to cut through. Urgency first, then confidence.
+            //
+            // sortedBy is stable, so the recency order prune() established
+            // survives inside each group.
+            val ordered = queues.sortedBy { (s, _) ->
+                if (s.clientId == INFERRED_CLIENT_ID) 1 else 0
+            }
+
+            val deepest = ordered.maxOf { (_, items) -> items.size }
             for (depth in 0 until deepest) {
-                for ((s, items) in queues) {
+                for ((s, items) in ordered) {
                     val item = items.getOrNull(depth) ?: continue
                     out += Row(
                         title = item.title,
@@ -436,6 +456,18 @@ object BriefPolicy {
 
     /** Seven days. The ceiling on pinning something to the home screen. */
     const val MAX_TTL_MS = 7 * 24 * 60 * 60 * 1000L
+
+    /**
+     * The section Medha writes for itself, from the phone's notifications.
+     *
+     * Every other section belongs to an app that paired and posted on
+     * purpose. This one is Medha reading over the user's shoulder, so its
+     * items are inferred rather than declared, and rows() ranks them last
+     * among equals. Lives here rather than in the listener because it is a
+     * fact about the brief's ordering, and the harness has to be able to
+     * exercise it without an Android classpath.
+     */
+    const val INFERRED_CLIENT_ID = "notifications"
 
     const val MAX_SECTIONS = 8
 

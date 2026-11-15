@@ -57,14 +57,47 @@
                 <!-- Deliberately large. The system's brief opens on a
                      headline, not a title bar, and the screen is read at a
                      glance rather than navigated. -->
-                <TextView
-                    android:id="@+id/briefHeadline"
-                    android:layout_width="match_parent"
+                <!-- One capsule, two TextViews, one line.
+                     The brand is wrap_content so it is never what gives way;
+                     the tagline takes the remaining width and ellipsises if
+                     the screen is too narrow for both. Display sizes wrapped
+                     the sentence onto two lines, which is why these are a
+                     step down and the capsule holds them together instead. -->
+                <LinearLayout
+                    android:id="@+id/briefHeadlineCapsule"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:paddingTop="4dp"
-                    android:text="@string/brief_headline"
-                    android:textAppearance="?attr/textAppearanceDisplaySmall"
-                    android:textColor="?android:attr/textColorPrimary" />
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/bg_headline_capsule"
+                    android:paddingStart="18dp" android:paddingEnd="18dp"
+                    android:paddingTop="10dp" android:paddingBottom="10dp"
+                    android:layout_marginTop="4dp">
+
+                    <TextView
+                        android:id="@+id/briefHeadline"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/widget_header_brand"
+                        android:textAppearance="?attr/textAppearanceHeadlineSmall"
+                        android:textStyle="bold"
+                        android:maxLines="1"
+                        android:includeFontPadding="false"
+                        android:textColor="?android:attr/textColorPrimary" />
+
+                    <TextView
+                        android:id="@+id/briefHeadlineRest"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="wrap_content"
+                        android:paddingStart="4dp"
+                        android:text="@string/widget_header_rest"
+                        android:textAppearance="?attr/textAppearanceTitleMedium"
+                        android:maxLines="1"
+                        android:ellipsize="end"
+                        android:includeFontPadding="false"
+                        android:textColor="?android:attr/textColorSecondary" />
+                </LinearLayout>
 
                 <!-- The same badge the widget leads with, in the same fixed
                      red. Everything else on this screen takes the system

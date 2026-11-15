@@ -388,6 +388,57 @@ fun main() {
     eq("dueAt carried", r0.dueAt, T - DAY)
     eq("kind carried", r0.kind, "bill")
 
+    // ------------------------------- declared before inferred, within a band
+    //
+    // A paired app DECLARES an item; the notification listener INFERS one by
+    // parsing something written for another purpose. Equally urgent, the
+    // declared one goes first.
+    //
+    // The second check is the one that matters, and it is the one a naive
+    // "system notifications always last" rule gets wrong: an OVERDUE item
+    // Medha read out of a bank notification still outranks an undated note
+    // an app posted. Source breaks ties inside a band; it never crosses one.
+    println("\nBriefPolicy.rows — declared outranks inferred, urgency outranks both")
+
+    val tie = listOf(
+        // The inferred section is the more recently updated, so recency
+        // alone would put it first. Source has to override that.
+        BriefPolicy.Section(BriefPolicy.INFERRED_CLIENT_ID, T + 5000, T + DAY,
+            listOf(BriefPolicy.Item("from a notification", "", null, null))),
+        BriefPolicy.Section("calendar", T, T + DAY,
+            listOf(BriefPolicy.Item("from an app", "", null, null)))
+    )
+    eq("inside one band, the app's item is first",
+        BriefPolicy.rows(tie, T, 10, IST).map { it.title },
+        listOf("from an app", "from a notification"))
+
+    val urgentInferred = listOf(
+        BriefPolicy.Section(BriefPolicy.INFERRED_CLIENT_ID, T, T + DAY,
+            listOf(BriefPolicy.Item("overdue bill", "", null, T - 3 * DAY))),
+        BriefPolicy.Section("calendar", T + 5000, T + DAY,
+            listOf(BriefPolicy.Item("undated note", "", null, null)))
+    )
+    eq("but an overdue inferred item still beats an undated declared one",
+        BriefPolicy.rows(urgentInferred, T, 10, IST).map { it.title },
+        listOf("overdue bill", "undated note"))
+
+    val twoApps = listOf(
+        BriefPolicy.Section("older", T, T + DAY,
+            listOf(BriefPolicy.Item("A", "", null, null))),
+        BriefPolicy.Section("newer", T + 5000, T + DAY,
+            listOf(BriefPolicy.Item("B", "", null, null)))
+    )
+    eq("two declared sections keep their recency order",
+        BriefPolicy.rows(twoApps, T, 10, IST).map { it.title }, listOf("B", "A"))
+
+    eq("an inferred section on its own still renders",
+        BriefPolicy.rows(listOf(BriefPolicy.Section(
+            BriefPolicy.INFERRED_CLIENT_ID, T, T + DAY,
+            listOf(BriefPolicy.Item("alone", "", null, null)))), T, 10, IST).size, 1)
+
+    eq("the listener and the policy agree on the name",
+        BriefPolicy.INFERRED_CLIENT_ID, "notifications")
+
     // ------------------------------------------------- banded ordering
     //
     // Added in v0.12.2. Five of the checks below — the three marked

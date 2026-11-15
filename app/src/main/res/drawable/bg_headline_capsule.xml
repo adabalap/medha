@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The capsule behind the brief's headline.
+
+  A wash of the brief accent rather than a solid fill: the headline text is
+  drawn with a gradient through the kind_* palette, and a solid plate behind
+  it would fight that for attention. The hairline stroke is what makes it
+  read as a capsule at all once the fill is this faint.
+
+  @color/brief_accent carries a values-night variant, so the wash and the
+  stroke both follow the system theme without this file knowing which one is
+  in force.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/brief_accent_wash" />
+    <stroke android:width="1dp" android:color="@color/brief_accent_hairline" />
+    <corners android:radius="999dp" />
+</shape>

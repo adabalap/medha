@@ -48,6 +48,8 @@
     <color name="brief_widget_meta">#7A6FA8</color>
     <color name="brief_widget_brand">#5B3FA8</color>
     <color name="brief_accent">#5B3FA8</color>
+    <color name="brief_accent_wash">#145B3FA8</color>
+    <color name="brief_accent_hairline">#385B3FA8</color>
 
     <color name="brief_screen_bg">#F7F4FF</color>
     <color name="brief_card_bg">#FFFFFF</color>

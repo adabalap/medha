@@ -72,6 +72,42 @@ def declared_values():
     return declared
 
 
+def duplicate_values():
+    """A resource defined twice in ONE file.
+
+    AAPT does not complain; it takes the LAST definition and drops the rest.
+    So the first one becomes dead text that still looks authoritative, and
+    editing it changes nothing — the colour stays whatever the later line
+    says, and the only symptom is a change that "did not take".
+
+    Found by walking into it: brief_widget_brand already existed and a
+    second definition was appended a few lines below it. Both were valid
+    XML, every reference resolved, and check_resources was happy.
+
+    Only within one file. The same name in values/ and values-night/ is the
+    entire point of those folders.
+    """
+    dupes = []
+    for f in glob.glob("app/src/main/res/values*/*.xml"):
+        seen = {}
+        txt = open(f, encoding="utf-8").read()
+        for m in re.finditer(
+            r'<(string|color|dimen|integer|bool|style|plurals|string-array)\s+name="([^"]+)"',
+            txt,
+        ):
+            key = (m.group(1), m.group(2))
+            line = txt[: m.start()].count("\n") + 1
+            if key in seen:
+                dupes.append(
+                    f"{f}: <{key[0]} name=\"{key[1]}\"> defined on line "
+                    f"{seen[key]} and again on line {line}; "
+                    f"aapt keeps the one on line {line}"
+                )
+            else:
+                seen[key] = line
+    return dupes
+
+
 def declared_drawables():
     names = set()
     for f in glob.glob("app/src/main/res/drawable*/*") + glob.glob(
@@ -99,6 +135,17 @@ def main():
         print("XML files that do not parse:\n")
         for line in xml_failures:
             print(" ", line)
+        return 1
+
+    dupes = duplicate_values()
+    if dupes:
+        print("Resources defined twice in the same file:\n")
+        for d in dupes:
+            print(" ", d)
+        print(
+            "\naapt keeps the last one silently, so the earlier definition is\n"
+            "dead text that still reads as authoritative. Delete one."
+        )
         return 1
 
     declared = declared_values()

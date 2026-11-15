@@ -142,7 +142,9 @@ class MedhaNotificationListener : NotificationListenerService() {
          * The section these land in. Shows as attribution on the brief only
          * when a second app is also writing, like every other client.
          */
-        private const val CLIENT_ID = "notifications"
+        // The brief owns this name: BriefPolicy.rows() ranks this section
+        // last among equally urgent ones, so the two must agree.
+        private const val CLIENT_ID = BriefPolicy.INFERRED_CLIENT_ID
 
         /**
          * Eight hours.

@@ -157,6 +157,22 @@ Licensed under the terms in the project repository.</string>
     <string name="rotate">Rotate token</string>
 
     <!-- widget -->
+    <!-- The widget header, in two pieces rather than one styled string.
+         A span carrying its own colour would be resolved in MEDHA's process
+         and shipped to the launcher as an int, so it would be wrong in
+         whichever theme Medha was not in at the time. Two TextViews each
+         naming a colour RESOURCE lets the launcher resolve both against its
+         own configuration, which is the same reason widgetBadge is an
+         ImageView. The split also gives the brand its own size and weight
+         for free.
+
+         The brand is wrap_content and the tagline takes what is left, so if
+         a narrow widget runs out of room it is the tagline that ellipsises
+         and never "పాదరసం". -->
+    <string name="widget_header_brand">పాదరసం</string>
+    <string name="widget_header_rest">: నేను నా ఆలోచనలు.</string>
+    <!-- Kept: the widget's accessibility label and the 2×2, which has no
+         room for a header at all. -->
     <string name="widget_header">Brief</string>
     <string name="widget_empty">No updates yet. Apps using Medha can post here.</string>
     <string name="widget_count">%1$d app(s)</string>
@@ -165,13 +181,6 @@ Licensed under the terms in the project repository.</string>
     <!-- Kept short: this is also the activity's android:label, which is what
          the recents switcher shows under the app card. -->
     <string name="brief_title">Brief</string>
-    <!-- The headline on the brief screen itself. Telugu, in the system font
-         (Samsung and AOSP both ship Telugu coverage, so no bundled face is
-         needed and none should be added). Drawn with a gradient across the
-         same palette the rows use, so it is the brightest thing on the
-         screen without being a colour that appears nowhere else.
-         "Quicksilver: I am my thoughts." -->
-    <string name="brief_headline">పాదరసం: నేను నా ఆలోచనలు.</string>
     <string name="brief_empty">Nothing in the brief right now.\n\nApps you have paired with Medha post here, and whatever they post shows on the home-screen widget. Nothing has in the last day.</string>
     <string name="brief_refresh">Refresh</string>
     <string name="brief_clear_all">Clear everything</string>

@@ -71,6 +71,7 @@ app/src/main/res/drawable/bg_brief_accent.xml
 app/src/main/res/drawable/bg_brief_badge.xml
 app/src/main/res/drawable/bg_brief_card.xml
 app/src/main/res/drawable/bg_brief_overdue.xml
+app/src/main/res/drawable/bg_headline_capsule.xml
 app/src/main/res/drawable/bg_pill.xml
 app/src/main/res/drawable/bg_stat.xml
 app/src/main/res/drawable/bg_widget.xml

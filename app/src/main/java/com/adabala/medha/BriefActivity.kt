@@ -98,10 +98,15 @@ class BriefActivity : AppCompatActivity() {
      * variants, so dark mode re-resolves them when the activity is recreated
      * and nothing here has to know which mode it is in.
      *
+     * Only the BRAND is painted. It sits in a capsule beside the tagline,
+     * which stays in secondary text: a gradient across the whole sentence
+     * made the capsule noisy and left nothing for "పాదరసం" to stand out
+     * against.
+     *
      * doOnLayout, not post: a shader needs the view's width, and at the end
-     * of onCreate that is still zero. The Telugu headline wraps to two lines
-     * on a narrow screen, so the sweep runs across the VIEW rather than the
-     * measured text, which would run off the end of the first line.
+     * of onCreate that is still zero. The brand is wrap_content and capped
+     * at one line, so its width is exactly the text and the sweep lands on
+     * the glyphs rather than trailing off into empty space.
      */
     private fun paintHeadline() {
         binding.briefHeadline.doOnLayout { v ->

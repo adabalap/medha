@@ -52,11 +52,20 @@
                 android:contentDescription="@string/app_name" />
         </FrameLayout>
 
+        <!-- Two views, not one styled string: see widget_header_brand in
+             strings.xml for why a span cannot carry the colour here. -->
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:paddingStart="10dp" android:text="@string/widget_header_brand"
+            android:textColor="@color/brief_widget_brand" android:textSize="15sp"
+            android:textStyle="bold" android:maxLines="1"
+            android:includeFontPadding="false" />
+
         <TextView android:layout_width="0dp" android:layout_weight="1"
             android:layout_height="wrap_content"
-            android:paddingStart="10dp" android:text="@string/widget_header"
-            android:textColor="@color/brief_widget_title" android:textSize="15sp"
-            android:textStyle="bold" />
+            android:paddingStart="3dp" android:text="@string/widget_header_rest"
+            android:textColor="@color/brief_widget_title" android:textSize="11sp"
+            android:maxLines="1" android:ellipsize="end"
+            android:includeFontPadding="false" />
 
         <TextView android:id="@+id/widgetOverdue"
             android:layout_width="wrap_content" android:layout_height="wrap_content"
