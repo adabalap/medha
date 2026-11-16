@@ -1,11 +1,13 @@
 package com.adabala.medha.notify
 
+import android.app.AlarmManager
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.view.View
 import android.widget.RemoteViews
@@ -77,6 +79,27 @@ abstract class BriefWidgetProvider : AppWidgetProvider() {
     override fun onUpdate(context: Context, mgr: AppWidgetManager, ids: IntArray) =
         draw(context, mgr, ids)
 
+    /**
+     * Answers the clock tick, and hands everything else to AppWidgetProvider.
+     *
+     * AppWidgetProvider.onReceive is a dispatcher that turns known widget
+     * broadcasts into onUpdate/onDeleted/onEnabled and drops the rest, so an
+     * action it does not know is silently discarded unless it is caught
+     * first. super.onReceive still runs for every other action, which is
+     * what keeps onUpdate working.
+     *
+     * The tick redraws through [BriefWidgets.refresh] rather than this
+     * instance: the alarm is addressed to one provider, but all three sizes
+     * went stale together and all three have to come back.
+     */
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == BriefWidgets.ACTION_TICK) {
+            BriefWidgets.refresh(context)
+            return
+        }
+        super.onReceive(context, intent)
+    }
+
     private fun draw(context: Context, mgr: AppWidgetManager, ids: IntArray) {
         if (ids.isEmpty()) return
 
@@ -117,13 +140,7 @@ abstract class BriefWidgetProvider : AppWidgetProvider() {
             // shows a subset, so "tap for the rest" is the point of the
             // gesture.
             v.setOnClickPendingIntent(
-                R.id.widgetRoot,
-                PendingIntent.getActivity(
-                    context, 0,
-                    Intent(context, BriefActivity::class.java)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                    flags
-                )
+                R.id.widgetRoot, briefIntent(context, WidgetCodes.root(id), flags)
             )
 
             v.setImageViewResource(R.id.widgetBadge, theme.badge)
@@ -172,6 +189,41 @@ abstract class BriefWidgetProvider : AppWidgetProvider() {
                         v.setImageViewResource(slot.tile, BriefIcons.tile(line.kind))
                         v.setImageViewResource(slot.pill, BriefIcons.pill(line.band))
                         v.setImageViewResource(slot.icon, BriefIcons.icon(line.kind))
+
+                        // The row opens the thing the row is ABOUT.
+                        //
+                        // Every line already carried a link and the widget
+                        // threw it away, so one bank row read "Payment link
+                        // in the message. Tap to open it" and tapping it
+                        // opened Medha's list instead. The text on the
+                        // screen was making a promise the widget did not
+                        // keep.
+                        //
+                        // EVERY row gets an intent, including rows with no
+                        // link: a child's click handler SHADOWS the root's,
+                        // so a row left unset is not "falls through to the
+                        // brief", it is dead. Those fall back explicitly.
+                        //
+                        // Re-validated here even though PUT /brief and
+                        // BriefJson.parse both filter to http(s) already.
+                        // This is the only one of the three that hands a
+                        // client-supplied string to the launcher to resolve,
+                        // and it costs a prefix check.
+                        val link = BriefJson.safeLinkOrNull(line.link)
+                        v.setOnClickPendingIntent(
+                            slot.row,
+                            if (link != null) {
+                                PendingIntent.getActivity(
+                                    context, WidgetCodes.of(id, i),
+                                    Intent(Intent.ACTION_VIEW, Uri.parse(link))
+                                        .addCategory(Intent.CATEGORY_BROWSABLE)
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                                    flags
+                                )
+                            } else {
+                                briefIntent(context, WidgetCodes.of(id, i), flags)
+                            }
+                        )
                     }
                 }
 
@@ -187,7 +239,22 @@ abstract class BriefWidgetProvider : AppWidgetProvider() {
             }
             mgr.updateAppWidget(id, v)
         }
+
+        // Having drawn for this instant, arrange to draw again at the next
+        // one that looks different. See BriefClock: with updatePeriodMillis
+        // at 0 and no alarm, the widget's urgency was whatever the last
+        // posting app left behind, hours or days ago.
+        BriefWidgets.scheduleNextChange(context, sections, now, offset)
     }
+
+    /** Opens the full brief, the gesture the header and empty rows keep. */
+    private fun briefIntent(context: Context, code: Int, flags: Int): PendingIntent =
+        PendingIntent.getActivity(
+            context, code,
+            Intent(context, BriefActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            flags
+        )
 
     private fun foldText(context: Context, fold: BriefRender.Fold): String = when (fold) {
         is BriefRender.Fold.Overdue ->
@@ -287,11 +354,91 @@ class MedhaWidget4x4Provider : BriefWidgetProvider() {
  */
 object BriefWidgets {
 
+    /**
+     * Broadcast that means "redraw, the clock moved".
+     *
+     * Explicit, addressed to [MedhaWidgetProvider], so it needs no
+     * intent-filter and no other app can send it.
+     */
+    const val ACTION_TICK = "com.adabala.medha.action.BRIEF_TICK"
+
+    /** Fixed: one pending tick at a time, each scheduling replacing the last. */
+    private const val TICK_REQUEST = 0x7B1EF
+
     private val PROVIDERS = listOf(
         MedhaWidgetProvider::class.java,
         MedhaWidget2x2Provider::class.java,
         MedhaWidget4x4Provider::class.java
     )
+
+    /**
+     * Arms a single redraw for the next moment the brief looks different.
+     *
+     * INEXACT, and deliberately so. `setExactAndAllowWhileIdle` would need
+     * SCHEDULE_EXACT_ALARM, a permission this manifest does not carry and
+     * should not acquire for a cosmetic refresh — see docs/PLAY-PROTECT.md
+     * for why the permission list stays short on a sideloaded build. A
+     * countdown that flips a few minutes after midnight is indistinguishable
+     * from one that flips on the second.
+     *
+     * RTC rather than RTC_WAKEUP for the same reason in the other
+     * direction: nobody reads a home screen while the device is asleep, so
+     * waking it to repaint one is a cost with no reader. A non-wakeup alarm
+     * is delivered at the next wake, which is exactly when someone might
+     * look.
+     *
+     * A null from BriefClock cancels instead of scheduling: an empty brief,
+     * or one with nothing dated and nothing expiring, has no next moment to
+     * wait for, and leaving a stale alarm armed would redraw for nothing.
+     *
+     * WHERE THE CHAIN CAN BREAK, STATED PLAINLY
+     *
+     * Each alarm is one-shot and the redraw it causes arms the next one, so
+     * this is a chain rather than a repeating schedule. That self-heals in
+     * the good case — removing every widget simply ends it, and the next
+     * post starts it again — but it has two gaps:
+     *
+     *   - Alarms do not survive a reboot. The launcher sends
+     *     ACTION_APPWIDGET_UPDATE to restored widgets, which draws and so
+     *     re-arms, and that is what this relies on. The belt-and-braces
+     *     answer is a RECEIVE_BOOT_COMPLETED receiver; it is deliberately
+     *     NOT taken, because adding a permission to a sideloaded build for
+     *     a cosmetic refresh is the wrong trade, and docs/PLAY-PROTECT.md
+     *     is about keeping that list short.
+     *   - If the tick broadcast is dropped under background restrictions,
+     *     the chain stops until the next post or onUpdate.
+     *
+     * Both degrade to the behaviour before this existed, which is a stale
+     * countdown, rather than to anything worse.
+     */
+    fun scheduleNextChange(
+        context: Context,
+        sections: List<BriefPolicy.Section>,
+        now: Long,
+        offsetMs: Long
+    ) {
+        runCatching {
+            val alarms = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+                ?: return
+            val flags = PendingIntent.FLAG_UPDATE_CURRENT or
+                (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    PendingIntent.FLAG_IMMUTABLE
+                } else {
+                    0
+                })
+            val pi = PendingIntent.getBroadcast(
+                context, TICK_REQUEST,
+                Intent(context, MedhaWidgetProvider::class.java).setAction(ACTION_TICK),
+                flags
+            )
+            val at = BriefClock.nextChangeAt(sections, now, offsetMs)
+            if (at == null) {
+                alarms.cancel(pi)
+            } else {
+                alarms.setAndAllowWhileIdle(AlarmManager.RTC, at, pi)
+            }
+        }
+    }
 
     fun refresh(context: Context) {
         for (cls in PROVIDERS) {

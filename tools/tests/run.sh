@@ -83,6 +83,27 @@ kotlinc "$SRC/notify/BriefPolicy.kt" "$SRC/notify/BriefRender.kt" \
 java -jar "$WORK/render.jar"
 
 echo
+echo "== BriefClockTest =="
+# When the widget next has to be redrawn. updatePeriodMillis is 0 and there
+# was no alarm, so the widget's urgency was frozen at whatever the last
+# posting app left behind. The null cases matter as much as the rest: an
+# undated brief must not arm a daily wakeup to redraw an identical picture.
+kotlinc "$SRC/notify/BriefPolicy.kt" "$SRC/notify/BriefClock.kt" \
+  BriefClockTest.kt -include-runtime -d "$WORK/clock.jar"
+java -jar "$WORK/clock.jar"
+
+echo
+echo "== WidgetCodesTest =="
+# Where a tap goes. PendingIntents are keyed on request code plus filter
+# equality, which ignores extras and compares a URI by prefix, so two rows
+# sharing a code become one intent and the later row steals the earlier
+# row's tap. The first draft had exactly that collision.
+kotlinc "$SRC/notify/BriefPolicy.kt" "$SRC/notify/BriefRender.kt" \
+  "$SRC/notify/WidgetCodes.kt" WidgetCodesTest.kt \
+  -include-runtime -d "$WORK/wcodes.jar"
+java -jar "$WORK/wcodes.jar"
+
+echo
 echo "== BriefDismissTest =="
 # Removing a line from your own brief and having it STAY removed. Clients
 # own their section and re-post it whole, so a dismissal cannot live in the

@@ -33,6 +33,7 @@ app/src/main/java/com/adabala/medha/net/CorsPolicy.kt
 app/src/main/java/com/adabala/medha/net/PortProbe.kt
 app/src/main/java/com/adabala/medha/net/RateLimiter.kt
 app/src/main/java/com/adabala/medha/net/WebOrigin.kt
+app/src/main/java/com/adabala/medha/notify/BriefClock.kt
 app/src/main/java/com/adabala/medha/notify/BriefDismiss.kt
 app/src/main/java/com/adabala/medha/notify/BriefIcons.kt
 app/src/main/java/com/adabala/medha/notify/BriefJson.kt
@@ -42,6 +43,7 @@ app/src/main/java/com/adabala/medha/notify/BriefRender.kt
 app/src/main/java/com/adabala/medha/notify/BriefTheme.kt
 app/src/main/java/com/adabala/medha/notify/BriefWidgets.kt
 app/src/main/java/com/adabala/medha/notify/NotificationHub.kt
+app/src/main/java/com/adabala/medha/notify/WidgetCodes.kt
 app/src/main/java/com/adabala/medha/oai/BackendConstraint.kt
 app/src/main/java/com/adabala/medha/oai/ChatRequestParser.kt
 app/src/main/java/com/adabala/medha/oai/EngineFailure.kt
@@ -204,6 +206,7 @@ tools/manifest.txt
 tools/removed.txt
 tools/rename_package.py
 tools/tests/AccessContractTest.kt
+tools/tests/BriefClockTest.kt
 tools/tests/BriefDismissTest.kt
 tools/tests/BriefJsonTest.kt
 tools/tests/BriefNudgeTest.kt
@@ -224,6 +227,7 @@ tools/tests/TokenCapTest.kt
 tools/tests/TranscriptionRequestTest.kt
 tools/tests/WavTest.kt
 tools/tests/WidgetCallShapesTest.kt
+tools/tests/WidgetCodesTest.kt
 tools/tests/check_imports_mutations.sh
 tools/tests/check_sliders_mutations.sh
 tools/tests/check_stale_mutations.sh
