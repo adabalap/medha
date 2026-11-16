@@ -83,6 +83,17 @@ kotlinc "$SRC/notify/BriefPolicy.kt" "$SRC/notify/BriefRender.kt" \
 java -jar "$WORK/render.jar"
 
 echo
+echo "== BriefTriageTest =="
+# What earns a place in the brief. The screen that prompted the rule had 19
+# items, 17 undated: a 2.5-lakh instalment and a 17:30 meeting sharing a
+# scroll with a shopping list and "Thanq thanq". The checks that matter are
+# that nothing is DISCARDED and that the rule cannot be talked into
+# promoting an undated item by sounding urgent.
+kotlinc "$SRC/notify/BriefPolicy.kt" "$SRC/notify/BriefTriage.kt" \
+  BriefTriageTest.kt -include-runtime -d "$WORK/triage.jar"
+java -jar "$WORK/triage.jar"
+
+echo
 echo "== BriefClockTest =="
 # When the widget next has to be redrawn. updatePeriodMillis is 0 and there
 # was no alarm, so the widget's urgency was frozen at whatever the last

@@ -41,6 +41,7 @@ app/src/main/java/com/adabala/medha/notify/BriefNudge.kt
 app/src/main/java/com/adabala/medha/notify/BriefPolicy.kt
 app/src/main/java/com/adabala/medha/notify/BriefRender.kt
 app/src/main/java/com/adabala/medha/notify/BriefTheme.kt
+app/src/main/java/com/adabala/medha/notify/BriefTriage.kt
 app/src/main/java/com/adabala/medha/notify/BriefWidgets.kt
 app/src/main/java/com/adabala/medha/notify/NotificationHub.kt
 app/src/main/java/com/adabala/medha/notify/WidgetCodes.kt
@@ -212,6 +213,7 @@ tools/tests/BriefJsonTest.kt
 tools/tests/BriefNudgeTest.kt
 tools/tests/BriefPolicyTest.kt
 tools/tests/BriefRenderTest.kt
+tools/tests/BriefTriageTest.kt
 tools/tests/ChatRequestParserTest.kt
 tools/tests/EmbedderTest.kt
 tools/tests/EngineFailureTest.kt

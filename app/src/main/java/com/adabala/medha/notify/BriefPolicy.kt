@@ -76,7 +76,24 @@ object BriefPolicy {
         val text: String,
         val link: String? = null,
         val dueAt: Long? = null,
-        val kind: String? = null
+        val kind: String? = null,
+        /**
+         * The app this came from, as a person would name it: "Outlook",
+         * "WhatsApp", "Microsoft Teams".
+         *
+         * Only the notification listener sets it, and that is deliberate.
+         * Every notification-sourced item arrives under one section, so
+         * without a per-ITEM source the whole stream is attributable only
+         * to the literal string "notifications" — which is how a shopping
+         * list from your wife and a Teams announcement ended up looking
+         * like they came from the same place.
+         *
+         * PUT /brief does NOT accept it. A client that could set its own
+         * source could label itself "Outlook" and borrow the trust of an
+         * app it is not. A posting client is named by its registration
+         * instead, which Medha controls.
+         */
+        val source: String? = null
      )
 
     /** One client's contribution, replaced wholesale when it writes again. */
@@ -95,7 +112,9 @@ object BriefPolicy {
         val updatedAt: Long,
         val link: String? = null,
         val dueAt: Long? = null,
-        val kind: String? = null
+        val kind: String? = null,
+        /** [Item.source]: the app, when one item of a section knows. */
+        val source: String? = null
     )
 
     /**
@@ -237,20 +256,36 @@ object BriefPolicy {
                 if (s.clientId == INFERRED_CLIENT_ID) 1 else 0
             }
 
-            val deepest = ordered.maxOf { (_, items) -> items.size }
-            for (depth in 0 until deepest) {
-                for ((s, items) in ordered) {
-                    val item = items.getOrNull(depth) ?: continue
-                    out += Row(
-                        title = item.title,
-                        text = item.text,
-                        clientId = s.clientId,
-                        updatedAt = s.updatedAt,
-                        link = item.link,
-                        dueAt = item.dueAt,
-                        kind = item.kind
-                    )
+            if (band != null) {
+                // A DATED band is an agenda, so it reads in time order.
+                //
+                // Round-robin across clients exists so one noisy app cannot
+                // crowd the others out, and that is the right answer when
+                // items are unranked. It is the wrong answer here: a day
+                // whose rows are interleaved by which app posted them is a
+                // filing cabinet, not a schedule, and the 09:00 stand-up
+                // can sit below the 18:00 review because a different app
+                // happened to write it.
+                //
+                // sortedBy is stable and `ordered` is already declared-
+                // before-inferred within section recency, so two items at
+                // the same instant keep that order.
+                val flat = ordered.flatMap { (s, items) -> items.map { s to it } }
+                    .sortedBy { (_, item) -> item.dueAt ?: Long.MAX_VALUE }
+                for ((s, item) in flat) {
+                    out += row(s, item)
                     if (out.size == maxRows) return out
+                }
+            } else {
+                // UNDATED items have no time to sort by, so fairness is all
+                // there is: one from each client, then a second from each.
+                val deepest = ordered.maxOf { (_, items) -> items.size }
+                for (depth in 0 until deepest) {
+                    for ((s, items) in ordered) {
+                        val item = items.getOrNull(depth) ?: continue
+                        out += row(s, item)
+                        if (out.size == maxRows) return out
+                    }
                 }
             }
         }
@@ -392,6 +427,42 @@ object BriefPolicy {
     }
 
     /** The band for [dueAt], or null when an item carries no due date. */
+    private fun row(s: Section, item: Item) = Row(
+        title = item.title,
+        text = item.text,
+        clientId = s.clientId,
+        updatedAt = s.updatedAt,
+        link = item.link,
+        dueAt = item.dueAt,
+        kind = item.kind,
+        source = item.source
+    )
+
+    /**
+     * The wall-clock time of [dueAt], but only when it carries one.
+     *
+     * "today" is the right mark for a bill. It is useless for a meeting:
+     * the Milestone Program slot arrived with "17:30 - 18:00" in its body,
+     * dueAtFrom read the time correctly, and the row still showed "today"
+     * because every mark went through the day-granular [relative]. The time
+     * was captured and then thrown away at the last step.
+     *
+     * Null when the due instant lands exactly on local midnight, which is
+     * what a date-only obligation looks like once it is a Long. Drawing
+     * "00:00" on a bill due Saturday would invent a precision nobody
+     * supplied.
+     */
+    fun clockAt(dueAt: Long?, now: Long, offsetMs: Long = 0L): String? {
+        if (dueAt == null) return null
+        if (dayDelta(dueAt, now, offsetMs) != 0) return null
+        val local = dueAt + offsetMs
+        val sinceMidnight = ((local % DAY_MS) + DAY_MS) % DAY_MS
+        if (sinceMidnight == 0L) return null
+        val h = sinceMidnight / (60 * 60 * 1000L)
+        val m = (sinceMidnight / (60 * 1000L)) % 60
+        return "${if (h < 10) "0" else ""}$h:${if (m < 10) "0" else ""}$m"
+    }
+
     fun bandOf(dueAt: Long?, now: Long, offsetMs: Long = 0L): Band? {
         if (dueAt == null) return null
         val d = dayDelta(dueAt, now, offsetMs)

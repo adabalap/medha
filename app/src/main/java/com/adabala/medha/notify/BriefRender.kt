@@ -87,6 +87,16 @@ object BriefRender {
         val kind: String?,
         val clientId: String,
         /**
+         * The app a notification came from, when one did.
+         *
+         * Attribution is resolved where a Context exists: `source` when it
+         * is set, otherwise the posting client's registered NAME, and only
+         * as a last resort [clientId]. The literal strings "notifications"
+         * and "admin" are registry ids and were never meant to be read by
+         * a person.
+         */
+        val source: String? = null,
+        /**
          * Carried so the full-brief screen can open a row without going back
          * to the raw sections and re-deriving the order. Already filtered to
          * http(s) on write and on read; the screen filters once more before
@@ -146,12 +156,19 @@ object BriefRender {
         // Derived here, every render, rather than taken from the client. A
         // string posted as "overdue 10 days" is right when written and wrong
         // a few hours later; this cannot go stale on a home screen.
-        mark = BriefPolicy.relative(row.dueAt, now, offsetMs)
+        // A clock time first when the item has one and it is today.
+        // "today" is the right mark for a bill and useless for a meeting:
+        // the 17:30 slot arrived with its time parsed correctly and still
+        // drew "today", because every mark went through the day-granular
+        // relative(). The time was captured and discarded at the last step.
+        mark = BriefPolicy.clockAt(row.dueAt, now, offsetMs)
+            ?: BriefPolicy.relative(row.dueAt, now, offsetMs)
             ?: BriefPolicy.age(row.updatedAt, now),
         band = BriefPolicy.bandOf(row.dueAt, now, offsetMs),
         dueAt = row.dueAt,
         kind = row.kind,
         clientId = row.clientId,
+        source = row.source,
         link = row.link
     )
 

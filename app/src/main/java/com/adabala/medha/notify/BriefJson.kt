@@ -112,7 +112,13 @@ object BriefJson {
                 text = o.optString("text", ""),
                 link = link,
                 dueAt = dueAt,
-                kind = BriefPolicy.kindOrNull(o.optString("kind", "").ifBlank { null })
+                kind = BriefPolicy.kindOrNull(o.optString("kind", "").ifBlank { null }),
+                // Written only by the notification listener, never by a
+                // client: PUT /brief does not read this key, so a posting
+                // app cannot label itself "Outlook" and borrow the trust
+                // of an app it is not. Absent in every brief written
+                // before v0.19.1, which simply reads back as null.
+                source = o.optString("source", "").ifBlank { null }?.take(40)
             )
         }
         return out
@@ -128,6 +134,7 @@ object BriefJson {
                 if (i.link != null) o.put("link", i.link)
                 if (i.dueAt != null) o.put("dueAt", i.dueAt)
                 if (i.kind != null) o.put("kind", i.kind)
+                if (i.source != null) o.put("source", i.source)
                 items.put(o)
             }
             arr.put(

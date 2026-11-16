@@ -62,12 +62,16 @@ def check_xml_well_formed():
 
 
 def declared_values():
-    declared = {"string": set(), "color": set()}
+    # plurals included: R.plurals.x is neither a call (so check_symbols
+    # cannot see it) nor an @string reference, so a typo in one reached CI
+    # as an unresolved-reference build failure with nothing earlier to catch
+    # it. widget_clear_with_open was the one that made this obvious.
+    declared = {"string": set(), "color": set(), "plurals": set()}
     for f in glob.glob("app/src/main/res/values*/strings.xml") + glob.glob(
         "app/src/main/res/values*/colors.xml"
     ):
         txt = open(f, encoding="utf-8").read()
-        for m in re.finditer(r'<(string|color)\s+name="([^"]+)"', txt):
+        for m in re.finditer(r'<(string|color|plurals)\s+name="([^"]+)"', txt):
             declared[m.group(1)].add(m.group(2))
     return declared
 
@@ -169,6 +173,7 @@ def main():
         for kind, pool in (
             ("string", declared["string"]),
             ("color", declared["color"]),
+            ("plurals", declared["plurals"]),
             ("drawable", drawables),
             ("id", ids),
         ):

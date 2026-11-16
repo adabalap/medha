@@ -131,6 +131,8 @@ class BriefActivity : AppCompatActivity() {
         val now = System.currentTimeMillis()
         val sections = hub.brief()
         val container = binding.briefContainer
+        // Once per render, not once per row.
+        refreshNameCache()
         container.removeAllViews()
 
         if (sections.isEmpty()) {
@@ -165,9 +167,15 @@ class BriefActivity : AppCompatActivity() {
         // Grouped by band, in band order. groupBy preserves encounter order
         // and the list is already banded, so the groups come out urgent
         // first without a second sort.
+        val origins = face.lines.map { originOf(it) }.distinct().size
         face.lines.groupBy { it.band }.forEach { (band, lines) ->
             container.addView(bandHeader(band, lines.size, container))
-            container.addView(bandCard(lines, face.contributors > 1, container))
+            // Attribute when more than one ORIGIN is on screen, not more
+            // than one client. Every notification-sourced row shares the
+            // single client "notifications" while actually coming from
+            // WhatsApp, Teams and Outlook, so counting clients hid exactly
+            // the attribution worth showing.
+            container.addView(bandCard(lines, origins > 1, container))
         }
     }
 
@@ -245,7 +253,7 @@ class BriefActivity : AppCompatActivity() {
             // the client id on every line is noise the user already knows.
             findViewById<TextView>(R.id.rowFrom).also {
                 it.visibility = if (attribute) View.VISIBLE else View.GONE
-                if (attribute) it.text = getString(R.string.brief_from, line.clientId)
+                if (attribute) it.text = getString(R.string.brief_from, originOf(line))
             }
             setOnClickListener { openItem(line) }
         }
@@ -288,7 +296,7 @@ class BriefActivity : AppCompatActivity() {
             if (line.text.isNotBlank()) append(line.text).append("\n\n")
             // The countdown, not the post age: when a thing is due is what
             // the sheet is being opened to find out.
-            append(getString(R.string.brief_item_meta, line.clientId, line.mark))
+            append(getString(R.string.brief_item_meta, originOf(line), line.mark))
             if (link != null) append("\n").append(link)
         }
 
@@ -314,6 +322,38 @@ class BriefActivity : AppCompatActivity() {
         }
         b.show()
     }
+
+    /**
+     * What to call a row's origin, in a person's words.
+     *
+     * Three sources, in order: the app a notification came from, the
+     * posting client's registered NAME, and finally its id. Only the first
+     * two are names; the third is a fallback that should be rare.
+     *
+     * Every row used to show the id, so the screen said "from admin" and
+     * "from notifications" — a registry key and an internal bucket, and
+     * neither is something the reader can do anything with. "admin" is
+     * Quicksilver; "notifications" was WhatsApp, Teams and Outlook all at
+     * once, which is the part a per-item source fixes rather than a
+     * rename.
+     *
+     * The registry is read once per render and cached for that render:
+     * resolving per row would re-read it for every line on the screen.
+     */
+    private var nameCache: Map<String, String> = emptyMap()
+
+    private fun refreshNameCache() {
+        nameCache = runCatching {
+            com.adabala.medha.auth.ClientRegistry.get(this)
+                .unordered()
+                .associate { it.id to it.name.trim().ifBlank { it.id } }
+        }.getOrDefault(emptyMap())
+    }
+
+    private fun originOf(line: BriefRender.Line): String =
+        line.source?.takeIf { it.isNotBlank() }
+            ?: nameCache[line.clientId]
+            ?: line.clientId
 
     private fun webOriginFor(clientId: String): String? =
         runCatching {

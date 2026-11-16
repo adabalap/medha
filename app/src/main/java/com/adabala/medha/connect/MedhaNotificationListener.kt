@@ -67,7 +67,9 @@ class MedhaNotificationListener : NotificationListenerService() {
         }
 
         val now = System.currentTimeMillis()
-        val item = NotificationItem.toItem(posted, now, BriefPolicy.deviceOffset(now))
+        val item = NotificationItem
+            .toItem(posted, now, BriefPolicy.deviceOffset(now))
+            .copy(source = appLabel(posted.pkg))
 
         runCatching {
             val hub = NotificationHub(applicationContext)
@@ -78,6 +80,26 @@ class MedhaNotificationListener : NotificationListenerService() {
             hub.setBrief(CLIENT_ID, NotificationItem.merge(existing, item), TTL_MS)
         }.onFailure { Diagnostics.i(TAG, "could not write the brief: ${it.message}") }
     }
+
+    /**
+     * The app's name as a person would say it: "Outlook", "WhatsApp".
+     *
+     * Every notification-sourced item lands in one section, so without
+     * this the whole stream was attributable to the literal string
+     * "notifications" — a shopping list from family and a Teams
+     * announcement looked like they came from the same place, and the row
+     * that said "from notifications" told the reader nothing they could
+     * use.
+     *
+     * Falls back to the package name rather than to nothing: "com.whatsapp"
+     * is ugly and still more informative than silence, and it is also the
+     * signal that a label lookup failed.
+     */
+    private fun appLabel(pkg: String): String = runCatching {
+        val pm = packageManager
+        pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString().trim()
+            .ifBlank { pkg }
+    }.getOrDefault(pkg).take(40)
 
     /**
      * Flattens a notification into the pure shape the filter understands.

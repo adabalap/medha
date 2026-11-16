@@ -175,6 +175,13 @@ Licensed under the terms in the project repository.</string>
          room for a header at all. -->
     <string name="widget_header">Brief</string>
     <string name="widget_empty">No updates yet. Apps using Medha can post here.</string>
+    <!-- Shown when nothing is SCHEDULED but open items exist. "Nothing in
+         the brief" would be false with seventeen of them a tap away, and
+         a widget that lies once is one you stop reading. -->
+    <plurals name="widget_clear_with_open">
+        <item quantity="one">Nothing scheduled · %1$d open item</item>
+        <item quantity="other">Nothing scheduled · %1$d open items</item>
+    </plurals>
     <string name="widget_count">%1$d app(s)</string>
 
     <!-- full brief screen -->
@@ -286,7 +293,10 @@ Licensed under the terms in the project repository.</string>
     <string name="band_overdue">OVERDUE</string>
     <string name="band_soon">THIS WEEK</string>
     <string name="band_later">LATER</string>
-    <string name="band_none">NO DATE</string>
+    <!-- The undated lane. "NO DATE" described a band; these are OPEN
+         ITEMS, the other half of the triage rule: real, kept in full,
+         searchable, and deliberately not on the widget. -->
+    <string name="band_none">OPEN ITEMS</string>
     <string name="band_count">%1$d</string>
     <string name="brief_from">from %1$s</string>
 

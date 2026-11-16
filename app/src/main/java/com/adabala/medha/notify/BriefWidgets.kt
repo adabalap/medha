@@ -125,7 +125,14 @@ abstract class BriefWidgetProvider : AppWidgetProvider() {
         // against last month's offset is wrong in exactly the hours that
         // matter most.
         val offset = BriefPolicy.deviceOffset(now)
-        val face = BriefRender.face(sections, now, offset, slots.size)
+
+        // The widget carries the AGENDA only: things with a time, in time
+        // order. Undated items are real and are kept in full on the brief
+        // screen; what they are not is something a two-second glance at a
+        // home screen has to carry. See BriefTriage for the rule.
+        val agenda = BriefTriage.only(sections, BriefTriage.Lane.AGENDA)
+        val openCount = BriefTriage.count(sections, BriefTriage.Lane.OPEN)
+        val face = BriefRender.face(agenda, now, offset, slots.size)
         // Read per render, like the offset: a preference changed while the
         // widget sits on the home screen has to reach it on the next redraw,
         // and there is no instance of this class for a cache to live on.
@@ -155,6 +162,20 @@ abstract class BriefWidgetProvider : AppWidgetProvider() {
             )
 
             if (face.isEmpty) {
+                // "Nothing in the brief" is a lie when seventeen open items
+                // are sitting behind the tap. An empty AGENDA means the day
+                // is clear, which is worth saying as its own thing, and the
+                // open count is what tells the reader there is more here.
+                v.setTextViewText(
+                    R.id.widgetEmpty,
+                    if (openCount > 0) {
+                        context.resources.getQuantityString(
+                            R.plurals.widget_clear_with_open, openCount, openCount
+                        )
+                    } else {
+                        context.getString(R.string.widget_empty)
+                    }
+                )
                 v.setViewVisibility(R.id.widgetEmpty, View.VISIBLE)
                 slots.forEach { v.setViewVisibility(it.row, View.GONE) }
                 foldId?.let { v.setViewVisibility(it, View.GONE) }

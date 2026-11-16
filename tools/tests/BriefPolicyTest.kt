@@ -536,14 +536,23 @@ fun main() {
     )
 
     // Banding is timezone-sensitive because dayDelta is, and that has to
-    // survive the trip through rows(). One instant, two offsets, and the
-    // ORDER changes — asserting merely that both are non-empty would pass
-    // against an implementation that ignores the offset entirely.
+    // survive the trip through rows().
+    //
+    // This check USED to prove it through row order: one instant, two
+    // offsets, two different orders. That stopped being possible when
+    // dated rows began sorting chronologically, and the reason is worth
+    // recording rather than papering over. Bands are monotonic in dueAt,
+    // so "all OVERDUE by time, then all SOON by time" is just "everything
+    // by time" — and time order does not depend on which zone you read it
+    // in. Dated row order is now offset-INDEPENDENT by construction, which
+    // is a property worth having and not a regression.
+    //
+    // So the offset is proved where it still shows: the band itself, and
+    // the overdue count rows() feeds. Asserting the order too would be
+    // asserting something that can no longer fail.
     //
     // "edge" is 14h before T: one local day earlier at UTC (overdue), the
-    // same local day 11h west (due today, so SOON). "fixed" is three days
-    // out, SOON under both. Input order is fixed-then-edge, so when both
-    // land in SOON the input order shows through unchanged.
+    // same local day 11h west (due today, so SOON).
     val edge = BriefPolicy.put(
         emptyList(), "tz",
         listOf(
@@ -552,11 +561,19 @@ fun main() {
         ),
         T - 2 * HOUR
     )
-    eq("REGRESSION: at UTC the edge item is overdue and leads",
+    eq("REGRESSION: at UTC the edge item is overdue",
+        BriefPolicy.bandOf(T - 14 * HOUR, T, 0L), BriefPolicy.Band.OVERDUE)
+    eq("eleven hours west the same instant is merely due today",
+        BriefPolicy.bandOf(T - 14 * HOUR, T, -11 * HOUR), BriefPolicy.Band.SOON)
+    eq("REGRESSION: and rows() carries that through to the overdue count",
+        BriefPolicy.overdueCount(edge, T, 0L), 1)
+    eq("which is zero once the same instant is today",
+        BriefPolicy.overdueCount(edge, T, -11 * HOUR), 0)
+    eq("dated rows read in time order, whichever zone is asked",
+        BriefPolicy.rows(edge, T, offsetMs = 0L).map { it.title },
+        BriefPolicy.rows(edge, T, offsetMs = -11 * HOUR).map { it.title })
+    eq("and that order is earliest first",
         BriefPolicy.rows(edge, T, offsetMs = 0L).map { it.title }, listOf("edge", "fixed"))
-    eq("eleven hours west it is merely due today, and stays put",
-        BriefPolicy.rows(edge, T, offsetMs = -11 * HOUR).map { it.title },
-        listOf("fixed", "edge"))
 
     // page() must hand the offset down, or the widget bands in UTC while
     // the server bands locally and the two disagree about "today".
