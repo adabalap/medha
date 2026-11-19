@@ -118,8 +118,28 @@ class ClientRegistry private constructor(private val prefs: SharedPreferences) {
         const val STORE = "store"         // /store/* key-value
         const val NOTIFY = "notify"       // post notifications / Live Updates
 
+        /**
+         * Read the phone's notification stream: `GET /captures`.
+         *
+         * Separate from [NOTIFY] because it is the opposite direction and a
+         * different order of exposure. `notify` writes to the shade; the
+         * worst a client can do with it is be annoying, and the user sees
+         * every abuse of it the moment it happens. This *reads* every
+         * notification the listener kept, for as long as it kept it, and a
+         * client abusing it produces no symptom at all.
+         *
+         * So it is absent from [DEFAULT], absent from the add-client
+         * dialog's ticked boxes, and absent from
+         * [com.adabala.medha.auth.MedhaAccessContract.GRANTABLE] — it cannot
+         * be obtained through a consent dialog that some other app triggered
+         * at a moment of its own choosing with a reason string it wrote
+         * itself. It is granted from Medha's own screens, where the user
+         * arrived on purpose.
+         */
+        const val CAPTURES = "captures"   // read the notification stream
+
         val DEFAULT = setOf(GENERATE, MEMORY, RAG, STORE)
-        val ALL = setOf(ADMIN, GENERATE, MEMORY, RAG, STORE, NOTIFY)
+        val ALL = setOf(ADMIN, GENERATE, MEMORY, RAG, STORE, NOTIFY, CAPTURES)
     }
 
     @Volatile private var cache: Map<String, Client> = emptyMap()
@@ -195,6 +215,21 @@ class ClientRegistry private constructor(private val prefs: SharedPreferences) {
     fun unordered(): Collection<Client> = cache.values
 
     fun admin(): Client? = cache.values.firstOrNull { it.isAdmin }
+
+    /**
+     * Whether any client at all holds [cap].
+     *
+     * Exists for [Cap.CAPTURES], where the answer decides whether data is
+     * *recorded* rather than who may read it. The notification log is
+     * written only while something can read it, so revoking the last grant
+     * stops the log from being produced -- there is no second switch to
+     * forget, and no window where a phone is quietly accumulating a history
+     * that nothing in the system wants.
+     *
+     * Reads the volatile cache, so it is cheap enough for the notification
+     * path: no IO, no sort, and it stops at the first match.
+     */
+    fun anyoneHas(cap: String): Boolean = cache.values.any { cap in it.capabilities }
 
     fun create(
         id: String,

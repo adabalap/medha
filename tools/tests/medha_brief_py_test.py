@@ -22,7 +22,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 sys.path.insert(
     0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "samples")
 )
-from medha_brief import Medha, MedhaError  # noqa: E402
+from medha_brief import MAX_ITEMS, Medha, MedhaError  # noqa: E402
 
 failures = 0
 checks = 0
@@ -180,14 +180,21 @@ def main():
             {"title": "   "},          # dropped
             None,                      # dropped
             "not a dict",              # dropped
-            {"title": "a"}, {"title": "b"}, {"title": "c"},
-            {"title": "d"}, {"title": "e"},
+            # Derived from MAX_ITEMS, not a literal. This fixture used to
+            # send six valid items against a cap of five; raising the cap to
+            # 20 left it under the limit, so it asserted a trim that could no
+            # longer happen. A bounds test has to overshoot whatever the
+            # bound currently is.
+            *[{"title": f"item {i}"} for i in range(MAX_ITEMS + 3)],
         ])
         sent = State.calls[0]["body"]["items"]
-        eq("empties and non-dicts dropped", len(sent), 5)
+        eq("empties and non-dicts dropped, and the rest capped",
+           len(sent), MAX_ITEMS)
         eq("whitespace trimmed", sent[0], {"title": "spaced", "text": "padded"})
-        eq("capped at MAX_ITEMS keeping the first valid five",
-           [i["title"] for i in sent], ["spaced", "a", "b", "c", "d"])
+        eq("keeping the FIRST valid ones, in order",
+           [i["title"] for i in sent],
+           ["spaced"] + [f"item {i}" for i in range(MAX_ITEMS - 1)])
+        eq("and the cap matches BriefPolicy.MAX_ITEMS_PER_SECTION", MAX_ITEMS, 20)
 
         script({"body": {"ok": True, "items": 1}})
         m.post_brief([{"title": "x" * 200, "text": "y" * 500}])
@@ -258,6 +265,150 @@ def main():
         eq("cancel id is URL-encoded", State.calls[0]["path"], "/notify/a%2Fb")
 
         # -------------------------------------------------------- health
+        # ------------------------------------------------------- captures
+        print("\nmedha_brief.py -- captures: one page")
+        script({"body": {"items": [{"id": 7, "at": 1, "source_pkg": "com.x",
+                                    "source_label": "X", "title": "t", "text": "b"}],
+                         "cursor": 7, "more": False, "head": 7,
+                         "listening": True, "retainDays": 14, "maxRows": 5000}})
+        r = m.captures(since=3, limit=50)
+        c = State.calls[0]
+        eq("GETs /captures", c["method"], "GET")
+        check("passes since", "since=3" in c["path"])
+        check("passes limit", "limit=50" in c["path"])
+        check("sends the token", c["headers"].get("authorization") == "Bearer TOK")
+        eq("returns the page whole", r["head"], 7)
+        script({"body": {"items": [], "cursor": 0, "more": False, "head": 0}})
+        m.captures()
+        check("no limit means no limit parameter", "limit" not in State.calls[0]["path"])
+        check("and since defaults to the beginning", "since=0" in State.calls[0]["path"])
+        script({"body": {"items": [], "cursor": 0, "more": False, "head": 0}})
+        m.captures(since=-99)
+        check("a negative since is floored, not sent as-is",
+              "since=0" in State.calls[0]["path"])
+
+        print("\nmedha_brief.py -- drain_captures walks the backlog")
+        # Three pages, the first two flagged `more`. Ids deliberately have
+        # gaps, as pruning leaves them.
+        script(
+            {"body": {"items": [{"id": 1}, {"id": 2}], "cursor": 2, "more": True,
+                      "head": 9, "listening": True}},
+            {"body": {"items": [{"id": 5}, {"id": 7}], "cursor": 7, "more": True,
+                      "head": 9, "listening": True}},
+            {"body": {"items": [{"id": 9}], "cursor": 9, "more": False,
+                      "head": 9, "listening": True}},
+        )
+        items, cursor, listening = m.drain_captures(0)
+        eq("every row, once, in order", [i["id"] for i in items], [1, 2, 5, 7, 9])
+        eq("and the cursor lands at the head", cursor, 9)
+        check("listening reported", listening is True)
+        eq("one request per page, no more", len(State.calls), 3)
+        check("each page resumes after the last",
+              ["since=0" in State.calls[0]["path"],
+               "since=2" in State.calls[1]["path"],
+               "since=7" in State.calls[2]["path"]] == [True, True, True])
+
+        print("\nmedha_brief.py -- drain_captures cannot be made to spin")
+        # A server that says `more` forever: the real one does not, because
+        # `more` means a known backlog -- but a protocol change must not turn
+        # this into an unbounded loop inside someone's daemon.
+        State.script = []
+        State.calls = []
+        for _ in range(60):
+            State.script.append({"body": {"items": [{"id": 1}], "cursor": 1,
+                                          "more": True, "head": 99}})
+        items, cursor, _ = m.drain_captures(0, max_pages=5)
+        eq("max_pages is a hard bound", len(State.calls), 5)
+        check("and it still returns what it got", len(items) == 5)
+        State.script = []
+        State.calls = []
+        State.script.append({"body": {"items": [{"id": 1}], "cursor": 1,
+                                      "more": True, "head": 99}})
+        State.script.append({"body": {"items": [], "cursor": 1, "more": False,
+                                      "head": 1}})
+        m.drain_captures(0, max_pages=0)
+        eq("a nonsense max_pages still makes one call, not zero",
+           len(State.calls), 1)
+
+        print("\nmedha_brief.py -- drain_captures and a log that was deleted")
+        # Revocation clears the log, so head drops below a saved cursor.
+        # Lower is not an error: the rows it pointed past are gone.
+        script({"body": {"items": [], "cursor": 0, "more": False, "head": 0,
+                         "listening": True}})
+        items, cursor, _ = m.drain_captures(5000)
+        eq("a lower cursor is accepted and returned", cursor, 0)
+        eq("with nothing claimed", items, [])
+
+        print("\nmedha_brief.py -- a deaf phone is not a clear day")
+        script({"body": {"items": [], "cursor": 4, "more": False, "head": 4,
+                         "listening": False}})
+        items, cursor, listening = m.drain_captures(4)
+        check("listening False is surfaced, not swallowed", listening is False)
+        eq("and the cursor is unchanged", cursor, 4)
+
+        print("\nmedha_brief.py -- a malformed cursor does not advance one")
+        # Inventing a position from the rows would skip whatever the server
+        # holds that this page did not show.
+        script({"body": {"items": [{"id": 3}], "cursor": "7", "more": True,
+                         "head": 90}})
+        items, cursor, _ = m.drain_captures(1)
+        eq("a string cursor is refused", cursor, 1)
+        eq("the page's rows are still returned", [i["id"] for i in items], [3])
+        script({"body": {"items": [{"id": 3}], "more": True, "head": 90}})
+        _, cursor, _ = m.drain_captures(1)
+        eq("a missing cursor likewise", cursor, 1)
+        # True is an int in Python, which is exactly the kind of thing that
+        # gets through an isinstance check written in a hurry.
+        script({"body": {"items": [{"id": 3}], "cursor": True, "more": False,
+                         "head": 90}})
+        _, cursor, _ = m.drain_captures(1)
+        eq("and a bool is not a cursor", cursor, 1)
+
+        print("\nmedha_brief.py -- captures needs its own capability")
+        script({"status": 403, "body": {"error": "lacks capability 'captures'",
+                                        "code": "forbidden"}})
+        raises("403 without the grant", lambda: m.captures(), "forbidden")
+        # A 403 that names the wrong checkbox is worse than one that names
+        # none. This said "tick 'Post notifications'" for every forbidden
+        # reply until v0.20.0, which is the wrong box for this route.
+        script({"status": 403, "body": {"error": "lacks capability 'captures'",
+                                        "code": "forbidden"}})
+        try:
+            m.captures()
+        except MedhaError as e:
+            check("names the box the user actually has to tick",
+                  "'Read your notifications'" in str(e))
+            check("and not the notify one", "Post notifications" not in str(e))
+            check("and says it cannot be requested by an app",
+                  "consent dialog" in str(e))
+        else:
+            check("the captures 403 raises at all", False)
+        # Medha's real 403 quotes the client id too: `client 'x' lacks
+        # capability 'captures'`. A client whose id happens to be a
+        # capability name must not decide the advice.
+        script({"status": 403,
+                "body": {"error": "client 'notify' lacks capability 'captures'",
+                         "code": "forbidden"}})
+        try:
+            m.captures()
+        except MedhaError as e:
+            check("the capability decides the box, not the client id",
+                  "'Read your notifications'" in str(e)
+                  and "Post notifications" not in str(e))
+        else:
+            check("that 403 raises at all", False)
+        # And a forbidden reply that names no capability must not invent one.
+        script({"status": 403, "body": {"error": "forbidden", "code": "forbidden"}})
+        try:
+            m.notify(title="x")
+        except MedhaError as e:
+            check("an unattributed 403 names no specific box",
+                  "Post notifications" not in str(e) and "tick" not in str(e))
+            check("but still points at the client editor",
+                  "API clients" in str(e))
+        else:
+            check("an unattributed 403 raises at all", False)
+
         print("\nmedha_brief.py -- health needs no token")
         script({"body": {"status": "ok", "modelLoaded": False, "backend": "GPU"}})
         h = m.health()

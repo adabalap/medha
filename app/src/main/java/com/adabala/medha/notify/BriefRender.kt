@@ -96,6 +96,8 @@ object BriefRender {
          * a person.
          */
         val source: String? = null,
+        /** [BriefPolicy.Item.dueInferred]: the date is a guess. */
+        val dueInferred: Boolean = false,
         /**
          * Carried so the full-brief screen can open a row without going back
          * to the raw sections and re-deriving the order. Already filtered to
@@ -103,7 +105,18 @@ object BriefRender {
          * it starts an activity, because that is the line that actually acts
          * on it.
          */
-        val link: String?
+        val link: String?,
+        /**
+         * [BriefPolicy.Item.id]: the client's own identity for this
+         * obligation, carried for exactly one reason — the full-brief
+         * screen dismisses from a Line, and a dismissal's key prefers the
+         * id when there is one.
+         *
+         * Without it that screen would compute the title-based key while
+         * [BriefDismiss.apply] computed the id-based one, and tapping
+         * Dismiss on a v2 item would appear to work and change nothing.
+         */
+        val id: String? = null
     )
 
     /**
@@ -161,15 +174,25 @@ object BriefRender {
         // the 17:30 slot arrived with its time parsed correctly and still
         // drew "today", because every mark went through the day-granular
         // relative(). The time was captured and discarded at the last step.
-        mark = BriefPolicy.clockAt(row.dueAt, now, offsetMs)
-            ?: BriefPolicy.relative(row.dueAt, now, offsetMs)
+        // A GUESSED date is not drawn at all.
+        //
+        // An inferred date cannot promote an item (BriefTriage), but it
+        // was still being printed in the mark column, so an email would
+        // sit in open items confidently labelled "tomorrow". A guess
+        // rendered in the same type as a commitment is still a lie; the
+        // age is the honest thing to show, and it is what an undated row
+        // shows anyway. The guess is kept in the data for later use.
+        mark = (if (row.dueInferred) null else BriefPolicy.clockAt(row.dueAt, now, offsetMs))
+            ?: (if (row.dueInferred) null else BriefPolicy.relative(row.dueAt, now, offsetMs))
             ?: BriefPolicy.age(row.updatedAt, now),
         band = BriefPolicy.bandOf(row.dueAt, now, offsetMs),
         dueAt = row.dueAt,
         kind = row.kind,
         clientId = row.clientId,
         source = row.source,
-        link = row.link
+        dueInferred = row.dueInferred,
+        link = row.link,
+        id = row.id
     )
 
     /**

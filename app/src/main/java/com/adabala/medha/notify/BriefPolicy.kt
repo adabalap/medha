@@ -93,8 +93,77 @@ object BriefPolicy {
          * app it is not. A posting client is named by its registration
          * instead, which Medha controls.
          */
-        val source: String? = null
-     )
+        val source: String? = null,
+        /**
+         * True when [dueAt] was GUESSED from prose rather than declared.
+         *
+         * This is the field the brief was missing, and its absence made
+         * the triage rule do the opposite of its job. "Dated" is an
+         * objective proxy for consequence only when the date was
+         * DECLARED — a client setting dueAt, a calendar entry's start
+         * time. When it is scraped out of free text by a regex it is the
+         * least reliable signal in the system, and the rule handed it
+         * control of the home screen.
+         *
+         * One real evening of it: four of the five rows on the agenda
+         * were emails. "RE: Upcoming Traveler Information" was due
+         * tomorrow. "Re: Delayed employees for 11:30 on 17/11/2026" was
+         * due tomorrow, from a date already past, because the parser
+         * found "11:30" and rolled it forward. None of them was an
+         * obligation at all.
+         *
+         * Inferred dates still sort and still persist; they simply may
+         * not promote. [BriefTriage] is where that is enforced.
+         *
+         * Default false, so an item that predates this field reads as
+         * declared. Client-posted dates genuinely are, and listener items
+         * are rewritten with the flag on the next notification — within
+         * one TTL at worst.
+         */
+        val dueInferred: Boolean = false,
+        /**
+         * The client's own stable identity for this obligation.
+         *
+         * Opaque to Medha: it is never parsed, compared across clients, or
+         * shown. It exists so the two things that need to recognise an
+         * item again can do so without reading its words:
+         *
+         *   - a dismissal, which until now keyed on (client, title, dueAt)
+         *     and was therefore forgotten the moment a title was reworded.
+         *     An agent that rewrites "Pay ICICI card" as "ICICI card
+         *     payment" resurrected something the user had put away.
+         *   - a reschedule, which is the same obligation at a new time and
+         *     used to be indistinguishable from a new one.
+         *
+         * Null for anything posted without it, and the old identity still
+         * applies there — see [BriefDismiss.key], which keeps the previous
+         * encoding byte for byte so no existing dismissal is invalidated.
+         */
+        val id: String? = null,
+        /**
+         * Whether the obligation still stands: one of [STATES], or null
+         * meaning the client did not say.
+         *
+         * This is the client asserting something it KNOWS, replacing a
+         * guess Medha was making from the words. [BriefTriage] read
+         * "Canceled:" off the front of a title, which works for a mail
+         * client's subject line and not at all for an agent that has the
+         * thread and can see the meeting was reinstated.
+         *
+         * Only in the demoting direction. `cancelled` and `done` take an
+         * item off the agenda outright; `open` does NOT override the title
+         * rule, because the two failures are not symmetrical — a wrongly
+         * demoted item is still there, one tap away on the full brief,
+         * while a wrongly promoted one is what put a cancelled meeting on
+         * the home screen at the cancelled meeting's hour. The lane Medha
+         * actually concluded is echoed back on `GET /widget/content`, so a
+         * client can see where it disagreed rather than wonder.
+         */
+        val state: String? = null
+     ) {
+        /** True when the client has said this obligation no longer stands. */
+        val settled: Boolean get() = state == STATE_DONE || state == STATE_CANCELLED
+     }
 
     /** One client's contribution, replaced wholesale when it writes again. */
     data class Section(
@@ -114,8 +183,17 @@ object BriefPolicy {
         val dueAt: Long? = null,
         val kind: String? = null,
         /** [Item.source]: the app, when one item of a section knows. */
-        val source: String? = null
-    )
+        val source: String? = null,
+        /** [Item.dueInferred]: the date is a guess, not a commitment. */
+        val dueInferred: Boolean = false,
+        /** [Item.id]: the client's stable identity, for dismissals. */
+        val id: String? = null,
+        /** [Item.state]: what the client says about whether it still stands. */
+        val state: String? = null
+    ) {
+        /** True when the client has said this obligation no longer stands. */
+        val settled: Boolean get() = state == STATE_DONE || state == STATE_CANCELLED
+    }
 
     /**
      * Replaces [clientId]'s section with [items].
@@ -435,7 +513,10 @@ object BriefPolicy {
         link = item.link,
         dueAt = item.dueAt,
         kind = item.kind,
-        source = item.source
+        source = item.source,
+        dueInferred = item.dueInferred,
+        id = item.id,
+        state = item.state
     )
 
     /**
@@ -504,6 +585,52 @@ object BriefPolicy {
     /** Normalises a caller's `kind`, or null if it is not one Medha draws. */
     fun kindOrNull(raw: String?): String? =
         raw?.trim()?.lowercase()?.takeIf { it in KINDS }
+
+    /** The obligation still stands. */
+    const val STATE_OPEN = "open"
+
+    /** It was met. Kept briefly, off the agenda — "paid" is worth seeing once. */
+    const val STATE_DONE = "done"
+
+    /** It stopped existing. Off the agenda; see [Item.state]. */
+    const val STATE_CANCELLED = "cancelled"
+
+    val STATES = setOf(STATE_OPEN, STATE_DONE, STATE_CANCELLED)
+
+    /**
+     * Normalises a caller's `state`, or null if it is not one Medha knows.
+     *
+     * Unknown values become null — "the client did not say" — rather than an
+     * error, for the same reason an unknown `kind` does: a vocabulary Medha
+     * will extend later must not break a client written against it today.
+     * The cost is bounded, because null means the title rule still applies.
+     *
+     * `cancelled` and `canceled` both arrive in the wild, from the same
+     * split that made [BriefTriage]'s regex accept `cancell?ed`. Both map to
+     * [STATE_CANCELLED] rather than one of them silently meaning nothing.
+     */
+    fun stateOrNull(raw: String?): String? {
+        val s = raw?.trim()?.lowercase() ?: return null
+        if (s == "canceled") return STATE_CANCELLED
+        return s.takeIf { it in STATES }
+    }
+
+    /** The provenance values `due.provenance` accepts on the wire. */
+    const val PROVENANCE_DECLARED = "declared"
+    const val PROVENANCE_INFERRED = "inferred"
+
+    /**
+     * Whether a wire `provenance` means the date was guessed.
+     *
+     * Defaults to declared for anything unrecognised, INCLUDING null, which
+     * matches how [Item.dueInferred] already behaves and keeps a v1 client's
+     * dates trusted. The asymmetry is deliberate: a client that went to the
+     * trouble of sending a date in a structured field is asserting it, and
+     * the one case that burned us was Medha scraping dates out of prose by
+     * itself — which this field exists to let a client admit to.
+     */
+    fun inferredFrom(provenance: String?): Boolean =
+        provenance?.trim()?.lowercase() == PROVENANCE_INFERRED
 
     fun age(updatedAt: Long, now: Long): String {
         val ms = now - updatedAt

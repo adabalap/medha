@@ -61,17 +61,57 @@ object BriefDismiss {
      * is stored one-per-line and a title containing a newline would
      * otherwise corrupt every mark after it.
      */
-    fun key(clientId: String, title: String, dueAt: Long?): String {
+    fun key(clientId: String, id: String?, title: String, dueAt: Long?): String {
         val c = clean(clientId)
+        val i = id?.let(::clean).orEmpty()
+        if (i.isNotEmpty()) return "${c.length}:$c|#${i.length}:$i"
         val t = clean(title)
         return "${c.length}:$c|${t.length}:$t|${dueAt?.toString() ?: ""}"
     }
 
+    /**
+     * The pre-v0.20.0 form, and still what an item with no id gets.
+     *
+     * Kept as an overload rather than replaced: it is the encoding already
+     * sitting in a month's worth of stored marks, and it has to keep
+     * producing the same bytes.
+     */
+    fun key(clientId: String, title: String, dueAt: Long?): String =
+        key(clientId, null, title, dueAt)
+
     private fun clean(s: String): String =
         s.trim().lowercase().map { if (it.code < 0x20) ' ' else it }.joinToString("")
 
+    /**
+     * The key for an item, preferring the client's own id when it sent one.
+     *
+     * Two encodings, and the title-based one is unchanged byte for byte.
+     * That matters more than the elegance of a single scheme: marks live for
+     * 30 days, so a reshaped key would quietly resurrect everything the user
+     * had dismissed in the last month, once, on upgrade.
+     *
+     * An id-based key is marked with `#` where the title's length prefix
+     * would be. A length prefix is always digits, so the two shapes cannot
+     * collide however a client names things — the same argument as [key]
+     * itself, where "a" with title "x|y" once produced the key of "a|x" with
+     * title "y".
+     *
+     * Why prefer the id at all: the old key dissolved on a reword. An agent
+     * that rewrites "Pay ICICI card" as "ICICI card payment" was posting
+     * something Medha could not recognise, so an item the user had put away
+     * came back — and it came back looking like the agent's fault rather
+     * than the key's.
+     *
+     * A reschedule is the other half. Keyed on title AND dueAt, moving a
+     * meeting produced a new key and an un-dismissed row; keyed on id, a
+     * dismissal survives the move. That is the right answer for a renamed
+     * obligation and arguably the wrong one for a rescheduled meeting the
+     * user dismissed because of its old time — but a client that wants the
+     * dismissal dropped can say so by changing the id, and one that cannot
+     * tell the difference has no business deciding.
+     */
     fun key(clientId: String, item: BriefPolicy.Item): String =
-        key(clientId, item.title, item.dueAt)
+        key(clientId, item.id, item.title, item.dueAt)
 
     /** Drops expired marks and trims to [MAX], newest kept. */
     fun prune(marks: List<Mark>, now: Long, ttlMs: Long = TTL_MS): List<Mark> =

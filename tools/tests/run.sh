@@ -94,6 +94,18 @@ kotlinc "$SRC/notify/BriefPolicy.kt" "$SRC/notify/BriefTriage.kt" \
 java -jar "$WORK/triage.jar"
 
 echo
+echo "== BriefIntakeTest =="
+# The PUT /widget/content protocol boundary: which of the two shapes
+# arrived, and what each field of it is allowed to become. Lives apart from
+# the route because LocalServer.kt is not compilable here, and every
+# decision this project left in that file eventually went wrong in a way
+# nobody could execute a test against.
+kotlinc stubs/org/json/Stubs.kt "$SRC/notify/BriefPolicy.kt" \
+  "$SRC/notify/BriefJson.kt" "$SRC/notify/BriefIntake.kt" \
+  BriefIntakeTest.kt -include-runtime -d "$WORK/intake.jar"
+java -jar "$WORK/intake.jar"
+
+echo
 echo "== BriefClockTest =="
 # When the widget next has to be redrawn. updatePeriodMillis is 0 and there
 # was no alarm, so the widget's urgency was frozen at whatever the last
@@ -163,6 +175,17 @@ kotlinc "$SRC/notify/BriefPolicy.kt" "$SRC/connect/NotificationFilter.kt" \
   "$SRC/connect/NotificationItem.kt" NotificationItemTest.kt \
   -include-runtime -d "$WORK/nitem.jar"
 java -jar "$WORK/nitem.jar"
+
+echo
+echo "== CapturePolicyTest =="
+# The bounds on the capture log -- the route that hands the notification
+# stream to the agent. Both limits are checked because either alone leaves
+# the other case unbounded: a quiet month hits the clock, a busy week hits
+# the row ceiling. `overBy` returns the whole overage rather than one row,
+# because a log that trims one per insert never catches up with a burst.
+kotlinc "$SRC/connect/CapturePolicy.kt" CapturePolicyTest.kt \
+  -include-runtime -d "$WORK/capture.jar"
+java -jar "$WORK/capture.jar"
 
 echo
 echo "== BriefJsonTest =="
@@ -284,6 +307,20 @@ echo "== hg_agent_transcribe_test (Python) =="
 # produces a truncated upload that looks like a corrupt audio file.
 if command -v python3 >/dev/null 2>&1; then
   python3 -I hg_agent_transcribe_test.py
+
+  echo
+  echo "== medha_brief_py_test (Python) =="
+  # samples/medha_brief.py is the server-side client -- what hg_agent and
+  # anything else on the device imports, including the /captures reader.
+  # Real HTTP against a stdlib http.server on loopback, so urllib
+  # behaviour, header casing and JSON round-tripping are executed rather
+  # than stubbed.
+  #
+  # This suite existed for several releases WITHOUT being listed here, so
+  # its checks never ran in CI: the file every local client copies was the
+  # one thing the pipeline did not exercise. Found while adding the
+  # captures reader to it.
+  python3 -I medha_brief_py_test.py
 else
   echo "python3 not found on PATH — skipping."
 fi

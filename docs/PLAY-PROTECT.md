@@ -61,10 +61,40 @@ permission that does not appear:
 - Granting it shows an Android consent screen that says, correctly, that the
   app will be able to read all notifications. Medha's own dialog says the
   same thing in its own words before sending anyone to that screen.
-- Notification text is never written to storage. It exists for the length of
-  one callback and either becomes a brief item with an 8-hour TTL or is
-  discarded. The diagnostics log records the *reason* a notification was
-  dropped, never its content.
+- Notification text is written to storage only while something is allowed to
+  read it. Through v0.19.2 it was never written at all: it lived for the
+  length of one callback and either became a brief item with an 8-hour TTL or
+  was discarded. That changed in v0.20.0, and the old sentence is kept here
+  rather than replaced, because a promise this document used to make should
+  not vanish from it.
+
+  What it now says instead:
+
+  - Nothing is recorded unless some paired client holds the `captures`
+    capability. The grant that permits the log to be read is the same one
+    that causes it to exist, so there is no second switch to forget and no
+    state where the phone accumulates a history nothing wants. A device with
+    no such client behaves exactly as described above.
+  - Revoking the last grant **deletes** what was already collected, rather
+    than merely stopping collection.
+  - The log is bounded by age (14 days) and by row count (5000), whichever
+    bites first, and the bound is enforced on every insert rather than by a
+    schedule that can quietly stop running.
+  - `captures` is off by default, is **not** obtainable through the
+    app-triggered consent dialog that grants the other capabilities, and is
+    confirmed in a dialog of its own — stating the scope and the retention —
+    the first time it is switched on for a client. Every other capability
+    announces itself by its effects; this one would not.
+
+  Why it changed: Medha could see the notification stream and had no memory
+  to reason about it, so it inferred — and v0.19.1 shipped a home screen
+  whose agenda was four emails with dates scraped out of their own prose. The
+  agent on the other side of the loopback has the corpus and the correlation
+  and could not see the stream at all. Letting it read observations instead
+  of Medha's guesses requires the observations to outlive one callback.
+
+  The diagnostics log still records the *reason* a notification was dropped,
+  never its content.
 - Anything matching `NotificationFilter.looksLikeSecret` is dropped
   unconditionally, before anything else happens. No allowlist, importance or
   category rescues one, because a one-time passcode drawn on a home screen

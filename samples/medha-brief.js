@@ -274,11 +274,23 @@ export class Medha {
 
 // --------------------------------------------------------------- helpers
 
+// Server-side caps, mirrored here so overflow is visible locally rather than
+// applied silently by the server. Mirrored means they can drift, and this one
+// did: MAX_ITEMS stayed at 5 after BriefPolicy.MAX_ITEMS_PER_SECTION was
+// raised to 20, so this file -- which every PWA copies -- truncated every
+// post to five items and reported success. Nothing failed; the server would
+// have taken all twenty, and the loss happened here before the request was
+// sent. Raise a cap in BriefPolicy, change it here in the same commit.
+// Exported so a test can derive its fixtures from it instead of hardcoding
+// a number. A bounds test written against a literal passes for the wrong
+// reason the moment the bound moves -- which is how this drift survived.
+export const MAX_ITEMS = 20;
+
 function normaliseItems(items) {
   if (!Array.isArray(items)) throw new MedhaError("items must be an array", "bad_request");
   return items
     .filter((i) => i && i.title && String(i.title).trim())
-    .slice(0, 5) // the server caps at 5 per client; fail here, visibly
+    .slice(0, MAX_ITEMS)
     .map((i) => {
       const out = {
         title: String(i.title).trim().slice(0, 80),

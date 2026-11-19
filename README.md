@@ -110,11 +110,24 @@ To disable auth entirely (not recommended), set the `require_auth` preference to
 | GET | `/notify/capabilities` | yes | what this device supports, instead of guessing from OS version |
 | POST | `/notify` | yes | `{id, title, text, ongoing?, progressCurrent?, progressMax?}` |
 | DELETE | `/notify/{id}` | yes | cancel |
-| PUT | `/widget/content` | yes | `{items:[{title, text}], ttlSeconds?}` — write your section of the brief |
-| GET | `/widget/content` | yes | read your section back (admin sees all) |
+| PUT | `/widget/content` | yes | v2 `{obligations:[{id, title, text, kind, state, due:{at, provenance}, links[]}], ttlSeconds?}` — or v1 `{items:[{title, text, link, dueAt, kind}]}` |
+| GET | `/widget/content` | yes | read your section back, with the `lane` Medha concluded (admin sees all) |
 | DELETE | `/widget/content` | yes | withdraw your section |
+| GET | `/captures?since=&limit=` | **`captures`** | the phone's notification stream, raw, with a cursor |
 
 `/notify` is rate limited per client (10 burst, 30/min).
+
+**Two brief protocols, both supported.** v1 is a rendered row; v2 is an
+obligation with identity, date provenance and state, so Medha draws it instead
+of guessing. Ask `GET /notify/capabilities` for `briefProtocol`. See
+[docs/BRIEF-API.md](docs/BRIEF-API.md).
+
+**`GET /captures` is the only route that runs the other way** — everything
+else is written *to* Medha. It carries its own capability, `captures`, which
+is off by default and, unlike every other one, cannot be obtained through the
+consent dialog an app triggers: it is granted from Medha's own client editor.
+Nothing is recorded until some client holds it, and revoking the last grant
+deletes the log.
 
 **To integrate:** `samples/INTEGRATING.md`. Two dependency-free drop-in
 clients — `samples/medha-brief.js` for a browser PWA, `samples/medha_brief.py`

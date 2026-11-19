@@ -6,9 +6,27 @@ package com.adabala.medha.notify
  * THE RULE
  *
  * An item belongs in the brief if ignoring it TODAY has a consequence.
- * Operationally that is: it has a time. Everything else is an open item —
- * real, worth keeping, worth finding, but not something a two-second glance
- * at a home screen has to carry.
+ * Operationally that is four conditions, all required:
+ *
+ *   1. it has a time,
+ *   2. the time was DECLARED rather than guessed out of prose,
+ *   3. the client has not said the obligation is settled, and
+ *   4. its own words do not announce a cancellation.
+ *
+ * Everything else is an open item — real, worth keeping, worth finding,
+ * but not something a two-second glance at a home screen has to carry.
+ *
+ * Conditions 2 and 4 were added after the first version shipped with only
+ * condition 1, which was not enough and failed in the most damaging
+ * direction. See [BriefPolicy.Item.dueInferred] and [isCancellation]: on
+ * one real evening the agenda held five rows, of which three were emails
+ * that merely mentioned a time, one was a MEETING CANCELLATION drawn at
+ * the cancelled meeting's hour, and one was a genuine obligation.
+ *
+ * Condition 3 is the v0.20.0 protocol letting a client say what it knows
+ * instead of leaving Medha to read it off a subject line. Condition 4 is
+ * that same judgement made badly, kept as the fallback for every client
+ * that cannot make it. Both only demote — see [BriefPolicy.Item.state].
  *
  * WHY A RULE AT ALL
  *
@@ -46,11 +64,68 @@ object BriefTriage {
         OPEN
     }
 
-    fun laneOf(item: BriefPolicy.Item): Lane =
-        if (item.dueAt != null) Lane.AGENDA else Lane.OPEN
+    /**
+     * Words that mean an obligation has STOPPED existing.
+     *
+     * "Canceled: DACH Knowledge hour" sat on the agenda at 21:30 as
+     * though it were happening. A cancellation is the absence of an
+     * appointment, and putting it where an appointment goes is worse than
+     * noise — it is wrong information in the one place that is supposed
+     * to be reliable.
+     *
+     * Matched at the START of the title or body, which is where mail and
+     * calendar clients put it. Deliberately not matched anywhere in the
+     * text: "the 4pm is not cancelled" would otherwise disappear, and
+     * silently dropping a real meeting is a far worse failure than
+     * showing a cancelled one.
+     */
+    private val CANCELLED = Regex(
+        """^\s*(?:re:\s*|fwd:\s*)*(cancell?ed|declined|withdrawn)\b""",
+        RegexOption.IGNORE_CASE
+    )
 
-    fun laneOf(row: BriefPolicy.Row): Lane =
-        if (row.dueAt != null) Lane.AGENDA else Lane.OPEN
+    fun isCancellation(title: String, text: String): Boolean =
+        CANCELLED.containsMatchIn(title) || CANCELLED.containsMatchIn(text)
+
+    /**
+     * Four conditions, all required: it has a time, the time was declared
+     * rather than guessed, the client has not said it is settled, and its
+     * own words do not announce a cancellation.
+     */
+    fun laneOf(item: BriefPolicy.Item): Lane = lane(
+        item.dueAt, item.dueInferred, item.settled, item.title, item.text
+    )
+
+    fun laneOf(row: BriefPolicy.Row): Lane = lane(
+        row.dueAt, row.dueInferred, row.settled, row.title, row.text
+    )
+
+    /**
+     * [settled] is the client asserting that the obligation no longer
+     * stands — `state` of `done` or `cancelled` on the v2 protocol. It can
+     * only demote, never promote, which is why it sits beside the title
+     * rule rather than replacing it.
+     *
+     * A client sending `state: "open"` therefore does NOT rescue an item
+     * whose title begins "Cancelled:". The two mistakes cost different
+     * amounts: a wrongly demoted item is still on the full brief one tap
+     * away, while a wrongly promoted one is how a cancelled meeting came to
+     * sit on the home screen at the cancelled meeting's hour. Where the two
+     * signals disagree, the quieter answer wins, and `GET /widget/content`
+     * echoes the lane so the client can see it happened.
+     */
+    private fun lane(
+        dueAt: Long?,
+        inferred: Boolean,
+        settled: Boolean,
+        title: String,
+        text: String
+    ): Lane =
+        if (dueAt != null && !inferred && !settled && !isCancellation(title, text)) {
+            Lane.AGENDA
+        } else {
+            Lane.OPEN
+        }
 
     /**
      * The sections restricted to one lane, dropping any left with no items.

@@ -300,6 +300,62 @@ fun main() {
         }
     }.isSuccess)
 
+    // -------------------------------------------- v2 fields, v0.20.0
+    println("\nBriefJson — id and state survive a restart")
+    // A new field that is written but not read back is the dueAt bug again:
+    // stored and ignored for two releases, with the widget quietly drawing
+    // as though it had never been sent. Both directions are asserted here.
+    val v2 = BriefPolicy.put(
+        emptyList(), "quicksilver",
+        listOf(
+            BriefPolicy.Item(
+                title = "Pay ICICI card", text = "due today",
+                link = "https://bank.example/pay", dueAt = NOW + DAY, kind = "bill",
+                id = "obl-77", state = BriefPolicy.STATE_OPEN
+            ),
+            BriefPolicy.Item(
+                title = "Design review", text = "moved",
+                dueAt = NOW + 2 * DAY, id = "obl-78",
+                state = BriefPolicy.STATE_CANCELLED
+            ),
+            // No id and no state: a v1 client's item, which has to keep
+            // reading back as exactly that rather than acquiring defaults
+            // that mean something.
+            BriefPolicy.Item(title = "Shopping", text = "milk")
+        ),
+        NOW
+    )
+    val v2Round = BriefJson.parse(BriefJson.encode(v2), NOW).first().items
+    eq("ids survive", v2Round.map { it.id }, listOf("obl-77", "obl-78", null))
+    eq("states survive", v2Round.map { it.state },
+        listOf(BriefPolicy.STATE_OPEN, BriefPolicy.STATE_CANCELLED, null))
+    check("and the settled flag is derived from what came back",
+        !v2Round[0].settled && v2Round[1].settled && !v2Round[2].settled)
+    eq("alongside everything v1 already carried",
+        v2Round[0].let { listOf(it.title, it.text, it.link, it.dueAt.toString(), it.kind) },
+        listOf("Pay ICICI card", "due today", "https://bank.example/pay",
+            (NOW + DAY).toString(), "bill"))
+
+    println("\nBriefJson — a brief written before v0.20.0 still reads")
+    val old = """{"sections":[{"clientId":"a","updatedAt":$NOW,"expiresAt":${NOW + DAY},
+        "items":[{"title":"Rent","text":"due","dueAt":${NOW + DAY}}]}]}"""
+    val oldRound = BriefJson.parse(old, NOW).first().items.first()
+    eq("no id means null, not empty string", oldRound.id, null)
+    eq("no state means null, which is 'the client did not say'", oldRound.state, null)
+    check("so the title rule still governs it", !oldRound.settled)
+
+    println("\nBriefJson — the stored state is re-validated on read")
+    // A preference file is editable on a rooted device, and this value
+    // decides whether a row reaches the home screen. Checked at every
+    // boundary rather than trusted because it was checked on the way in.
+    val tampered = """{"sections":[{"clientId":"a","updatedAt":$NOW,"expiresAt":${NOW + DAY},
+        "items":[{"title":"X","state":"snoozed","id":"${"z".repeat(400)}"}]}]}"""
+    val t2 = BriefJson.parse(tampered, NOW).first().items.first()
+    eq("an unknown state is dropped to null", t2.state, null)
+    eq("and an oversized id is capped", t2.id?.length, BriefJson.MAX_ID_LENGTH)
+    check("the item itself is still kept -- a bad field is not a lost row",
+        t2.title == "X")
+
     println("\n--------------------------------------------------")
     if (failures == 0) {
         println("BriefJsonTest: all $checks checks passed")

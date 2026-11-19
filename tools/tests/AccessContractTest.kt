@@ -125,7 +125,8 @@ private fun assertCapabilitiesAgree() {
         "CAP_MEMORY" to "MEMORY",
         "CAP_RAG" to "RAG",
         "CAP_STORE" to "STORE",
-        "CAP_NOTIFY" to "NOTIFY"
+        "CAP_NOTIFY" to "NOTIFY",
+        "CAP_CAPTURES" to "CAPTURES"
     )
     pairs.forEach { (contractName, registryName) ->
         val contractValue = Regex("""const val $contractName = "([^"]+)"""")
@@ -168,6 +169,29 @@ private fun assertCapabilitiesAgree() {
     check("DEFAULT grant is non-empty (regex still matches)", default.isNotBlank())
     check("DEFAULT does not include notify", !default.contains("NOTIFY", ignoreCase = true))
     check("DEFAULT does not include admin", !default.contains("ADMIN", ignoreCase = true))
+
+    // `captures` reads every notification the listener kept. Unlike `notify`
+    // it is NOT grantable through the app-triggered consent dialog, and that
+    // is a decision rather than an omission -- the GRANTABLE doc comment
+    // says why. Asserted here because the set reads like it wants to be
+    // symmetrical, and a future tidy-up that "completes" it would widen the
+    // most sensitive route in the app with no other test failing.
+    check(
+        "the capability exists to be reasoned about",
+        Regex("""const val CAPTURES = "captures"""").containsMatchIn(registryText)
+    )
+    check(
+        "GRANTABLE does not include captures",
+        !grantable.contains("CAPTURES", ignoreCase = true)
+    )
+    check("DEFAULT does not include captures", !default.contains("CAPTURES", ignoreCase = true))
+    // ALL is what setCapabilities() filters against, so a capability missing
+    // from it cannot be granted from Medha's own UI either -- the box would
+    // tick and the grant would silently drop.
+    val all = Regex("""val ALL = setOf\(([^)]*)\)""")
+        .find(registryText)?.groupValues?.get(1).orEmpty()
+    check("ALL includes captures, so the UI can actually grant it",
+        all.contains("CAPTURES", ignoreCase = true))
 }
 
 fun main() {

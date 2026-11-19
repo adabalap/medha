@@ -118,7 +118,26 @@ object BriefJson {
                 // app cannot label itself "Outlook" and borrow the trust
                 // of an app it is not. Absent in every brief written
                 // before v0.19.1, which simply reads back as null.
-                source = o.optString("source", "").ifBlank { null }?.take(40)
+                source = o.optString("source", "").ifBlank { null }?.take(40),
+                // Absent means declared, which is right for everything a
+                // client posted and self-corrects for listener items on
+                // their next notification. PUT /brief does not read it
+                // either on v1: a v1 client cannot mark its own date a
+                // guess, and more importantly cannot mark a guess a
+                // commitment. The v2 `due.provenance` field is how a client
+                // admits to a guess, and the route maps it onto this.
+                dueInferred = o.optBoolean("dueInferred", false),
+                // v0.20.0. Absent in every brief written before it, and in
+                // anything a v1 client posts. Capped because this is stored
+                // in preferences and read on every widget redraw, and an id
+                // is meant to be a handle rather than a payload.
+                id = o.optString("id", "").ifBlank { null }?.take(MAX_ID_LENGTH),
+                // Normalised on read as well as on write. A preference file
+                // is editable on a rooted device and the value decides
+                // whether a row reaches the home screen, so it is checked
+                // against the vocabulary at every boundary rather than
+                // trusted because it was checked once.
+                state = BriefPolicy.stateOrNull(o.optString("state", "").ifBlank { null })
             )
         }
         return out
@@ -135,6 +154,9 @@ object BriefJson {
                 if (i.dueAt != null) o.put("dueAt", i.dueAt)
                 if (i.kind != null) o.put("kind", i.kind)
                 if (i.source != null) o.put("source", i.source)
+                if (i.dueInferred) o.put("dueInferred", true)
+                if (i.id != null) o.put("id", i.id)
+                if (i.state != null) o.put("state", i.state)
                 items.put(o)
             }
             arr.put(
@@ -185,6 +207,16 @@ object BriefJson {
     fun safeLinkOrNull(raw: String?): String? = raw?.takeIf { isSafeLink(it) }
 
     const val MAX_LINK_LENGTH = 2000
+
+    /**
+     * How long a client's own obligation id may be.
+     *
+     * A handle, not a payload: it is stored in preferences, read on every
+     * widget redraw, and never shown to anyone. 128 characters holds a UUID,
+     * a path, or a hash with room to spare, and stops a client from using
+     * the field as free storage in a file the widget parses synchronously.
+     */
+    const val MAX_ID_LENGTH = 128
 
     /**
      * Shown when a stored section has no client id — only reachable from a

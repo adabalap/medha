@@ -28,7 +28,7 @@ second wake lock, a second process to keep alive. That is the opposite of light.
 Flask remains useful for *developing* PWAs on a laptop:
 
 ```bash
-adb reverse tcp:8080 tcp:8080     # laptop talks to the phone's Medha
+adb reverse tcp:8001 tcp:8001     # laptop talks to the phone's Medha
 ```
 
 Ship the result as static files.
@@ -231,13 +231,33 @@ POST   /pair                  {code}               no auth; returns a token
 POST   /notify                {id, title, text, ongoing?, progressCurrent?, progressMax?, silent?}
 DELETE /notify/{id}
 GET    /notify/capabilities   {sdk, liveUpdates, nowBarLikely, notifications, widget, nowBrief}
-PUT    /widget/content        {items:[{title, text}]}
+PUT    /widget/content        v1 {items:[{title, text, link, dueAt, kind}]}
+                              v2 {obligations:[{id, title, text, kind, state,
+                                                due:{at, provenance}, links[]}]}
+GET    /captures?since=       {items:[{id, at, source_pkg, source_label, category, title, text}], cursor}
 ```
 
 `GET /notify/capabilities` first, then the client knows whether a Live Update
 will actually surface in the Now Bar on this device rather than branching on
 OS version itself. `nowBrief` is always `false`: Samsung's digest has no
 public API and this reports that honestly instead of failing silently.
+
+`PUT /widget/content` takes two shapes as of v0.20.0, and both stay supported:
+v1 is a rendered row, v2 is an obligation. The difference is where the
+judgement lives. A rendered row has no identity, so Medha could not tell a
+reschedule from a new meeting and a dismissal dissolved on a reword; it had no
+provenance, so a date Medha scraped out of prose competed with the user's real
+appointments; and it had no state, so the only way to learn something was
+cancelled was to read the word off the front of a subject line. v2 carries all
+three. Ask `GET /notify/capabilities` for `briefProtocol`.
+
+`GET /captures` runs the other way and is the only route that does: everything
+else here is written *to* Medha. It carries its own capability, `captures`, not
+`notify` — writing to the shade and reading the stream are opposite directions
+and different orders of exposure. Nothing is recorded unless a client holds
+that capability, and revoking the last grant deletes the log. The division it
+establishes: **Medha is sensors, model and surface; the agent is memory and
+judgement.** Full reference in [BRIEF-API.md](BRIEF-API.md).
 
 Two things the built version added that the spec did not anticipate:
 

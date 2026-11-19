@@ -308,7 +308,14 @@ class BriefActivity : AppCompatActivity() {
             // exactly what it was, and a confirmation on every single
             // dismissal is how a feature becomes one nobody uses.
             .setNegativeButton(R.string.dismiss) { _, _ ->
-                hub.dismiss(listOf(BriefDismiss.key(line.clientId, line.title, line.dueAt)))
+                // line.id first: BriefDismiss.apply() keys on the id when the
+                // client sent one, so computing the title-based key here
+                // would store a mark that matches nothing — Dismiss would
+                // animate, the row would return on the next render, and
+                // there would be no error anywhere.
+                hub.dismiss(
+                    listOf(BriefDismiss.key(line.clientId, line.id, line.title, line.dueAt))
+                )
                 toast(getString(R.string.dismissed_one))
                 render()
             }

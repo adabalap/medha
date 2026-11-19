@@ -94,8 +94,15 @@ fun main() {
     eq("returns null rather than guessing", PortProbe.firstFree(HOST, emptyList()), null)
     check("the shipped suggestions are all in range",
         PortProbe.SUGGESTIONS.all { it in 1024..65535 })
-    check("and none of them is 8080, the default that collides",
-        8080 !in PortProbe.SUGGESTIONS)
+    // 8080 was the default until v0.19.2 and is the number most likely to
+    // collide again; moving someone from one contested port to another is
+    // a suggestion that wastes a round trip.
+    check("8080 is not offered", 8080 !in PortProbe.SUGGESTIONS)
+    // 8001 is the default now. It stays on the list for someone who moved
+    // off it and collided elsewhere, but it must not lead -- suggesting
+    // the default to someone already on it is a non-answer.
+    check("8001 is offered but does not lead",
+        8001 in PortProbe.SUGGESTIONS && PortProbe.SUGGESTIONS.first() != 8001)
 
     println("\nWhat it tells the person")
     holding { held ->

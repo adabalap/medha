@@ -192,6 +192,41 @@ val zzR: Int = receiver()
 K
 check "nor is another one" 1 "receiver()"
 
+echo "== 9b. a callback parameter is a declaration, not an unresolved call =="
+clean
+# The gap that produced this section: a parameter typed `() -> Unit` is
+# invisible to a pattern keyed on a capitalised type name, so every callback
+# invocation in the project read as unresolved -- and the checker's own
+# remedy line suggests BUILTIN, which is how `toast` got in. Both halves are
+# asserted, because fixing the false positive by filing these module-wide
+# reintroduces section 6.
+cat > "$P/A.kt" <<'K'
+package com.adabala.medha.probe
+private fun zzAsk(zzWho: String, zzThen: () -> Unit) {
+    if (zzWho.isNotEmpty()) zzThen()
+}
+fun zzGo() = zzAsk("x") { }
+K
+check "an invoked callback parameter resolves" 0 "check_symbols: OK"
+
+clean
+cat > "$P/A.kt" <<'K'
+package com.adabala.medha.probe
+suspend fun zzLater(zzThen: suspend (Int) -> Unit) { zzThen(1) }
+K
+check "a suspend function type too" 0 "check_symbols: OK"
+
+clean
+# A named argument whose value happens to be parenthesised must NOT become a
+# declaration -- that is why the pattern requires the arrow.
+cat > "$P/A.kt" <<'K'
+package com.adabala.medha.probe
+fun zzTake(zzN: Int): Int = zzN
+val zzA: Int = zzTake(zzN = (1 + 2))
+val zzB: Int = zzMissing()
+K
+check "a parenthesised named argument is not a declaration" 1 "zzMissing()"
+
 echo "== 10. launch still works both ways =="
 clean; rmdir "$P"
 if grep -q "private fun launch" "$T/app/src/main/java/com/adabala/medha/BriefActivity.kt" \

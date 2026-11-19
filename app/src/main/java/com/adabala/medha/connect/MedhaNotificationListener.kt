@@ -6,6 +6,8 @@ import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import androidx.preference.PreferenceManager
 import com.adabala.medha.diag.Diagnostics
+import com.adabala.medha.auth.ClientRegistry
+import com.adabala.medha.data.MedhaDatabase
 import com.adabala.medha.notify.BriefPolicy
 import com.adabala.medha.connect.NotificationFilter.Posted
 import com.adabala.medha.notify.NotificationHub
@@ -32,13 +34,42 @@ import com.adabala.medha.notify.NotificationHub
  * anything short of Gradle. "Which notifications reach the home screen" is
  * not a question that should be answered by code nobody can run.
  *
- * WHAT IS NEVER KEPT
+ * WHAT IS KEPT, AND THE PROMISE THAT CHANGED
  *
- * Raw notification text is never written anywhere. It lives on the stack
- * for the length of [onNotificationPosted], and either becomes a brief item
- * that expires on its own or is discarded. There is no log of what you were
- * sent, deliberately: a readable history of every notification is a worse
- * thing to leave on a phone than the notifications themselves.
+ * Through v0.19.2 this file said that raw notification text was never
+ * written anywhere — that text lived on the stack for the length of
+ * [onNotificationPosted] and became either a self-expiring brief item or
+ * nothing. The reason given was that "a readable history of every
+ * notification is a worse thing to leave on a phone than the notifications
+ * themselves", and that judgement was right. It is recorded here rather
+ * than deleted, because a promise this file used to make should not quietly
+ * disappear from it.
+ *
+ * What changed is where the thinking happens. Medha could see the stream
+ * and had no memory to reason about it, so it guessed — and v0.19.1
+ * shipped a home screen whose agenda was four emails with dates scraped
+ * out of their own prose. The agent on the other side of the loopback has
+ * the corpus and the correlation and could not see the stream at all. The
+ * fix is to let it read observations instead of Medha's guesses, which
+ * means the observations have to survive long enough to be read.
+ *
+ * So there IS a log now — see [com.adabala.medha.connect.CapturePolicy] —
+ * and the old judgement is answered by making it conditional rather than by
+ * overruling it:
+ *
+ *   - Nothing is written unless some client has been granted
+ *     [ClientRegistry.Cap.CAPTURES]. Not a preference that can drift out of
+ *     step with reality: the same grant that allows the log to be read is
+ *     the one that causes it to exist. A phone with no such client keeps
+ *     the original promise exactly.
+ *   - Revoking the last grant deletes what was already collected, rather
+ *     than merely stopping collection.
+ *   - It is bounded in both directions, by age and by row count, and the
+ *     bound is enforced on every insert rather than by a schedule that can
+ *     stop running.
+ *   - It passes the SAME filter as the brief, so the passcode guarantee
+ *     below is not weakened by it. A notification that never became a brief
+ *     row never becomes a capture either.
  *
  * Anything that looks like a passcode is dropped before any of that, and the
  * drop is unconditional — no allowlist, importance or category rescues one.
@@ -67,9 +98,13 @@ class MedhaNotificationListener : NotificationListenerService() {
         }
 
         val now = System.currentTimeMillis()
+        // Resolved once. Both the brief row and the capture want it, and this
+        // is a PackageManager round trip on a path that runs for every
+        // notification the phone shows.
+        val label = appLabel(posted.pkg)
         val item = NotificationItem
             .toItem(posted, now, BriefPolicy.deviceOffset(now))
-            .copy(source = appLabel(posted.pkg))
+            .copy(source = label)
 
         runCatching {
             val hub = NotificationHub(applicationContext)
@@ -79,6 +114,41 @@ class MedhaNotificationListener : NotificationListenerService() {
                 .orEmpty()
             hub.setBrief(CLIENT_ID, NotificationItem.merge(existing, item), TTL_MS)
         }.onFailure { Diagnostics.i(TAG, "could not write the brief: ${it.message}") }
+
+        capture(posted, label, now)
+    }
+
+    /**
+     * Records the observation, but only while something can read it.
+     *
+     * The gate is a capability grant, not a setting, and that is the whole
+     * argument for the log existing at all: on a phone where nothing holds
+     * [ClientRegistry.Cap.CAPTURES] this is a no-op and no history
+     * accumulates. See the class comment.
+     *
+     * Deliberately AFTER the brief write and in its own runCatching: the
+     * brief is what the user sees, and a failure in the agent's feed must
+     * never be the reason their home screen stops updating.
+     *
+     * [posted] rather than [item]: the item has already been interpreted --
+     * a kind guessed from the package, a dueAt scraped out of prose -- and
+     * handing those downstream is how Medha's guesses became the agent's
+     * facts. What goes in the log is what the phone actually said.
+     */
+    private fun capture(posted: Posted, label: String, now: Long) {
+        runCatching {
+            if (!ClientRegistry.get(applicationContext).anyoneHas(ClientRegistry.Cap.CAPTURES)) {
+                return
+            }
+            MedhaDatabase.get(applicationContext).captureAdd(
+                at = now,
+                pkg = posted.pkg,
+                label = label,
+                category = posted.category,
+                title = posted.title,
+                text = posted.text
+            )
+        }.onFailure { Diagnostics.i(TAG, "could not record the capture: ${it.message}") }
     }
 
     /**
@@ -189,6 +259,43 @@ class MedhaNotificationListener : NotificationListenerService() {
         fun enabled(context: Context): Boolean =
             PreferenceManager.getDefaultSharedPreferences(context)
                 .getBoolean(KEY_ENABLED, DEFAULT_ENABLED)
+
+        /**
+         * Whether Android has bound this service at all.
+         *
+         * Read out of `Settings.Secure` rather than inferred from whether
+         * `onNotificationPosted` has fired: a quiet phone and a revoked
+         * grant look identical from inside the service, and the two need
+         * different things said about them.
+         *
+         * Substring match on the package name is what every app does here --
+         * the setting is a colon-joined list of flattened ComponentNames and
+         * has no public parser. It is only ever used to *report* state, never
+         * to gate anything, so a false positive costs a wrong word on a
+         * screen rather than an access decision.
+         */
+        fun hasSystemGrant(context: Context): Boolean = runCatching {
+            android.provider.Settings.Secure
+                .getString(context.contentResolver, "enabled_notification_listeners")
+                .orEmpty()
+                .contains(context.packageName)
+        }.getOrDefault(false)
+
+        /**
+         * Whether anything is actually being observed right now.
+         *
+         * Both gates, because neither alone reads a thing: Android's grant
+         * is the consent, and Medha's own switch is how the feature is
+         * stopped without going hunting for that settings screen again.
+         *
+         * Exists so the `/captures` route can tell a client the difference
+         * between "nothing new since your cursor" and "nothing is being
+         * recorded", which are the same empty array otherwise -- and an
+         * agent that cannot tell them apart will cheerfully report a clear
+         * day.
+         */
+        fun isEnabled(context: Context): Boolean =
+            hasSystemGrant(context) && enabled(context)
 
         fun blocked(context: Context): Set<String> =
             PreferenceManager.getDefaultSharedPreferences(context)

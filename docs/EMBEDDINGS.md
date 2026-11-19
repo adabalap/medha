@@ -126,7 +126,7 @@ and returns `NoEmbedder` right there rather than shipping a broken dimension.
 ```bash
 curl -X POST -H "Authorization: Bearer $TOKEN" \
      -H 'Content-Type: application/json' -d '{}' \
-     http://127.0.0.1:8080/rag/reindex
+     http://127.0.0.1:8001/rag/reindex
 # {"embedded":64,"remaining":112,"status":"more remaining","model":"..."}
 ```
 

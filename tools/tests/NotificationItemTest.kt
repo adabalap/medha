@@ -100,6 +100,24 @@ fun main() {
     eq("a title-less notification promotes its text", bare.title, "Sync finished")
     eq("and leaves the detail empty rather than repeating it", bare.text, "")
 
+    println("\nNotificationItem.dateIsCorroborated — who vouches for the time")
+    // Every date this file produces is scraped out of prose, and prose
+    // lies: "Re: Delayed employees for 11:30 on 17/11/2026" became an
+    // obligation due tomorrow. The notification's own category is the one
+    // corroborating signal available without reading a calendar, and an
+    // ordinary mail or chat notification does not carry it.
+    check("an event is corroborated", NotificationItem.dateIsCorroborated("event"))
+    check("so is a reminder", NotificationItem.dateIsCorroborated("reminder"))
+    check("and an alarm", NotificationItem.dateIsCorroborated("alarm"))
+    check("case and padding do not matter",
+        NotificationItem.dateIsCorroborated("  EVENT "))
+    check("an email is NOT", !NotificationItem.dateIsCorroborated("email"))
+    check("nor a message", !NotificationItem.dateIsCorroborated("msg"))
+    check("nor a social post", !NotificationItem.dateIsCorroborated("social"))
+    check("nor a promo", !NotificationItem.dateIsCorroborated("promo"))
+    check("and absent means not", !NotificationItem.dateIsCorroborated(null))
+    check("nor does an empty string vouch", !NotificationItem.dateIsCorroborated(""))
+
     println("\nNotificationItem.merge — the same meeting, four times")
     val a = BriefPolicy.Item("Standup", "in 10 minutes", null, T + 10 * MIN, "event")
     val b = BriefPolicy.Item("Standup", "in 9 minutes", null, T + 9 * MIN, "event")

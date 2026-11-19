@@ -50,19 +50,22 @@ object PortProbe {
     /**
      * Ports to offer when the configured one is taken.
      *
-     * 8080 is DEFAULT_PORT and also the most contested number on any device:
-     * dev servers, proxies and a long tail of apps all reach for it, which
-     * is how a stock install ends up unable to start.
+     * DEFAULT_PORT was 8080 until v0.19.2, which was both the most
+     * contested number on any device -- dev servers, proxies and a long
+     * tail of apps all reach for it -- and a port none of this repo's own
+     * samples used. It is now 8001, matching them.
      *
-     * 8001 is first deliberately. Every sample and client in this repo --
-     * samples/medha-brief.js, hg-agent-brief.py, medha_brief.py,
-     * hg-agent-transcribe.py, notify-pwa -- is written against
-     * http://127.0.0.1:8001, so moving to 8001 does not just dodge the
-     * collision, it is the port the rest of the project already expects.
-     * The default disagreeing with its own samples is a separate bug; until
-     * it is settled, the suggestion should at least point the right way.
+     * 8001 stays on this list even though it is the default, because
+     * [firstFree] excludes whichever port is actually taken: someone who
+     * moved to 9000 and hit a collision there should be offered the
+     * default back. It is no longer FIRST, since suggesting the default to
+     * someone already on it would be a non-answer.
+     *
+     * 8080 is deliberately absent. It is the one number most likely to
+     * collide again, and sending someone from one contested port to
+     * another is a suggestion that wastes a round trip.
      */
-    val SUGGESTIONS = listOf(8001, 8081, 8099, 8765, 9099, 11434)
+    val SUGGESTIONS = listOf(8081, 8099, 8001, 8765, 9099, 11434)
 
     /** True if a server socket can be bound to [host]:[port] right now. */
     fun isFree(host: String, port: Int): Boolean =

@@ -165,6 +165,15 @@ jobs:
       - name: Check for Ktor 1.x API names
         run: python3 tools/check_ktor_api.py
 
+      # The sample clients mirror the server's caps on purpose, so a client
+      # shows the user the loss locally instead of posting 20 items and
+      # being handed back 5. A mirror drifts: MAX_ITEMS_PER_SECTION went
+      # 5 -> 20 and both reference clients kept trimming to 5, silently, for
+      # every post. The tests could not catch it because they were written
+      # against the same literals.
+      - name: Check mirrored caps have not drifted
+        run: python3 tools/check_mirrored_caps.py
+
       # Real HTTP round trips against a stdlib server standing in for
       # Medha. Needs no Android SDK, no Gradle and no network.
       - name: Test the Python clients

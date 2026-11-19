@@ -228,6 +228,24 @@ Licensed under the terms in the project repository.</string>
     <string name="cap_rag">Knowledge (RAG)</string>
     <string name="cap_store">Store its own data</string>
     <string name="cap_notify">Post notifications</string>
+    <string name="cap_captures">Read your notifications</string>
+
+    <!--
+      Shown once, when "Read your notifications" is being turned on for a
+      client that did not have it. A one-line label in a checkbox list is
+      the only thing the user sees for every other capability, and for this
+      one that is not enough: it is the only grant whose abuse has no
+      symptom, so the scope and the retention get said out loud at the
+      moment of the decision rather than living in a doc.
+    -->
+    <string name="cap_captures_confirm_title">Share your notifications?</string>
+    <string name="cap_captures_confirm_body">%1$s will be able to read the title and text of
+        notifications Medha has seen — from every app, for the last %2$d days — whenever it
+        asks.\n\nOne-time passcodes and messages Medha filters out are never included. You can
+        turn this off again here at any time.</string>
+    <string name="cap_captures_confirm_grant">Share</string>
+    <!-- Stands in for the client name when pairing, where there isn't one yet. -->
+    <string name="cap_captures_subject_paired">The app you pair</string>
 
     <!-- primary status line, shown on the main screen -->
     <string name="status_starting">● Starting…</string>

@@ -23,6 +23,7 @@ app/src/main/java/com/adabala/medha/auth/AccessRequestActivity.kt
 app/src/main/java/com/adabala/medha/auth/ClientRegistry.kt
 app/src/main/java/com/adabala/medha/auth/MedhaAccessContract.kt
 app/src/main/java/com/adabala/medha/auth/PairingManager.kt
+app/src/main/java/com/adabala/medha/connect/CapturePolicy.kt
 app/src/main/java/com/adabala/medha/connect/MedhaNotificationListener.kt
 app/src/main/java/com/adabala/medha/connect/NotificationFilter.kt
 app/src/main/java/com/adabala/medha/connect/NotificationItem.kt
@@ -36,6 +37,7 @@ app/src/main/java/com/adabala/medha/net/WebOrigin.kt
 app/src/main/java/com/adabala/medha/notify/BriefClock.kt
 app/src/main/java/com/adabala/medha/notify/BriefDismiss.kt
 app/src/main/java/com/adabala/medha/notify/BriefIcons.kt
+app/src/main/java/com/adabala/medha/notify/BriefIntake.kt
 app/src/main/java/com/adabala/medha/notify/BriefJson.kt
 app/src/main/java/com/adabala/medha/notify/BriefNudge.kt
 app/src/main/java/com/adabala/medha/notify/BriefPolicy.kt
@@ -156,6 +158,7 @@ docs/NOTIFICATIONS.md
 docs/PLAY-PROTECT.md
 docs/PRODUCTION-READINESS.md
 docs/PWA-API-HANDOVER.md
+docs/RELEASE-v0.20.0.md
 docs/TESTING.md
 docs/icon-source.svg
 samples/INTEGRATING.md
@@ -191,6 +194,7 @@ samples/notify-pwa/README.md
 samples/notify-pwa/index.html
 tools/check_imports.py
 tools/check_ktor_api.py
+tools/check_mirrored_caps.py
 tools/check_overrides.py
 tools/check_reachable.py
 tools/check_resources.py
@@ -209,11 +213,13 @@ tools/rename_package.py
 tools/tests/AccessContractTest.kt
 tools/tests/BriefClockTest.kt
 tools/tests/BriefDismissTest.kt
+tools/tests/BriefIntakeTest.kt
 tools/tests/BriefJsonTest.kt
 tools/tests/BriefNudgeTest.kt
 tools/tests/BriefPolicyTest.kt
 tools/tests/BriefRenderTest.kt
 tools/tests/BriefTriageTest.kt
+tools/tests/CapturePolicyTest.kt
 tools/tests/ChatRequestParserTest.kt
 tools/tests/EmbedderTest.kt
 tools/tests/EngineFailureTest.kt

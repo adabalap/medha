@@ -361,7 +361,21 @@ class InferenceService : Service() {
         /** Suffix for the reason stored beside a cached rung. */
         const val WHY_SUFFIX = "#why"
 
-        const val DEFAULT_PORT = "8080"
+        /**
+         * 8001, not 8080.
+         *
+         * Every runnable sample in this repo — samples/medha-brief.js,
+         * hg-agent-brief.py, medha_brief.py, hg-agent-transcribe.py and
+         * the notify PWA — is written against http://127.0.0.1:8001, so a
+         * stock install could not talk to its own examples. 8080 is also
+         * the most contested number on any device: a real phone had
+         * something else already listening, and Medha died on the
+         * BindException rather than saying so.
+         *
+         * Only affects installs that never chose a port. A port already
+         * saved in preferences wins, so nobody who set one moves.
+         */
+        const val DEFAULT_PORT = "8001"
 
     }
 }

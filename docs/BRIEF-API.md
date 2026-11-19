@@ -46,6 +46,89 @@ current device.
 
 ## `PUT /widget/content` — write your section
 
+Two shapes. **v2 (`obligations`) is the one to write against**; v1 (`items`)
+is what existed before v0.20.0, is fully supported, and is not going away.
+Ask `GET /notify/capabilities` for `briefProtocol` — `2` means this Medha
+understands both.
+
+Send **exactly one** of the two fields. Both is a 400 rather than a merge:
+a request that disagrees with itself about its own protocol is not something
+to guess at. Neither is also a 400 — `{"items": []}` is how you withdraw
+your section, and a lost payload must not be able to do that by accident.
+
+### v2 — obligations
+
+```json
+{
+  "obligations": [
+    {"id": "card-icici-nov", "title": "ICICI credit card",
+     "text": "payment missed", "kind": "bill",
+     "due": {"at": 1762022400000, "provenance": "declared"},
+     "state": "open",
+     "links": ["https://quicksilver.local/n/4312"]},
+    {"id": "mtg-design-review", "title": "Design review",
+     "due": {"at": 1763337600000, "provenance": "declared"},
+     "state": "cancelled"}
+  ],
+  "ttlSeconds": 7200
+}
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `title` | yes | ≤ 80 chars. **Blank titles are dropped silently** — the item vanishes, the request still succeeds |
+| `text` | no | ≤ 200 chars |
+| `id` | no | Your own stable handle, ≤ 128 chars, opaque to Medha. **Send it.** See below |
+| `due.at` | no | Epoch **ms**. Non-positive is dropped — `0` is a real instant and renders as decades overdue |
+| `due.provenance` | no | `declared` or `inferred`. Anything else, including absent, means declared |
+| `kind` | no | `bill` `date` `event` `alert` `done` `note` — anything else is dropped, the item is kept |
+| `state` | no | `open` `done` `cancelled` (`canceled` too). Unknown values become "you did not say" |
+| `links[]` | no | Preference order. Medha uses the **first** `http`/`https` entry and drops the rest; the response counts them |
+| `ttlSeconds` | no | Default 24h. **Clamped server-side to 60s … 7 days**, silently |
+
+Three of those fields are the whole point of v2, and each exists because of
+something that went wrong:
+
+**`id` — send it.** Without one, an item's identity is `(client, title,
+dueAt)`, so a dismissal dissolves the moment you reword a title. Rewriting
+"Pay ICICI card" as "ICICI card payment" resurrected something the user had
+put away, and it looked like your bug rather than the key's. With an id, a
+dismissal survives both a reword and a reschedule. Changing the id is how
+you say "this is a different commitment now" and get the dismissal dropped.
+
+**`due.provenance` — say when you guessed.** v0.19.1 shipped a home screen
+whose agenda was four emails with dates scraped out of their own prose; "Re:
+Delayed employees for 11:30 on 17/11/2026" became an obligation due
+tomorrow. A date is only a proxy for consequence when somebody *declared*
+it. An `inferred` date still sorts, still persists and still shows on the
+full brief — it just cannot promote to the widget. If you parsed it out of a
+sentence, say so; the alternative is your guesses competing with the user's
+actual appointments.
+
+**`state` — only ever demotes.** `done` and `cancelled` take an item off the
+agenda. `open` does **not** rescue an item whose own title begins
+"Cancelled:" — the two mistakes cost different amounts, since a wrongly
+demoted item is one tap away on the full brief while a wrongly promoted one
+is a cancelled meeting sitting on the home screen at its old hour. Where you
+and Medha disagree, the quieter answer wins and `GET /widget/content` echoes
+the `lane` it concluded, so you can see it happened.
+
+Response:
+
+```json
+{"ok": true, "protocol": 2, "items": 2, "linksDropped": 1,
+ "onAgenda": 1, "pageRows": 3, "maxRows": 12}
+```
+
+| Field | Means |
+|---|---|
+| `protocol` | Which shape Medha read this as. Get `1` back from a v2 post and you have the field name wrong |
+| `items` | How many were **stored** — see the warning below |
+| `linksDropped` | Links not used as a tap target, across the whole post. A custom scheme counts here |
+| `onAgenda` | How many will reach the **home screen** rather than only the full brief. Post five dated obligations and see `1`, and the provenance or state rules explain why |
+
+### v1 — rendered rows
+
 ```json
 {
   "items": [
@@ -66,10 +149,10 @@ current device.
 | `items[].kind` | no | `bill` `date` `event` `alert` `done` `note` — anything else is dropped, the item is kept |
 | `ttlSeconds` | no | Default 24h. **Clamped server-side to 60s … 7 days**, silently |
 
-Response:
+Response — the same, minus the three v2-only fields:
 
 ```json
-{"ok": true, "items": 2, "pageRows": 3, "maxRows": 12}
+{"ok": true, "protocol": 1, "items": 2, "pageRows": 3, "maxRows": 12}
 ```
 
 **`items` is what was stored, not what you sent.** If you post 5 and get
@@ -149,7 +232,8 @@ what the bundled UI uses.
       "expiresAt": 1762886400000,
       "age": "4m",
       "items": [{"title": "...", "text": "...", "dueAt": 1762022400000,
-                 "kind": "bill", "band": "overdue", "due": "10d over"}]
+                 "kind": "bill", "id": "card-icici-nov", "state": "open",
+                 "band": "overdue", "due": "10d over", "lane": "agenda"}]
     }
   ]
 }
@@ -161,13 +245,26 @@ have it to yourself, which changes how much you should post.
 
 `age` is pre-formatted for display: `just now`, `7m`, `3h`, `2d`.
 
-`band` and `due` are **derived**, not echoed — they are what Medha will
-actually draw. Read them back to check a `dueAt` you got wrong by a
+`band`, `due` and `lane` are **derived**, not echoed — they are what Medha
+will actually draw. Read them back to check a `dueAt` you got wrong by a
 timezone, without reimplementing the rule. `overdue` counts across every
 section, because the widget's header badge does.
 
+**`lane` is the one worth reading on every poll.** `agenda` means the home
+screen; `open` means the full brief only. It is the single thing a client
+could not previously find out, and it is where you see Medha disagreeing
+with you: send `state: "open"` on something titled "Cancelled: standup" and
+you get `"state": "open"` alongside `"lane": "open"`, which is Medha saying
+it read the title and demoted it anyway. `dueInferred` appears when the date
+is being treated as a guess, which is the other reason a dated item does not
+promote.
+
+`id` and `state` are echoed as stored, after normalisation — an unknown
+`state` you sent comes back absent, not as the value you used.
+
 A `link` appears in the response **only if it survived validation**. Compare
-against what you sent to detect a dropped URL.
+against what you sent to detect a dropped URL. On v2 the response to your
+`PUT` already counted them as `linksDropped`.
 
 ---
 
@@ -181,6 +278,92 @@ against what you sent to detect a dropped URL.
 
 ---
 
+## `GET /captures` — the notification stream, before anybody interprets it
+
+**Capability: `captures`. Not `notify`** — that one writes to the shade, this
+one reads what the phone said. See the grant note at the end of this section.
+
+Everything above is a surface you write *to*. This is the one you read *from*,
+and it exists because the brief turned out to be the wrong shape for the
+interesting half of the problem: a brief row is a rendered sentence. By the
+time one exists the observation has been flattened into display text with no
+identity, so three notifications about one meeting arrive as three unrelated
+strings — and Medha, which has no memory, has already guessed a `kind` and
+scraped a `dueAt` out of prose. v0.19.1 shipped a home screen whose agenda was
+four emails with dates invented that way.
+
+So the division of labour is explicit from v0.20.0 on: **Medha is sensors,
+model and surface; your agent is memory and judgement.** This route hands over
+observations and no interpretation.
+
+```
+GET /captures?since=<cursor>&limit=<n>
+```
+
+```json
+{"items": [
+   {"id": 4312, "at": 1763251200000,
+    "source_pkg": "com.microsoft.office.outlook", "source_label": "Outlook",
+    "category": "email",
+    "title": "Re: Delayed employees for 11:30 on 17/11/2026",
+    "text": "Cancelled — moving to next week"}],
+ "cursor": 4312, "more": false, "head": 4312,
+ "listening": true, "retainDays": 14, "maxRows": 5000}
+```
+
+| Field | Meaning |
+|---|---|
+| `id` | Row id, and the cursor value. Assigned by `AUTOINCREMENT`, never reused. |
+| `at` | When **Medha** saw it, not the posting app's clock. |
+| `source_pkg` / `source_label` | The package, and its name as a person says it. |
+| `category` | The notification's own category, absent when it had none. The only corroborating signal for a date without reading a calendar — see below. |
+| `title` / `text` | Exactly what the notification carried. |
+| `cursor` | Pass as `since` next time. On an empty page it is the head of the log, which is why you do not reuse your old `since`. |
+| `more` | This page was cut short by `limit`; come straight back rather than waiting for your next poll. |
+| `listening` | Whether anything is being recorded at all. Distinguishes "nothing new" from "the listener is off" — otherwise the same empty array, and an agent that cannot tell them apart will report a clear day. |
+
+**Walk it with `since`.** Ids are monotonic and never reused, so
+`?since=<highest id you have seen>` cannot skip a row even across pruning.
+Start at `since=0` or omit it. `limit` defaults to 200 and is clamped to 1000
+(`CapturePolicy.PAGE_DEFAULT`, `PAGE_MAX`); a nonsensical value gets the
+default rather than an error.
+
+**The log is bounded, and both bounds are real:** 14 days
+(`CapturePolicy.RETAIN_DAYS`) and 5000 rows (`MAX_ROWS`), whichever bites
+first, enforced on every insert. A quiet month hits the clock; a busy week
+hits the ceiling.
+
+**Trust `category` and distrust dates.** Every date Medha could offer you is
+scraped out of prose, which is why this route does not offer one. `category`
+is the one signal that corroborates a time without a calendar, and only
+`event`, `reminder` and `alarm` do: an ordinary mail or chat notification
+mentioning 11:30 is not an appointment at 11:30. The example above is a real
+row from that failure — a cancellation whose title names the original time.
+
+### The grant, and what it costs the user
+
+`captures` is **not** in the default set and is **not** in
+`MedhaAccessContract.GRANTABLE`, so unlike every other capability an installed
+app cannot obtain it through the consent dialog. It is granted from Medha's own
+screens — the per-client capability editor, or web pairing — and the first time
+it is switched on, a dialog states the scope and the retention.
+
+That asymmetry is deliberate. Every other capability announces itself by its
+effects: `notify` writes to the shade, so the user sees it being used. A client
+reading the stream behaves identically to one that never asked.
+
+Two consequences for you:
+
+- **Nothing is recorded until somebody holds the capability.** If you poll
+  before being granted it you get a 403, and the log you would have read does
+  not exist — the grant is what causes it to be written. Expect an empty
+  history on your first successful call, not a backfill.
+- **Revoking deletes.** Losing the grant clears the table, so your cursor is
+  not a claim on anything. Treat a lower `head` than your `since` as "start
+  again", which costs you nothing: the rows it would have returned are gone.
+
+---
+
 ## Limits, all of them
 
 | Limit | Value | Constant |
@@ -189,6 +372,9 @@ against what you sent to detect a dropped URL.
 | Title length | 80 | `MAX_BRIEF_TITLE` |
 | Text length | 200 | `MAX_BRIEF_TEXT` |
 | Link length | 2000 | `BriefJson.MAX_LINK_LENGTH` |
+| Obligation `id` length | 128 | `BriefJson.MAX_ID_LENGTH` |
+| Captures per page | 200, max 1000 | `CapturePolicy.PAGE_DEFAULT`, `PAGE_MAX` |
+| Capture retention | 14d, 5000 rows | `CapturePolicy.RETAIN_DAYS`, `MAX_ROWS` |
 | Clients on the widget | 8 | `BriefPolicy.MAX_SECTIONS` |
 | Rows visible at once | 3 | `BriefPolicy.PAGE_ROWS` |
 | Total rows | 12 | `BriefPolicy.MAX_ROWS` |
@@ -326,7 +512,14 @@ relying on the widget.
 
 [`samples/medha_brief.py`](../samples/medha_brief.py) — standard library
 only, nothing to install under Termux. It wraps all of the above and
-normalises the error shapes.
+normalises the error shapes. The methods worth knowing:
+
+| Method | For |
+|---|---|
+| `brief_protocol()` | `1` or `2`. Branch once at startup, not per post |
+| `post_obligations(obligations)` | The v2 shape. What to write against |
+| `post_brief(items)` | The v1 shape. Still supported |
+| `drain_captures(cursor)` | Returns `(items, next_cursor, listening)`. **Persist the cursor only after the items are durably stored** |
 
 [`samples/hg-agent-brief.py`](../samples/hg-agent-brief.py) — a worked
 example built on it, with opinions about *what* to post. Read it for the

@@ -9,6 +9,8 @@ import com.adabala.medha.net.CorsPolicy
 import com.adabala.medha.net.PortProbe
 import com.adabala.medha.net.RateLimiter
 import com.adabala.medha.net.WebOrigin
+import com.adabala.medha.connect.CapturePolicy
+import com.adabala.medha.connect.MedhaNotificationListener
 import com.adabala.medha.notify.BriefJson
 import com.adabala.medha.audio.Wav
 import com.adabala.medha.oai.ChatRequestParser
@@ -16,7 +18,9 @@ import com.adabala.medha.oai.EngineFailure
 import com.adabala.medha.oai.MultimodalProbe
 import com.adabala.medha.oai.TokenCap
 import com.adabala.medha.oai.TranscriptionRequest
+import com.adabala.medha.notify.BriefIntake
 import com.adabala.medha.notify.BriefPolicy
+import com.adabala.medha.notify.BriefTriage
 import com.adabala.medha.notify.NotificationHub
 import com.adabala.medha.sched.InferenceScheduler
 import com.adabala.medha.rag.Embedder
@@ -205,9 +209,104 @@ data class WidgetItem(
     val kind: String? = null
 )
 
+/**
+ * When something comes due, and who says so.
+ *
+ * The second field is the whole reason this is an object rather than a bare
+ * `dueAt`. v0.19.1 put four emails on the user's agenda with dates Medha had
+ * scraped out of their own prose — "Re: Delayed employees for 11:30 on
+ * 17/11/2026" became an obligation due tomorrow — because a date was a date
+ * and nothing recorded where it came from.
+ *
+ * Now that the agent does the reading, it is the one that knows. A calendar
+ * entry's start time is `declared`; a time it found in a sentence is
+ * `inferred`, and an inferred date sorts and persists but may not promote to
+ * the home screen. See [com.adabala.medha.notify.BriefTriage].
+ */
+@Serializable
+data class ObligationDue(
+    /** Epoch ms. A non-positive value is dropped: 0 is a real instant. */
+    val at: Long? = null,
+    /**
+     * `declared` or `inferred`. Anything else, including absent, is taken as
+     * declared — a client that put a date in a structured field is asserting
+     * it, and the failure this guards against is a guess passing as a
+     * commitment, not the reverse.
+     */
+    val provenance: String? = null
+)
+
+/**
+ * An obligation, as the side with the memory understands it.
+ *
+ * The v1 shape ([WidgetItem]) is a rendered row: a title, a body, and
+ * whatever Medha could derive from them. That turned out to be the wrong
+ * boundary. By the time a row exists the thing has been flattened into
+ * display text with no identity, so Medha could not tell a reschedule from a
+ * new meeting, a dismissal did not survive a reword, and the only way to
+ * learn that something was cancelled was to read the word off the front of a
+ * subject line.
+ *
+ * This shape says what the thing IS and lets Medha decide how to draw it.
+ * Medha is sensors, model and surface; the client is memory and judgement.
+ */
+@Serializable
+data class Obligation(
+    val title: String,
+    val text: String = "",
+    /**
+     * The client's own stable identity for this obligation, opaque to Medha.
+     *
+     * Optional, and worth sending: it is what makes a dismissal survive a
+     * reword and a reschedule recognisable as the same commitment. Capped at
+     * [com.adabala.medha.notify.BriefJson.MAX_ID_LENGTH].
+     */
+    val id: String? = null,
+    val due: ObligationDue? = null,
+    /** Glyph hint, one of [com.adabala.medha.notify.BriefPolicy.KINDS]. */
+    val kind: String? = null,
+    /**
+     * `open`, `done` or `cancelled`. Absent means the client did not say,
+     * and Medha falls back to reading the title.
+     *
+     * Only demotes. `done` and `cancelled` take an item off the agenda;
+     * `open` does not override a title that announces a cancellation, because
+     * a wrongly demoted item is one tap away on the full brief and a wrongly
+     * promoted one is a cancelled meeting on the home screen at its old hour.
+     * `GET /widget/content` echoes the lane Medha concluded.
+     */
+    val state: String? = null,
+    /**
+     * Where a tap goes, in preference order.
+     *
+     * A list because an obligation genuinely has several — the thread, the
+     * app, the payment page — and v1 had room for one. Today Medha uses the
+     * FIRST http(s) entry and drops the rest; the widget row and the detail
+     * sheet each have exactly one tap target, and inventing UI for the others
+     * is not something to do speculatively. The response reports how many
+     * survived, so a client can see what happened rather than assume.
+     */
+    val links: List<String> = emptyList()
+)
+
 @Serializable
 data class WidgetRequest(
-    val items: List<WidgetItem>,
+    /**
+     * The v1 shape: rendered rows. Still supported and still what hg_agent
+     * posted before v0.20.0, so it cannot become required-by-absence.
+     *
+     * Nullable as of v0.20.0 so a v2 client can send [obligations] instead.
+     * An explicit empty list is still a withdrawal; omitting BOTH fields is a
+     * 400 rather than a silent clear, because "I sent you nothing" and "take
+     * my section down" should not be the same request.
+     */
+    val items: List<WidgetItem>? = null,
+    /**
+     * The v2 shape. Exactly one of this and [items] may be present: sending
+     * both is a 400 rather than a merge, because a client that disagrees with
+     * itself about which protocol it speaks is not something to guess at.
+     */
+    val obligations: List<Obligation>? = null,
     /**
      * How long this section should live, in seconds. Clamped server-side to
      * [com.adabala.medha.notify.BriefPolicy.MIN_TTL_MS]..`MAX_TTL_MS`, so a
@@ -289,6 +388,24 @@ class LocalServer(
         // See PortProbe for the trace this came from.
         if (!PortProbe.isFree(LOOPBACK, port)) {
             throw java.net.BindException(PortProbe.explain(LOOPBACK, port))
+        }
+
+        // Revoking the capture capability has to delete the captures, not
+        // just stop new ones -- otherwise turning it off leaves a fortnight
+        // of notification history on the device for whatever is granted the
+        // capability next.
+        //
+        // Here rather than in the capability editor because this is the one
+        // choke point every path shares: granting, revoking, rotating and
+        // deleting a client all call restartServiceIfLive(), and the log can
+        // only ever be read through a server that has passed this line. A
+        // capability change made while the server is down still takes
+        // effect, because the listener's own gate stops writing the moment
+        // the grant goes and nothing can read the table until a server comes
+        // back up and clears it.
+        if (!registry.anyoneHas(ClientRegistry.Cap.CAPTURES)) {
+            val dropped = runCatching { db.capturesClear() }.getOrDefault(0)
+            if (dropped > 0) Diagnostics.i(TAG, "cleared $dropped captures: nothing may read them")
         }
 
         server = embeddedServer(CIO, port = port, host = LOOPBACK) {
@@ -1519,6 +1636,19 @@ class LocalServer(
                                 else -> put(k, v.toString())
                             }
                         }
+                        // The highest brief protocol this Medha understands,
+                        // so a client branches once at startup instead of on
+                        // every post. 1 is the rendered-row shape, 2 the
+                        // obligations shape -- see WidgetRequest.
+                        //
+                        // Reported here rather than left to be discovered by
+                        // trying: a v2 request against a Medha that predates
+                        // it is refused for a missing `items` field, which is
+                        // a confusing way to learn a version number.
+                        put("briefProtocol", BRIEF_PROTOCOL)
+                        putJsonArray("briefStates") {
+                            BriefPolicy.STATES.forEach { s -> add(s) }
+                        }
                     })
                 }
 
@@ -1605,24 +1735,76 @@ class LocalServer(
                 put("/widget/content") {
                     val client = call.requireCap(ClientRegistry.Cap.NOTIFY) ?: return@put
                     val req = call.receive<WidgetRequest>()
-                    if (req.items.size > BriefPolicy.MAX_ITEMS_PER_SECTION) {
+                    // Which protocol this is, decided by BriefIntake so the
+                    // branching is executable by the harness rather than only
+                    // by a device.
+                    val shape = BriefIntake.shapeOf(req.items != null, req.obligations != null)
+                    if (shape == BriefIntake.Shape.BOTH) {
+                        return@put call.badRequest(
+                            "send either 'items' (v1) or 'obligations' (v2), not both"
+                        )
+                    }
+                    if (shape == BriefIntake.Shape.NEITHER) {
+                        // Not treated as a withdrawal. See BriefIntake.Shape:
+                        // a lost payload and "take my section down" must not
+                        // be the same request.
+                        return@put call.badRequest(
+                            "'items' (v1) or 'obligations' (v2) is required; " +
+                                "send an empty list to withdraw your section"
+                        )
+                    }
+                    val v2 = shape == BriefIntake.Shape.V2
+                    val count = if (v2) req.obligations!!.size else req.items!!.size
+                    if (count > BriefPolicy.MAX_ITEMS_PER_SECTION) {
                         return@put call.badRequest(
                             "at most ${BriefPolicy.MAX_ITEMS_PER_SECTION} items per client"
                         )
+                    }
+                    // One pass over both shapes, reduced to the pairs the
+                    // length rule actually looks at. BriefIntake.tooLong
+                    // returns the FIELD NAME rather than a boolean, because
+                    // the 400 has to say which one -- "a title exceeds 80
+                    // characters" is actionable and "bad request" is not.
+                    val titles = if (v2) req.obligations!!.map { it.title to it.text }
+                        else req.items!!.map { it.title to it.text }
+                    val over = titles.firstNotNullOfOrNull { (t, x) ->
+                        BriefIntake.tooLong(t, x, MAX_BRIEF_TITLE, MAX_BRIEF_TEXT)
                     }
                     // Plain `if` at the lambda's top level, not `?.let { return@put }`:
                     // a non-local return out of a nested lambda is rejected by
                     // the compiler here, and the rest of this file uses this
                     // shape anyway.
-                    if (req.items.any { it.title.length > MAX_BRIEF_TITLE }) {
-                        return@put call.badRequest("a title exceeds $MAX_BRIEF_TITLE characters")
+                    if (over != null) {
+                        val cap = if (over == "title") MAX_BRIEF_TITLE else MAX_BRIEF_TEXT
+                        return@put call.badRequest("a $over exceeds $cap characters")
                     }
-                    if (req.items.any { it.text.length > MAX_BRIEF_TEXT }) {
-                        return@put call.badRequest("a text exceeds $MAX_BRIEF_TEXT characters")
-                    }
-                    val stored = notifier.setBrief(
-                        clientId = client.id,
-                        items = req.items.map {
+                    // Reported back so a client can see a tap target it did
+                    // not get. Summed across the post rather than per item,
+                    // because the response is already a summary and the
+                    // actionable fact is "some of my links were refused".
+                    var linksDropped = 0
+                    val mapped: List<BriefPolicy.Item> = if (v2) {
+                        req.obligations!!.map { o ->
+                            val links = BriefIntake.chooseLink(o.links)
+                            linksDropped += links.dropped
+                            BriefPolicy.Item(
+                                title = o.title,
+                                text = o.text,
+                                link = links.chosen,
+                                dueAt = BriefIntake.dueAtOrNull(o.due?.at),
+                                kind = BriefPolicy.kindOrNull(o.kind),
+                                // `source` stays absent on both protocols. A
+                                // client that could set it could label itself
+                                // "Outlook" and borrow the trust of an app it
+                                // is not; attribution comes from the client's
+                                // own registration, which Medha controls.
+                                dueInferred = BriefPolicy.inferredFrom(o.due?.provenance),
+                                id = BriefIntake.idOrNull(o.id),
+                                state = BriefPolicy.stateOrNull(o.state)
+                            )
+                        }
+                    } else {
+                        req.items!!.map {
                             BriefPolicy.Item(
                                 title = it.title,
                                 text = it.text,
@@ -1630,14 +1812,35 @@ class LocalServer(
                                 // A non-positive dueAt is dropped rather
                                 // than stored: 0 is a real instant and
                                 // would render as 56 years overdue.
-                                dueAt = it.dueAt?.takeIf { d -> d > 0L },
+                                dueAt = BriefIntake.dueAtOrNull(it.dueAt),
                                 kind = BriefPolicy.kindOrNull(it.kind)
                             )
-                        },
+                        }
+                    }
+                    val stored = notifier.setBrief(
+                        clientId = client.id,
+                        items = mapped,
                         ttlMs = req.ttlSeconds?.let { it * 1000 } ?: BriefPolicy.DEFAULT_TTL_MS
                     )
                     call.respondJson(buildJsonObject {
                         put("ok", true)
+                        // Which shape Medha read the request as. A v2 client
+                        // that fat-fingers the field name gets `items` back
+                        // and knows immediately, rather than wondering why
+                        // its states are being ignored.
+                        put("protocol", if (v2) 2 else 1)
+                        if (v2) put("linksDropped", linksDropped)
+                        // How many of the posted items will actually reach the
+                        // home screen, as opposed to the full brief. This is
+                        // the number a client most needs and had no way to
+                        // get: it could post five dated obligations and see
+                        // none of them promoted, with nothing to say why.
+                        if (v2) {
+                            put(
+                                "onAgenda",
+                                mapped.count { BriefTriage.laneOf(it) == BriefTriage.Lane.AGENDA }
+                            )
+                        }
                         // What was actually kept, not what was sent. v0.9.0
                         // echoed the request size while silently rendering
                         // three of five items, so a client had no way to see
@@ -1690,6 +1893,26 @@ class LocalServer(
                                                 if (i.link != null) put("link", i.link)
                                                 if (i.dueAt != null) put("dueAt", i.dueAt)
                                                 if (i.kind != null) put("kind", i.kind)
+                                                if (i.id != null) put("id", i.id)
+                                                if (i.state != null) put("state", i.state)
+                                                // The LANE, which is the one
+                                                // thing a client could not
+                                                // previously find out: whether
+                                                // this reaches the home screen
+                                                // or only the full brief. A
+                                                // client that sent
+                                                // `state: "open"` on something
+                                                // whose title begins
+                                                // "Cancelled:" sees `open`
+                                                // here and knows Medha
+                                                // disagreed, instead of
+                                                // wondering why its row never
+                                                // appeared.
+                                                put(
+                                                    "lane",
+                                                    BriefTriage.laneOf(i).name.lowercase()
+                                                )
+                                                if (i.dueInferred) put("dueInferred", true)
                                                 // What Medha DERIVED, so a
                                                 // client can see the band it
                                                 // will be drawn in without
@@ -1713,6 +1936,81 @@ class LocalServer(
                     val client = call.requireCap(ClientRegistry.Cap.NOTIFY) ?: return@delete
                     call.respondJson(buildJsonObject {
                         put("cleared", notifier.clearBrief(client.id))
+                    })
+                }
+
+                // ----------------------------- captures -----------------------------
+                //
+                // The notification stream, as observations rather than as a
+                // rendered brief.
+                //
+                // WHY THIS EXISTS. Medha can see the notification stream and
+                // has no memory to reason about it; the agent has a corpus,
+                // embeddings and correlation and cannot see the stream at
+                // all. Until now the only thing passing between them was the
+                // brief, and a brief row is a *rendered sentence* -- by the
+                // time it exists the observation has been flattened into
+                // display text with no identity, so the side with the brain
+                // received three unrelated strings where there had been one
+                // event. Worse, it put the guessing on the wrong side:
+                // v0.19.1 shipped a home screen where four of five agenda
+                // rows were emails with dates scraped out of prose, because
+                // Medha was the one inferring.
+                //
+                // So Medha reports and stops interpreting. Division of
+                // labour, stated once: Medha is sensors, model and surface;
+                // the agent is memory and judgement.
+                //
+                // Cursor semantics: `since` is a row id, ids are assigned by
+                // AUTOINCREMENT and never reused, so `?since=<last id you
+                // saw>` cannot skip a row even across pruning. `cursor` in
+                // the response is the head of the log, which is what to
+                // resume from when `items` comes back empty -- the last row
+                // of an empty page cannot supply one.
+                get("/captures") {
+                    // Its own capability, deliberately not NOTIFY: that one
+                    // writes to the shade and this one reads the stream. See
+                    // ClientRegistry.Cap.CAPTURES.
+                    call.requireCap(ClientRegistry.Cap.CAPTURES) ?: return@get
+                    // Not namespaced per client, and that is not an
+                    // oversight: there is one notification stream on the
+                    // phone and it belongs to the user, not to whichever
+                    // client is asking. The capability is the whole boundary,
+                    // which is why it is granted from Medha's own screens and
+                    // confirmed out loud.
+                    val q = call.request.queryParameters
+                    val since = CapturePolicy.cursor(q["since"]?.toLongOrNull())
+                    val limit = CapturePolicy.pageSize(q["limit"]?.toIntOrNull())
+                    val rows = db.capturesSince(since, limit)
+                    val head = db.capturesHead()
+                    call.respondJson(buildJsonObject {
+                        putJsonArray("items") {
+                            rows.forEach { r ->
+                                addJsonObject {
+                                    put("id", r.id)
+                                    put("at", r.at)
+                                    put("source_pkg", r.pkg)
+                                    put("source_label", r.label)
+                                    if (r.category != null) put("category", r.category)
+                                    put("title", r.title)
+                                    put("text", r.text)
+                                }
+                            }
+                        }
+                        // Both derived by CapturePolicy rather than worked out
+                        // here: a cursor off by one loses a notification with
+                        // no error anywhere, and this file is not compilable
+                        // by anything the test harness can run.
+                        val lastId = rows.lastOrNull()?.id
+                        put("cursor", CapturePolicy.nextCursor(lastId, head))
+                        put("more", CapturePolicy.hasMore(rows.size, limit, lastId, head))
+                        put("head", head)
+                        // So a client can tell "nothing new" from "the
+                        // listener is not running", which are the same empty
+                        // array otherwise.
+                        put("listening", MedhaNotificationListener.isEnabled(appContext))
+                        put("retainDays", CapturePolicy.RETAIN_DAYS)
+                        put("maxRows", CapturePolicy.MAX_ROWS)
                     })
                 }
 
@@ -2133,6 +2431,18 @@ class LocalServer(
 
         private const val MAX_BRIEF_TITLE = 80
         private const val MAX_BRIEF_TEXT = 200
+
+        /**
+         * The highest brief protocol this build understands.
+         *
+         * 1: `items`, rendered rows — title, text, link, dueAt, kind.
+         * 2: `obligations` — identity, provenance, state, links[]; v0.20.0.
+         *
+         * Reported by `GET /notify/capabilities`. Both shapes stay accepted:
+         * v1 is what hg_agent posted for eleven releases and the brief is
+         * live on a home screen, so a flag day is not available.
+         */
+        const val BRIEF_PROTOCOL = 2
 
         const val TOKEN_PLACEHOLDER = "__MEDHA_TOKEN__"
         const val PORT_PLACEHOLDER = "__MEDHA_PORT__"

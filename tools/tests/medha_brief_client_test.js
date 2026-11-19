@@ -91,7 +91,7 @@ async function run() {
   const mod = await import(
     pathToFileURL(path.join(__dirname, "..", "..", "samples", "medha-brief.js")).href
   );
-  const { Medha, MedhaError } = mod;
+  const { Medha, MedhaError, MAX_ITEMS } = mod;
 
   // ------------------------------------------------------------- pairing
   console.log("\nMedha — pairing");
@@ -164,19 +164,27 @@ async function run() {
     store.setItem("medha.token.a", JSON.stringify({ token: "T" }));
     const m = new Medha({ appKey: "a", storage: store });
 
-    const calls = stubFetch([{ body: { ok: true, items: 5 } }]);
+    // Derived from MAX_ITEMS, not from a literal. This fixture used to send
+    // six valid items against a cap of five; raising the cap to 20 left it
+    // under the limit, so it asserted a trim that could no longer happen.
+    // A bounds test has to overshoot whatever the bound currently is.
+    const overshoot = MAX_ITEMS + 3;
+    const calls = stubFetch([{ body: { ok: true, items: MAX_ITEMS } }]);
     await m.postBrief([
       { title: "  spaced  ", text: "  padded  " },
       { title: "" },                       // dropped: no title
       { title: "   " },                    // dropped: blank title
       null,                                // dropped: not an item
-      { title: "a" }, { title: "b" }, { title: "c" }, { title: "d" }, { title: "e" }
+      ...Array.from({ length: overshoot }, (_, i) => ({ title: `item ${i}` }))
     ]);
     const sent = calls[0].body.items;
-    eq("blank and null entries dropped", sent.length, 5);
+    eq("blank and null entries dropped, and the rest capped",
+       sent.length, MAX_ITEMS);
     eq("whitespace trimmed", sent[0], { title: "spaced", text: "padded" });
-    eq("capped at five, keeping the first five valid ones",
-       sent.map((i) => i.title), ["spaced", "a", "b", "c", "d"]);
+    eq("keeping the FIRST valid ones, in order",
+       sent.map((i) => i.title),
+       ["spaced", ...Array.from({ length: MAX_ITEMS - 1 }, (_, i) => `item ${i}`)]);
+    eq("and the cap matches BriefPolicy.MAX_ITEMS_PER_SECTION", MAX_ITEMS, 20);
 
     const calls2 = stubFetch([{ body: { ok: true, items: 1 } }]);
     await m.postBrief([{ title: "x".repeat(200), text: "y".repeat(500) }]);

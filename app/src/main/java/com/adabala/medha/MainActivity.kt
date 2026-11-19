@@ -582,12 +582,12 @@ class MainActivity : AppCompatActivity() {
      * told, so a remembered answer would be confidently wrong exactly when
      * it mattered.
      */
-    private fun notificationAccessGranted(): Boolean = runCatching {
-        android.provider.Settings.Secure
-            .getString(contentResolver, "enabled_notification_listeners")
-            .orEmpty()
-            .contains(packageName)
-    }.getOrDefault(false)
+    // Delegates rather than keeping its own copy: the server now reports the
+    // same state on /captures, and two independent readings of one setting
+    // is how a screen and an API come to disagree about whether the phone is
+    // listening.
+    private fun notificationAccessGranted(): Boolean =
+        MedhaNotificationListener.hasSystemGrant(this)
 
     /**
      * Falls back to the top of Settings rather than dying: the listener
@@ -772,6 +772,11 @@ class MainActivity : AppCompatActivity() {
      * [ClientRegistry.Cap.NOTIFY] is deliberately absent from the default
      * set: posting to the notification shade is intrusive enough that it
      * should be a decision rather than a default.
+     *
+     * [ClientRegistry.Cap.CAPTURES] is absent too, and last in the list
+     * rather than next to `notify`: it is the opposite direction and a
+     * different order of exposure, and sitting beside its near-namesake is
+     * exactly how a box gets ticked by someone who read one word of it.
      */
     private val grantable by lazy {
         listOf(
@@ -779,7 +784,8 @@ class MainActivity : AppCompatActivity() {
             ClientRegistry.Cap.MEMORY to getString(R.string.cap_memory),
             ClientRegistry.Cap.RAG to getString(R.string.cap_rag),
             ClientRegistry.Cap.STORE to getString(R.string.cap_store),
-            ClientRegistry.Cap.NOTIFY to getString(R.string.cap_notify)
+            ClientRegistry.Cap.NOTIFY to getString(R.string.cap_notify),
+            ClientRegistry.Cap.CAPTURES to getString(R.string.cap_captures)
         )
     }
 
@@ -793,16 +799,53 @@ class MainActivity : AppCompatActivity() {
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.save) { _, _ ->
                 val caps = grantable.filterIndexed { i, _ -> checked[i] }.map { it.first }.toSet()
-                val updated = registry.setCapabilities(client.id, caps)
-                if (updated != null) {
-                    // The server captured the client list at construction, so it
-                    // has to be rebuilt for the change to take effect.
-                    restartServiceIfLive()
-                    toast(getString(R.string.caps_saved, updated.id))
-                } else {
-                    toast(getString(R.string.caps_failed))
-                }
+                // Only when it is being turned ON, and only when it was off
+                // before: re-confirming a grant the user already made, every
+                // time they adjust some unrelated box, teaches them to tap
+                // through it.
+                val newlyShared = ClientRegistry.Cap.CAPTURES in caps &&
+                    ClientRegistry.Cap.CAPTURES !in client.capabilities
+                if (newlyShared) confirmCaptures(client.id) { applyCaps(client.id, caps) }
+                else applyCaps(client.id, caps)
             }
+            .show()
+    }
+
+    private fun applyCaps(clientId: String, caps: Set<String>) {
+        val updated = registry.setCapabilities(clientId, caps)
+        if (updated != null) {
+            // The server captured the client list at construction, so it
+            // has to be rebuilt for the change to take effect.
+            restartServiceIfLive()
+            toast(getString(R.string.caps_saved, updated.id))
+        } else {
+            toast(getString(R.string.caps_failed))
+        }
+    }
+
+    /**
+     * The one capability that gets said out loud before it is granted.
+     *
+     * Every other box in that list describes something the user will notice
+     * the effect of. This one does not: a client reading the notification
+     * stream looks identical to a client that never asked, so the scope and
+     * the retention are stated here, at the moment of the decision, instead
+     * of in a document nobody opens. Cancelling leaves the whole capability
+     * change unapplied, which is the safe direction — a user who hesitates
+     * here should not find they granted it anyway.
+     */
+    private fun confirmCaptures(subject: String, onGrant: () -> Unit) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.cap_captures_confirm_title)
+            .setMessage(
+                getString(
+                    R.string.cap_captures_confirm_body,
+                    subject,
+                    com.adabala.medha.connect.CapturePolicy.RETAIN_DAYS
+                )
+            )
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.cap_captures_confirm_grant) { _, _ -> onGrant() }
             .show()
     }
 
@@ -877,7 +920,18 @@ class MainActivity : AppCompatActivity() {
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.create) { _, _ ->
                 val caps = offered.filterIndexed { i, _ -> checked[i] }.map { it.first }.toSet()
-                issueAndShowPairingCode(caps)
+                // Pairing is already deliberate -- generate a code, carry it
+                // to the other device, type it in -- but the exposure is the
+                // same one, and here there is not even a package name to
+                // show, because whoever types the code inside the expiry
+                // window becomes the holder. So it is confirmed here too.
+                if (ClientRegistry.Cap.CAPTURES in caps) {
+                    confirmCaptures(getString(R.string.cap_captures_subject_paired)) {
+                        issueAndShowPairingCode(caps)
+                    }
+                } else {
+                    issueAndShowPairingCode(caps)
+                }
             }
             .show()
     }

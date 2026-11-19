@@ -59,6 +59,7 @@ need "tools/check_widget_layouts.py"
 need "tools/check_widget_wiring.py"
 need "tools/check_reachable.py"
 need "tools/check_stale.py"
+need "tools/check_mirrored_caps.py"
 need "tools/manifest.txt"
 need "tools/make_manifest.py"
 need "tools/removed.txt"
@@ -196,6 +197,13 @@ python3 tools/check_widget_wiring.py || { echo "Widget wiring check failed."; ex
 
 # A dialog nobody can open is a feature removed without anyone saying so.
 python3 tools/check_reachable.py || { echo "Reachability check failed."; exit 1; }
+
+# The sample clients mirror the server's caps on purpose, so a client shows
+# the user the loss locally instead of posting 20 items and being handed back
+# 5. A mirror drifts: MAX_ITEMS_PER_SECTION went 5 -> 20 and both reference
+# clients kept trimming to 5, silently, for every post. The tests could not
+# catch it because they were written against the same literals.
+python3 tools/check_mirrored_caps.py || { echo "Mirrored cap check failed."; exit 1; }
 
 # The Python client is the only thing here that can be exercised over a
 # REAL HTTP round trip -- a stdlib http.server stands in for Medha -- so

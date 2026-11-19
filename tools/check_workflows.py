@@ -172,12 +172,69 @@ def main():
                     "only the sample. Use branches: [ '**' ]"
                 )
 
+    check_every_suite_runs()
+
     print()
     if failures:
         print(f"check_workflows: {len(failures)} of {checks} checks FAILED")
         return 1
     print(f"check_workflows: OK ({checks} checks across {len(files)} workflow files)")
     return 0
+
+
+def check_every_suite_runs():
+    """A test file nothing invokes is a test file that does not run.
+
+    This is the quiet one. A suite that is never listed in run.sh costs
+    nothing, breaks nothing, and reports nothing -- it simply is not part of
+    the pipeline, and the only symptom is a bug shipping in the file it was
+    written to protect.
+
+    medha_brief_py_test.py sat like that for several releases: 83 checks
+    against samples/medha_brief.py, the file every local client copies, and
+    the one thing CI did not exercise. Nobody noticed, because an absent
+    suite produces no output to be missing.
+
+    run.sh is what CI runs (build-apk.yml), so being named there is the
+    definition of running. Named in a comment counts: the point is to catch
+    a file nothing mentions at all, not to parse shell.
+    """
+    tests = ROOT / "tools" / "tests"
+    runner = tests / "run.sh"
+    if not runner.is_file():
+        return
+    text = runner.read_text()
+
+    suites = sorted(
+        p.name for p in tests.iterdir()
+        if p.is_file() and (
+            p.name.endswith("Test.kt")
+            or p.name.endswith("_test.py")
+            or p.name.endswith("_test.js")
+        )
+    )
+    orphans = [name for name in suites if name not in text]
+    check(
+        f"every test file under tools/tests is invoked by run.sh "
+        f"({len(suites)} suites)",
+        not orphans,
+    )
+    if orphans:
+        fail(
+            "these suites exist and run.sh never names them, so none of "
+            "their checks run in CI: " + ", ".join(orphans)
+        )
+
+    # The mutation suites are a separate shape and a separate failure: they
+    # verify the CHECKERS, which are the things with no tests of their own.
+    mutations = sorted(p.name for p in tests.glob("*_mutations.sh"))
+    missing = [name for name in mutations if name not in text]
+    check(
+        f"and every mutation suite too ({len(mutations)})",
+        not missing,
+    )
+    if missing:
+        fail("mutation suites not invoked by run.sh: " + ", ".join(missing))
 
 
 if __name__ == "__main__":

@@ -149,6 +149,12 @@ object MedhaAccessContract {
     const val CAP_NOTIFY = "notify"
 
     /**
+     * Read the notification stream. Published so a consumer can name it, and
+     * deliberately **not** in [GRANTABLE] — see there.
+     */
+    const val CAP_CAPTURES = "captures"
+
+    /**
      * Capabilities obtainable through this flow.
      *
      * `admin` is deliberately absent and is filtered out even if requested:
@@ -170,6 +176,22 @@ object MedhaAccessContract {
      * It remains off by default — [ClientRegistry.Cap.DEFAULT] excludes it,
      * the add-client dialog leaves its box unticked, and an app that wants
      * it has to ask for it by name and be granted it.
+     *
+     * `captures` is absent, and this is the one asymmetry in the set that is
+     * deliberate rather than historical. The argument above — that a
+     * system-verified package deserves at least what a typed code gets —
+     * turns on the user being able to *see* the consequence of saying yes.
+     * They can: `notify` writes to their shade. Reading the notification
+     * stream has no such tell. An app granted `captures` behaves exactly as
+     * it did before, forever, while every notification the phone shows is
+     * readable by it. A dialog raised by that app, at a moment it chose,
+     * explaining itself in words it wrote, is not where that should be
+     * decided. Medha's own capability screen is, and `captures` is grantable
+     * there and through web pairing, both of which the user walks into
+     * deliberately.
+     *
+     * Adding `CAP_CAPTURES` here would silently widen that; a check in
+     * `tools/tests/AccessContractTest.kt` fails if anyone does.
      */
     val GRANTABLE: Set<String> = setOf(
         CAP_GENERATE, CAP_MEMORY, CAP_RAG, CAP_STORE, CAP_NOTIFY

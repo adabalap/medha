@@ -73,6 +73,7 @@ wants access" is not informed consent.
 | `rag` | `/rag/*`, `/v1/embeddings`, and the `collection` field on chat calls |
 | `store` | `/store/*` — a small key-value scratch space |
 | `notify` | `/notify/*`, `/widget/content` — post to the notification shade |
+| `captures` | `GET /captures` — read the phone's notification stream. **Cannot be requested through this flow**; see below. |
 
 Ask for the narrowest set you actually need; the consent screen shows the user
 every item, and a long list is a good reason for them to decline.
@@ -86,6 +87,19 @@ off Medha's screen and types it into a page. Refusing the same capability to
 an installed app whose identity the *system* verifies, while granting it to a
 web page identified only by a typed code, was backwards. See
 [NOTIFICATIONS.md](NOTIFICATIONS.md) for the API.
+
+`captures` also cannot be obtained through this flow, and this is the one
+asymmetry in the set that is a decision rather than history. The argument that
+reversed `notify` above — that a system-verified package deserves at least
+what a typed code gets — turns on the user being able to *see* the consequence
+of saying yes. With `notify` they can: it writes to their shade. Reading the
+notification stream has no such tell, and an app granted it behaves exactly as
+it did before while every notification the phone shows is readable by it. A
+dialog raised by that app, at a moment it chose, explaining itself in words it
+wrote, is not where that gets decided. It is granted from Medha's own
+capability screen and through web pairing, both of which the user walks into
+deliberately, and the first time it is switched on they are told the scope and
+the retention. See [BRIEF-API.md](BRIEF-API.md) for the route.
 
 `admin` cannot be obtained through this flow and is filtered out even if
 requested. It bypasses every namespace check server-side, so an app that could
@@ -114,7 +128,7 @@ the app already has access and this would add to it.
 Once you have a token, it is an ordinary OpenAI-compatible endpoint.
 
 ```bash
-curl http://127.0.0.1:8080/v1/chat/completions \
+curl http://127.0.0.1:8001/v1/chat/completions \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"model":"medha","messages":[{"role":"user","content":"Hello"}]}'

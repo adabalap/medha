@@ -112,9 +112,36 @@ object NotificationItem {
             text = text,
             link = null,
             dueAt = dueAtFrom("${p.title} ${p.text}", now, offsetMs),
-            kind = BriefPolicy.kindOrNull(kindFor(p.pkg, p.category))
+            kind = BriefPolicy.kindOrNull(kindFor(p.pkg, p.category)),
+            dueInferred = !dateIsCorroborated(p.category)
         )
     }
+
+    /**
+     * Whether the APP says this notification is about a moment in time.
+     *
+     * Every date this file produces is scraped out of prose by
+     * [dueAtFrom], and prose lies. "Re: Delayed employees for 11:30 on
+     * 17/11/2026" became an obligation due tomorrow; "RE: Upcoming
+     * Traveler Information" became one too. Four of five agenda rows on
+     * a real evening were emails that merely happened to contain a time.
+     *
+     * The category is the one corroborating signal available without a
+     * calendar read: the posting app sets it, Android defines it, and an
+     * ordinary mail or chat notification does not carry EVENT or
+     * REMINDER. When it is there, the time found in the body is very
+     * likely the event's time and the date is treated as declared. When
+     * it is not, the date stays a guess and [BriefTriage] keeps it off
+     * the agenda.
+     *
+     * This is a proxy, not proof. The real answer is reading the
+     * calendar, where the start time is a field rather than a sentence.
+     */
+    fun dateIsCorroborated(category: String?): Boolean =
+        when (category?.lowercase()?.trim()) {
+            "event", "reminder", "alarm" -> true
+            else -> false
+        }
 
     /**
      * Folds a new item into the section, newest first, without duplicates.

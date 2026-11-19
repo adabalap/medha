@@ -117,7 +117,7 @@ Central to resolve them.
 
 Install a debug build (`./gradlew installCoreDebug` or `installFullDebug`),
 load a model, grab the admin token from the app UI, and run these from a
-machine on the same network (or `adb reverse tcp:8080 tcp:8080` and use
+machine on the same network (or `adb reverse tcp:8001 tcp:8001` and use
 `localhost`).
 
 ### 3a-pre. Instrumented tests — run these first
@@ -143,7 +143,7 @@ zero protection. Confirm the 429 fires on the endpoints that used to skip it:
 
 ```bash
 TOKEN="<your admin token>"
-HOST="http://127.0.0.1:8080"
+HOST="http://127.0.0.1:8001"
 
 # Fire more concurrent streaming requests than maxQueueDepth (default 8).
 # The (N+1)th response should come back fast with HTTP 429, not hang.

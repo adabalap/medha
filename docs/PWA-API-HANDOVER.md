@@ -11,7 +11,7 @@ A native Android service that keeps one LLM resident on the device's GPU/NPU and
 exposes it over **loopback HTTP**. Apps that consume it are plain static
 HTML/JS — **no backend, no server, no build step required**.
 
-- Base URL: `http://127.0.0.1:8080` (port configurable in the Medha app)
+- Base URL: `http://127.0.0.1:8001` (port configurable in the Medha app)
 - Nothing leaves the device. No cloud, no telemetry.
 - Medha also brokers the **notification shade**, because a browser page
   cannot post to it. That is the one platform capability it hands over.
@@ -74,7 +74,7 @@ granted deliberately — it is grantable, but off by default and never implied.
 ### Boilerplate
 
 ```js
-const MEDHA = "http://127.0.0.1:8080";
+const MEDHA = "http://127.0.0.1:8001";
 const TOKEN = localStorage.getItem("medha_token");
 
 async function api(path, opts = {}) {
@@ -188,7 +188,7 @@ POST /v1/chat/completions   {model?, messages[], stream?}
 POST /v1/embeddings         {input[], input_type: "query"|"document"}
 ```
 
-Point any OpenAI client at `http://127.0.0.1:8080/v1` with your Medha token as
+Point any OpenAI client at `http://127.0.0.1:8001/v1` with your Medha token as
 the API key.
 
 > `input_type` is a Medha extension. Retrieval models are **asymmetric** — a

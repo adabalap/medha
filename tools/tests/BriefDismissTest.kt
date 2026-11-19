@@ -51,6 +51,97 @@ fun main() {
     check("a title cannot forge a separator and collide with another",
         BriefDismiss.key("a", item("x\u001Fy")) != BriefDismiss.key("a\u001Fx", item("y")))
 
+    println("\nBriefDismiss.key — the client's own id wins, v0.20.0")
+    // Why: the title-based key dissolved on a reword. An agent that
+    // rewrites "Pay ICICI card" as "ICICI card payment" was posting
+    // something Medha could not recognise, so an item the user had put away
+    // came back -- looking like the agent's fault rather than the key's.
+    val withId = item("Pay ICICI card", T).copy(id = "obl-77")
+    val reworded = item("ICICI card payment", T).copy(id = "obl-77")
+    eq("a reword is the same item when the id says so",
+        BriefDismiss.key("a", withId), BriefDismiss.key("a", reworded))
+    // A reschedule too. Arguably debatable for a meeting dismissed because
+    // of its old time -- but a client that wants the dismissal dropped can
+    // change the id, and one that cannot tell the difference should not be
+    // deciding.
+    eq("and so is a reschedule",
+        BriefDismiss.key("a", withId),
+        BriefDismiss.key("a", item("Pay ICICI card", T + 30 * DAY).copy(id = "obl-77")))
+    check("a different id is a different item",
+        BriefDismiss.key("a", withId) != BriefDismiss.key("a", withId.copy(id = "obl-78")))
+    check("the same id from another client is still not yours",
+        BriefDismiss.key("a", withId) != BriefDismiss.key("b", withId))
+    // The two encodings must not be able to meet. A length prefix is always
+    // digits and the id form writes `#` there, so no title can produce an
+    // id-shaped key -- the same argument as the separator check above.
+    // The case the `#` marker actually prevents, and the one the first
+    // version of this test missed: an id-keyed item against an UNDATED item
+    // whose title IS that id. Both halves end in the same bytes otherwise.
+    // A mutation that dropped the marker survived the dated version of this
+    // check, because the dueAt made the two differ for an unrelated reason.
+    //
+    // Concretely: an obligation with id "rent" and an undated row titled
+    // "rent" from the same client. Dismissing one would dismiss the other.
+    check("an id key cannot collide with an UNDATED title key",
+        BriefDismiss.key("a", item("obl-77")) != BriefDismiss.key("a", withId))
+    check("nor with a dated one",
+        BriefDismiss.key("a", item("obl-77", T)) != BriefDismiss.key("a", withId))
+    // And the reverse direction: a title that imitates the id encoding.
+    check("a title cannot forge an id key",
+        BriefDismiss.key("a", withId) !=
+            BriefDismiss.key("a", item("#6:obl-77")))
+    // Exhaustive over a small adversarial corpus: no id-form key may equal
+    // any title-form key, whatever the client names things. This is the
+    // property, rather than three examples of it.
+    val words = listOf("rent", "obl-77", "#6:obl-77", "6:rent", "", "  ", "a|b")
+    val idKeys = words.filter { it.isNotBlank() }
+        .map { BriefDismiss.key("a", item("whatever", T).copy(id = it)) }
+    val titleKeys = words.flatMap { w ->
+        listOf(BriefDismiss.key("a", item(w)), BriefDismiss.key("a", item(w, T)))
+    }
+    check("no id key equals any title key, over every pairing",
+        idKeys.none { it in titleKeys })
+    check("and distinct ids stay distinct", idKeys.toSet().size == idKeys.size)
+
+    println("\nBriefDismiss.key — the old encoding is unchanged")
+    // Marks live for 30 days. A reshaped key would quietly resurrect
+    // everything dismissed in the last month, once, on upgrade -- so the
+    // title form has to keep producing the same bytes.
+    eq("an item with no id is byte-identical to the three-arg form",
+        BriefDismiss.key("a", nov), BriefDismiss.key("a", "Electricity", T))
+    eq("the literal encoding is frozen",
+        BriefDismiss.key("a", "Electricity", T), "1:a|11:electricity|$T")
+    eq("and an undated one", BriefDismiss.key("a", "Note", null), "1:a|4:note|")
+    // Blank and whitespace ids must fall back rather than becoming a shared
+    // identity -- one id of "" across a section would make one dismissal
+    // remove every row in it.
+    eq("an empty id falls back to the title",
+        BriefDismiss.key("a", nov.copy(id = "")), BriefDismiss.key("a", nov))
+    eq("a whitespace id does too",
+        BriefDismiss.key("a", nov.copy(id = "   ")), BriefDismiss.key("a", nov))
+
+    println("\nBriefDismiss.key — the four-arg form is what the screen calls")
+    // The full-brief screen dismisses from a BriefRender.Line, not an Item,
+    // so it calls the four-arg form. If the two disagreed, tapping Dismiss
+    // on a v2 item would store a mark matching nothing: the row would
+    // animate away and return on the next render, with no error anywhere.
+    // That regression was one line from shipping.
+    eq("it agrees with the Item form, id and all",
+        BriefDismiss.key("a", withId.id, withId.title, withId.dueAt),
+        BriefDismiss.key("a", withId))
+    eq("and with no id", BriefDismiss.key("a", null, "Electricity", T),
+        BriefDismiss.key("a", nov))
+    check("so a dismissal from the screen actually removes the item",
+        BriefDismiss.apply(
+            BriefPolicy.put(emptyList(), "quicksilver", listOf(withId), T),
+            BriefDismiss.add(
+                emptyList(),
+                listOf(BriefDismiss.key("quicksilver", withId.id, withId.title, withId.dueAt)),
+                T
+            ),
+            T
+        ).isEmpty())
+
     println("\nBriefDismiss.apply — the item goes, and stays gone")
     val b = brief(item("Electricity", T), item("Rent", T + DAY), item("Note"))
     val marks = BriefDismiss.add(emptyList(), listOf(BriefDismiss.key("quicksilver", nov)), T)

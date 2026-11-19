@@ -182,6 +182,11 @@ class AccessRequestActivity : AppCompatActivity() {
         ClientRegistry.Cap.RAG -> getString(R.string.cap_rag)
         ClientRegistry.Cap.STORE -> getString(R.string.cap_store)
         ClientRegistry.Cap.NOTIFY -> getString(R.string.cap_notify)
+        // Unreachable through this screen -- MedhaAccessContract.GRANTABLE
+        // excludes `captures`, so it is filtered out before the consent
+        // dialog is built. Mapped anyway: if that filter is ever loosened,
+        // the label it falls back to should not be the wire string.
+        ClientRegistry.Cap.CAPTURES -> getString(R.string.cap_captures)
         else -> cap
     }
 

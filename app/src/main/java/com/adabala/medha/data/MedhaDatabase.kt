@@ -5,6 +5,7 @@ import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import com.adabala.medha.connect.CapturePolicy
 
 /**
  * Medha's long-term memory. Plain SQLite, hand-written SQL.
@@ -100,6 +101,34 @@ class MedhaDatabase private constructor(context: Context, dbName: String) :
 
         createFts(db)
         createStore(db)
+        createCaptures(db)
+    }
+
+    /**
+     * The capture log: raw notification observations, with a cursor.
+     *
+     * AUTOINCREMENT is load-bearing and not decoration. Without it SQLite
+     * reuses the highest rowid after a delete, so pruning the oldest rows
+     * would hand later inserts ids a client has already seen — and a
+     * caller polling `?since=` would skip every one of them, silently and
+     * forever. AUTOINCREMENT costs a row in sqlite_sequence and guarantees
+     * the cursor only ever moves forward.
+     */
+    private fun createCaptures(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS captures(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                at INTEGER NOT NULL,
+                pkg TEXT NOT NULL,
+                label TEXT NOT NULL,
+                category TEXT,
+                title TEXT NOT NULL,
+                text TEXT NOT NULL
+            )
+            """.trimIndent()
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_captures_at ON captures(at)")
     }
 
     private fun createStore(db: SQLiteDatabase) {
@@ -118,6 +147,9 @@ class MedhaDatabase private constructor(context: Context, dbName: String) :
 
     override fun onUpgrade(db: SQLiteDatabase, oldV: Int, newV: Int) {
         // Additive migrations only. Never drop user memory.
+        if (oldV < 5) {
+            createCaptures(db)
+        }
         if (oldV < 2) {
             createFts(db)
             if (ftsAvailable) {
@@ -521,6 +553,108 @@ class MedhaDatabase private constructor(context: Context, dbName: String) :
     fun kvDelete(scopedKey: String): Boolean =
         writableDatabase.delete("kv", "scopedKey=?", arrayOf(scopedKey)) > 0
 
+    // ---------------------------------------------------------------- captures
+
+    /** One observed notification. [id] is the cursor value. */
+    data class Capture(
+        val id: Long,
+        val at: Long,
+        val pkg: String,
+        val label: String,
+        val category: String?,
+        val title: String,
+        val text: String
+    )
+
+    /**
+     * Records an observation and enforces both retention bounds.
+     *
+     * Pruning here rather than on a timer: an insert is the only moment the
+     * log can grow, so it is the only moment it can need trimming, and a
+     * separate schedule is one more thing that can quietly stop running.
+     */
+    fun captureAdd(
+        at: Long,
+        pkg: String,
+        label: String,
+        category: String?,
+        title: String,
+        text: String
+    ): Long {
+        val db = writableDatabase
+        val v = ContentValues().apply {
+            put("at", at)
+            put("pkg", pkg)
+            put("label", label)
+            put("category", category)
+            put("title", title)
+            put("text", text)
+        }
+        val id = db.insert("captures", null, v)
+        prune(db, at)
+        return id
+    }
+
+    private fun prune(db: SQLiteDatabase, now: Long) {
+        db.delete("captures", "at < ?", arrayOf(CapturePolicy.cutoff(now).toString()))
+        val count = simpleCount("captures")
+        val over = CapturePolicy.overBy(count)
+        if (over > 0) {
+            // By id, not by `at`: ids are monotonic and `at` comes from the
+            // posting app's clock, which can go backwards.
+            db.execSQL(
+                "DELETE FROM captures WHERE id IN " +
+                    "(SELECT id FROM captures ORDER BY id ASC LIMIT ?)",
+                arrayOf<Any>(over)
+            )
+        }
+    }
+
+    /** Observations after [since], oldest first, at most [limit]. */
+    fun capturesSince(since: Long, limit: Int): List<Capture> =
+        readableDatabase.rawQuery(
+            "SELECT id, at, pkg, label, category, title, text FROM captures " +
+                "WHERE id > ? ORDER BY id ASC LIMIT ?",
+            arrayOf(since.toString(), limit.toString())
+        ).use { c ->
+            buildList {
+                while (c.moveToNext()) {
+                    add(
+                        Capture(
+                            c.getLong(0), c.getLong(1), c.getString(2), c.getString(3),
+                            if (c.isNull(4)) null else c.getString(4),
+                            c.getString(5), c.getString(6)
+                        )
+                    )
+                }
+            }
+        }
+
+    /**
+     * The highest id in the log, or 0 when it is empty.
+     *
+     * A caller that has consumed everything needs a cursor to resume from,
+     * and the last row of an empty page cannot supply one.
+     */
+    fun capturesHead(): Long =
+        readableDatabase.rawQuery("SELECT COALESCE(MAX(id), 0) FROM captures", null)
+            .use { c -> if (c.moveToFirst()) c.getLong(0) else 0L }
+
+    /**
+     * Empties the log, returning how many rows went.
+     *
+     * Called when no client holds the capture capability, which is the only
+     * thing that justifies the log existing. Revocation has to delete what
+     * was already collected, not merely stop collection: otherwise turning
+     * it off leaves a fortnight of notification history on the device,
+     * readable in full by whatever is granted the capability next.
+     *
+     * Not `DROP TABLE`: the schema stays so a later grant does not need a
+     * migration, and the ids keep climbing from where they were, so a stale
+     * cursor held by a revoked client cannot be replayed against new rows.
+     */
+    fun capturesClear(): Int = writableDatabase.delete("captures", null, null)
+
     fun kvDeleteByClient(clientId: String): Int =
         writableDatabase.delete("kv", "clientId=?", arrayOf(clientId))
 
@@ -606,7 +740,7 @@ class MedhaDatabase private constructor(context: Context, dbName: String) :
 
     companion object {
         private const val DB_NAME = "medha.db"
-        private const val DB_VERSION = 4
+        private const val DB_VERSION = 5
 
         /** Hard cap on rows pulled into memory by any single fallback scan. */
         const val MAX_SCAN = 2000

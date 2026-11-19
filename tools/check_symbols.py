@@ -292,6 +292,13 @@ def scan(root):
     for src in sources.values():
         declared |= set(re.findall(r"(\w+)\s*:\s*[A-Z]\w*", src))          # params
         declared |= set(re.findall(r"\(\s*([a-z_]\w*)\s*,\s*[a-z_]\w*\s*\)\s*->", src))
+        # Function-typed names are handled in the private-aware loop below,
+        # NOT here: `private val zzFn: () -> Int` is callable as `zzFn()`,
+        # and filing it module-wide would resolve that call from any file in
+        # the project. That is the `toast` defect in a new costume, and the
+        # mutation suite catches it -- the first draft of this fix put the
+        # pattern on this line and `private val does not leak across files`
+        # went red.
 
     # Extension functions, and vals that carry a modifier. Both honour
     # `private` the same way DECL does above -- the old code did not, and its
@@ -301,7 +308,30 @@ def scan(root):
         priv = private_by_file[f]
         for rx in (r"\b(?:val|var)\s+\(?\s*([a-z_]\w*)",
                    r"\bfun\s+[A-Z]\w*(?:<[^>]+>)?\.([a-z_]\w*)",
-                   r"\bfun\s+<[^>]+>\s*[A-Z]\w*\.([a-z_]\w*)"):
+                   r"\bfun\s+<[^>]+>\s*[A-Z]\w*\.([a-z_]\w*)",
+                   # Anything whose declared type is a FUNCTION type, which
+                   # the parameter patterns above cannot see: they key off a
+                   # type name starting with a capital, and `onGrant: () ->
+                   # Unit` starts with a bracket.
+                   #
+                   # This is the one shape that is routinely CALLED rather
+                   # than passed, so missing it is not a harmless
+                   # under-declaration -- it reports every callback
+                   # invocation in the project as unresolved. Found by
+                   # MainActivity's `confirmCaptures(subject, onGrant)`,
+                   # where the checker flagged `onGrant()` and suggested
+                   # BUILTIN: the same suggestion that put `toast` there.
+                   #
+                   # In this loop rather than the module-wide one above
+                   # because `private` has to be honoured. A parameter is
+                   # narrower than file scope anyway -- it is only in scope
+                   # inside its own body -- so filing it per-file can never
+                   # hide a call that should have resolved.
+                   #
+                   # The `->` is required rather than a bare `name: (`, so a
+                   # named argument carrying a parenthesised expression does
+                   # not become a declaration.
+                   r"(\w+)\s*:\s*(?:suspend\s+)?\([^()]*\)\s*->"):
             for m in re.finditer(rx, src):
                 start = src.rfind("\n", 0, m.start()) + 1
                 head = src[start:m.start()]
