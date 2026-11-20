@@ -537,6 +537,14 @@ class MainActivity : AppCompatActivity() {
      * The body is long on purpose. This is the one place in Medha that
      * reads data the user did not hand to it, and the honest version of
      * that sentence does not fit on a toggle label.
+     *
+     * THREE status lines, not two, as of v0.20.0. The first two report the
+     * two switches. The third reports the consequence, and it exists
+     * because this dialog used to state flatly that notification text was
+     * never written to storage — a promise v0.20.0 made conditional and
+     * which was still being shown, unchanged, on a phone where it had
+     * stopped being true. A sentence in prose cannot track that; a line
+     * computed from the live grant can.
      */
     private fun showNotificationListenDialog() {
         val granted = notificationAccessGranted()
@@ -544,17 +552,35 @@ class MainActivity : AppCompatActivity() {
             MedhaNotificationListener.KEY_ENABLED,
             MedhaNotificationListener.DEFAULT_ENABLED
         )
+        // Read now rather than cached: a capability revoked a minute ago has
+        // to be reflected here, because this is the screen someone opens to
+        // find out what their phone is currently doing.
+        val readers = registry.all().count {
+            ClientRegistry.Cap.CAPTURES in it.capabilities
+        }
 
         val status =
             (if (granted) getString(R.string.notif_listen_granted)
             else getString(R.string.notif_listen_not_granted)) + "\n" +
                 (if (medhaOn) getString(R.string.notif_listen_on)
-                else getString(R.string.notif_listen_off))
+                else getString(R.string.notif_listen_off)) + "\n" +
+                (if (readers > 0)
+                    getString(
+                        R.string.notif_listen_log_on,
+                        com.adabala.medha.connect.CapturePolicy.RETAIN_DAYS,
+                        readers
+                    )
+                else getString(R.string.notif_listen_log_off))
 
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.notif_listen_title)
             .setIcon(R.drawable.ic_info)
-            .setMessage(getString(R.string.notif_listen_body) + "\n\n" + status)
+            .setMessage(
+                getString(
+                    R.string.notif_listen_body,
+                    com.adabala.medha.connect.CapturePolicy.RETAIN_DAYS
+                ) + "\n\n" + status
+            )
             .setPositiveButton(R.string.notif_listen_grant) { _, _ ->
                 openNotificationAccessSettings()
             }
@@ -615,7 +641,7 @@ class MainActivity : AppCompatActivity() {
             .setTitle(R.string.undismiss_all)
             .setIcon(R.drawable.ic_refresh)
             .setNegativeButton(R.string.cancel, null)
-            .setPositiveButton(R.string.undismiss_all) { _, _ ->
+            .setPositiveButton(R.string.undismiss_all_action) { _, _ ->
                 NotificationHub(applicationContext).undismissAll()
                 toast(getString(R.string.undismiss_all_done))
             }
@@ -1085,16 +1111,17 @@ class MainActivity : AppCompatActivity() {
             GET   /notify/capabilities
             POST  /notify              {id, title, text, ongoing?}
             DEL   /notify/{id}
-            PUT   /widget/content      {items:[...], ttlSeconds?}
+            PUT   /widget/content      v2 {obligations:[...]} | v1 {items:[...]}
             GET   /widget/content
             DEL   /widget/content
+            GET   /captures?since=     notification stream  (cap: captures)
         """.trimIndent()
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.endpoints_title)
             .setIcon(R.drawable.ic_book)
             .setMessage(body)
             .setPositiveButton(R.string.close, null)
-            .setNeutralButton(R.string.copy_token) { _, _ -> copyToken() }
+            .setNeutralButton(R.string.copy_token_action) { _, _ -> copyToken() }
             .show()
     }
 

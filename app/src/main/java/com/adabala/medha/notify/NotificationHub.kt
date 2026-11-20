@@ -306,10 +306,34 @@ class NotificationHub(private val appContext: Context) {
      * item deleted here reappears on the next sync; a dismissal applied
      * here holds until it expires. See [BriefDismiss].
      */
+    /**
+     * The brief as it should be read: expired sections gone, duplicates
+     * resolved, dismissals applied.
+     *
+     * The ORDER of the last two is load-bearing and the wrong way round
+     * breaks dismissal in a way that looks like a ghost.
+     *
+     * Dedupe first. The user can only dismiss a row they can see, and what
+     * they can see is the copy that survived resolution — so the key they
+     * generate is that copy's. Run dismissal first instead and the key
+     * still matches, but the losing copy is then the only one left for
+     * dedupe to consider, so it is kept: the row they just put away
+     * reappears, from a different app, looking identical. Dismissing twice
+     * would be the only way out, and only if they realised what had
+     * happened.
+     *
+     * Resolved first, the loser stays hidden for as long as the winner is
+     * still being posted, and surfaces only when the winner's client stops
+     * reporting it — which is the honest answer, because at that point the
+     * other source is the only one still saying the obligation exists.
+     */
     fun brief(): List<BriefPolicy.Section> {
         val now = System.currentTimeMillis()
         return BriefDismiss.apply(
-            BriefPolicy.prune(readSections(), now),
+            BriefResolve.dedupe(
+                BriefPolicy.prune(readSections(), now),
+                BriefPolicy.deviceOffset(now)
+            ),
             dismissals(appContext),
             now
         )

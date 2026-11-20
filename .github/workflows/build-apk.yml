@@ -174,6 +174,13 @@ jobs:
       - name: Check mirrored caps have not drifted
         run: python3 tools/check_mirrored_caps.py
 
+      # A MaterialAlertDialog silently stacks its buttons VERTICALLY when
+      # their combined width does not fit, with no warning anywhere. Six
+      # labels were over the line at once, which is what happens when each
+      # is written in isolation with no sense of the row it shares.
+      - name: Check dialog buttons fit on one row
+        run: python3 tools/check_dialog_buttons.py
+
       # Real HTTP round trips against a stdlib server standing in for
       # Medha. Needs no Android SDK, no Gradle and no network.
       - name: Test the Python clients
@@ -310,8 +317,49 @@ jobs:
           echo "$MEDHA_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/medha.jks"
           echo "available=true" >> "$GITHUB_OUTPUT"
 
+      # One retry, and it is specifically for dependency resolution.
+      #
+      # v0.20.0's first CI run died configuring the root project: AGP's own
+      # plugin classpath could not resolve com.android.tools.build:apkzlib,
+      # four levels down from com.android.application. Nothing in the repo had
+      # changed -- build.gradle.kts, settings.gradle.kts and the wrapper were
+      # byte-identical to the previous green build, and the pure-Kotlin tests
+      # and every checker had already passed in the same job.
+      #
+      # Two things make that failure sticky rather than momentary:
+      #
+      #   1. `cache-read-only` is true on every branch but main, so the Gradle
+      #      dependency cache is restored from main and never written back. A
+      #      cache holding a partial download or a cached "not found" for one
+      #      artifact therefore replays on every feature-branch run, and no
+      #      amount of re-running clears it.
+      #   2. Gradle caches a missing-module result for a TTL. Once a Google
+      #      Maven hiccup is recorded, later runs do not retry the network --
+      #      which is exactly why the log shows a dependency PATH and no
+      #      download error underneath it.
+      #
+      # So: try normally, and on failure try once more with
+      # --refresh-dependencies, which ignores cached metadata and cached
+      # misses and goes back to the network. A poisoned cache or a momentary
+      # outage becomes a slower build instead of a red one.
+      #
+      # --info on the retry because the first attempt's output is the thing
+      # that was not actionable: Gradle prints the path it was resolving but
+      # not which repositories it tried or what each said. If the retry fails
+      # too, the log then names the real cause, and the cache is no longer a
+      # suspect -- which is the point.
+      #
+      # Deliberately NOT a blanket retry of the whole build: a compile error
+      # or a failing test must fail the first time and stay failed. The
+      # second attempt runs the same task, so anything that is genuinely
+      # broken in the code fails again in the same way.
       - name: Build debug APK
-        run: ./gradlew assembleDebug --stacktrace --no-daemon
+        run: |
+          if ./gradlew assembleDebug --stacktrace --no-daemon; then
+            exit 0
+          fi
+          echo "::warning::Gradle failed; retrying once with --refresh-dependencies in case the dependency cache is stale or a repository blipped."
+          ./gradlew assembleDebug --stacktrace --no-daemon --refresh-dependencies --info
 
       - name: Build release APK
         if: steps.signing.outputs.available == 'true'

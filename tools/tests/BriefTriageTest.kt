@@ -41,7 +41,15 @@ const val IST = 5 * HOUR + 30 * MIN
 val IST_MIDNIGHT = 1763251200000L - IST
 val NOW = IST_MIDNIGHT + 9 * HOUR          // 09:00 IST
 
+/** Something a person committed to: a note, a todo, a bill a client posted. */
 fun item(title: String, dueAt: Long? = null) = BriefPolicy.Item(title, "body", null, dueAt)
+
+/**
+ * Something an app merely mentioned — what the notification listener
+ * produces. The distinction the whole rule now turns on.
+ */
+fun observed(title: String, dueAt: Long? = null) =
+    BriefPolicy.Item(title, "body", null, dueAt, committed = false)
 fun section(id: String, vararg items: BriefPolicy.Item) =
     BriefPolicy.Section(id, NOW, NOW + DAY, items.toList())
 
@@ -51,17 +59,28 @@ fun main() {
     println("\nThe rule")
     eq("a dated item is agenda", BriefTriage.laneOf(item("meeting", NOW + HOUR)),
         BriefTriage.Lane.AGENDA)
-    eq("an undated item is open", BriefTriage.laneOf(item("dry cleaning")),
-        BriefTriage.Lane.OPEN)
+    // This assertion used to read `item("dry cleaning") -> OPEN`, and it was
+    // wrong in a way no test could catch, because the test was the thing
+    // asserting it. Picking up the dry cleaning is the plainest obligation a
+    // person has; a rule that kept it off the home screen forever was never
+    // going to be right. What belongs in OPEN is the same words with nobody
+    // behind them.
+    eq("an undated thing a person committed to is agenda",
+        BriefTriage.laneOf(item("dry cleaning")), BriefTriage.Lane.AGENDA)
+    eq("an undated thing an app mentioned is open",
+        BriefTriage.laneOf(observed("dry cleaning")), BriefTriage.Lane.OPEN)
     eq("an OVERDUE item is still agenda", BriefTriage.laneOf(item("late", NOW - 9 * DAY)),
         BriefTriage.Lane.AGENDA)
     eq("a far-future item is still agenda", BriefTriage.laneOf(item("far", NOW + 300 * DAY)),
         BriefTriage.Lane.AGENDA)
-    // The proxy is "has a time", not "looks important". A model may later
-    // demote a dated row it can see is noise; nothing may promote an
-    // undated one by deciding it feels urgent.
-    eq("an urgent-SOUNDING undated item is still open",
-        BriefTriage.laneOf(item("URGENT: wire the money now")), BriefTriage.Lane.OPEN)
+    // Sounding urgent still earns nothing. The way in is a person having
+    // committed to it or a declared date -- never the words. A model may
+    // later demote a row it can see is noise; nothing promotes one by
+    // deciding it feels important.
+    eq("an urgent-SOUNDING observation is still open",
+        BriefTriage.laneOf(observed("URGENT: wire the money now")), BriefTriage.Lane.OPEN)
+    eq("and shouting does not make an observation dated either",
+        BriefTriage.laneOf(observed("FINAL NOTICE: act today")), BriefTriage.Lane.OPEN)
 
     println("\nThe real screen that prompted this")
     val real = listOf(
@@ -72,51 +91,80 @@ fun main() {
             item("Apply for Sriram Nagar 3rd Electric Meter"),
             item("Complete mess registration")),
         section("notifications",
-            item("Milestone Program", IST_MIDNIGHT + 17 * HOUR + 30 * MIN),
-            item("Lucid"),
-            item("Peddannaya"),
-            item("Irfan Khan, Nawaz (Cognizant) in Teams"))
+            observed("Milestone Program", IST_MIDNIGHT + 17 * HOUR + 30 * MIN),
+            observed("Lucid"),
+            observed("Peddannaya"),
+            observed("Irfan Khan, Nawaz (Cognizant) in Teams"))
     )
     eq("nine items in", real.sumOf { it.items.size }, 9)
-    eq("two reach the agenda", BriefTriage.count(real, BriefTriage.Lane.AGENDA), 2)
-    eq("seven stay as open items", BriefTriage.count(real, BriefTriage.Lane.OPEN), 7)
+    // Was "two reach the agenda". Two was wrong, and this fixture is where
+    // it shows: "Pick up dry cleaner clothes" and "Apply for Sriram Nagar
+    // 3rd Electric Meter" are sitting right there in the admin section,
+    // demoted for having no date. They are the user's own list. The point of
+    // the brief is that they appear.
+    //
+    // Six now: the five a client posted, plus the one notification carrying
+    // a real time. The three bare notifications stay open, which is the part
+    // the old rule got right and the reason it survived as the fallback.
+    eq("six reach the agenda", BriefTriage.count(real, BriefTriage.Lane.AGENDA), 6)
+    eq("three stay as open items", BriefTriage.count(real, BriefTriage.Lane.OPEN), 3)
     eq("and nothing is lost between the two lanes",
         BriefTriage.count(real, BriefTriage.Lane.AGENDA) +
             BriefTriage.count(real, BriefTriage.Lane.OPEN),
         real.sumOf { it.items.size })
-    eq("the agenda is the instalment and the meeting",
+    eq("the agenda is the user's own list, plus the one real meeting",
         BriefTriage.only(real, BriefTriage.Lane.AGENDA)
             .flatMap { it.items }.map { it.title }.sorted(),
-        listOf("Icicip · ₹2,50,000", "Milestone Program"))
+        listOf(
+            "Apply for Sriram Nagar 3rd Electric Meter",
+            "Complete mess registration",
+            "Headroom GitHub Repository",
+            "Icicip · ₹2,50,000",
+            "Milestone Program",
+            "Stalled: Pick up dry cleaner clothes"
+        ))
+    eq("and what is left over is the bare notifications",
+        BriefTriage.only(real, BriefTriage.Lane.OPEN)
+            .flatMap { it.items }.map { it.title }.sorted(),
+        listOf("Irfan Khan, Nawaz (Cognizant) in Teams", "Lucid", "Peddannaya"))
 
     println("\nA GUESSED date may not promote")
     // The defect this exists to stop. dueAtFrom scrapes a time out of any
     // prose, so an email mentioning 11:30 became an obligation. Before the
     // provenance flag, "dated" meant "promoted", and the least reliable
     // signal in the system controlled the home screen.
-    eq("a declared date is agenda",
-        BriefTriage.laneOf(BriefPolicy.Item("standup", "", null, NOW + HOUR, null, null, false)),
+    // Both observations, because that is where guessed dates come from --
+    // a committed item does not need the date rule at all.
+    eq("a declared date promotes an observation",
+        BriefTriage.laneOf(BriefPolicy.Item("standup", "", null, NOW + HOUR, null, null,
+            false, committed = false)),
         BriefTriage.Lane.AGENDA)
-    eq("the same date, inferred, is not",
-        BriefTriage.laneOf(BriefPolicy.Item("standup", "", null, NOW + HOUR, null, null, true)),
+    eq("the same date, inferred, does not",
+        BriefTriage.laneOf(BriefPolicy.Item("standup", "", null, NOW + HOUR, null, null,
+            true, committed = false)),
         BriefTriage.Lane.OPEN)
 
     println("\nWednesday night, as it actually rendered")
     // Five rows reached the agenda. One was an obligation.
     val wednesday = listOf(
         section("notifications",
+            // Every row here came off the phone, so every row is an
+            // observation. committed = false is what the listener now sets,
+            // and it is what makes the three emails fall out on their own
+            // rather than needing the date rule to catch them.
             BriefPolicy.Item("Lambe, canceled : Nov 18 21:30 - 22:30",
                 "Canceled: DACH Knowledge hour", null,
-                IST_MIDNIGHT + 21 * HOUR + 30 * MIN, "event", "Teams", false),
+                IST_MIDNIGHT + 21 * HOUR + 30 * MIN, "event", "Teams", false,
+                committed = false),
             BriefPolicy.Item("Masa, Uma Maheswaraiah(Cognizant)",
                 "RE: Upcoming Traveler Information (pending details)", null,
-                NOW + DAY, "note", "Outlook", true),
+                NOW + DAY, "note", "Outlook", true, committed = false),
             BriefPolicy.Item("Cameron, Justin",
                 "RE: Fundamentals of Banking Reminder", null,
-                NOW + DAY, "note", "Outlook", true),
+                NOW + DAY, "note", "Outlook", true, committed = false),
             BriefPolicy.Item("Takawale, Pratik Ram (Cognizant)",
                 "Re: Delayed employees for 11:30 on 17/11/2026", null,
-                NOW + DAY, "note", "Outlook", true)),
+                NOW + DAY, "note", "Outlook", true, committed = false)),
         section("admin",
             BriefPolicy.Item("Icicip · ₹2,50,000", "Loan EMI bill due Sat 21 Nov",
                 null, NOW + 3 * DAY, "bill", null, false))
@@ -161,7 +209,7 @@ fun main() {
     check("section metadata survives",
         split.all { it.updatedAt == NOW && it.expiresAt == NOW + DAY })
     eq("a section with nothing in the lane is dropped, not left empty",
-        BriefTriage.only(listOf(section("quiet", item("undated"))), BriefTriage.Lane.AGENDA),
+        BriefTriage.only(listOf(section("quiet", observed("undated"))), BriefTriage.Lane.AGENDA),
         emptyList<BriefPolicy.Section>())
     eq("an empty input stays empty",
         BriefTriage.only(emptyList(), BriefTriage.Lane.OPEN),
@@ -199,10 +247,77 @@ fun main() {
             (m == 0 && s == null) || (m > 0 && s != null && s.matches(Regex("""\d\d:\d\d""")))
         })
 
+    println("\ncommitted — the rule that replaced 'has a date', v0.20.0")
+    // The report that prompted this, verbatim: "pick up the drycleaning
+    // clothes" has no date, never will, and under the date rule could never
+    // reach the home screen. It is exactly what the brief is for.
+    val chore = BriefPolicy.Item("Pick up the dry cleaning", "from the note")
+    eq("an undated thing the user committed to IS on the agenda",
+        BriefTriage.laneOf(chore), BriefTriage.Lane.AGENDA)
+    eq("and so is a note-derived errand",
+        BriefTriage.laneOf(BriefPolicy.Item("Apply for the Sriram Nagar electric meter", "")),
+        BriefTriage.Lane.AGENDA)
+    // The 17 undated rows that started all this. They were not junk because
+    // they lacked dates -- they were junk because an app mentioned them and
+    // nobody committed to them.
+    eq("while an undated thing an app merely mentioned is not",
+        BriefTriage.laneOf(BriefPolicy.Item("Thanq thanq", "WhatsApp", committed = false)),
+        BriefTriage.Lane.OPEN)
+    eq("nor a webinar invitation",
+        BriefTriage.laneOf(BriefPolicy.Item("Webinar: scaling your team", "", committed = false)),
+        BriefTriage.Lane.OPEN)
+    // An observed thing with a DECLARED date still gets in: that is the
+    // work-calendar case the listener exists for.
+    eq("but an observed thing with a declared date does reach the agenda",
+        BriefTriage.laneOf(BriefPolicy.Item(
+            "Standup", "Teams", null, NOW + 2 * HOUR, "event", committed = false)),
+        BriefTriage.Lane.AGENDA)
+    eq("and with a GUESSED date it does not -- that is v0.19.1",
+        BriefTriage.laneOf(BriefPolicy.Item(
+            "Re: Delayed employees for 11:30 on 17/11/2026", "Outlook", null,
+            NOW + 2 * HOUR, "note", dueInferred = true, committed = false)),
+        BriefTriage.Lane.OPEN)
+
+    println("\ncommitted defaults true, and the default is the design")
+    // No client has to change: posting to someone's brief IS the assertion
+    // that it needs them. Only the listener sets it false.
+    check("a bare Item is committed", BriefPolicy.Item("x", "y").committed)
+    check("so a v1 client's undated item reaches the agenda unchanged",
+        BriefTriage.laneOf(BriefPolicy.Item("Call the plumber", "")) == BriefTriage.Lane.AGENDA)
+    check("and a Row carries it too",
+        BriefPolicy.Row("x", "y", "c", NOW).committed)
+
+    println("\ncommitted cannot override the two disqualifiers")
+    // Otherwise it would become a way to force anything onto the home
+    // screen, which is the failure mode every one of these rules exists
+    // to prevent.
+    eq("a settled commitment is still off the agenda",
+        BriefTriage.laneOf(chore.copy(state = BriefPolicy.STATE_DONE)),
+        BriefTriage.Lane.OPEN)
+    eq("a cancelled one too",
+        BriefTriage.laneOf(chore.copy(state = BriefPolicy.STATE_CANCELLED)),
+        BriefTriage.Lane.OPEN)
+    eq("and a title announcing a cancellation still wins",
+        BriefTriage.laneOf(BriefPolicy.Item("Cancelled: dry cleaning pickup", "")),
+        BriefTriage.Lane.OPEN)
+    check("no combination of committed and a date beats a settled state",
+        listOf(true, false).flatMap { c -> listOf<Long?>(null, NOW + HOUR).map { c to it } }
+            .none { (c, d) ->
+                BriefTriage.laneOf(
+                    BriefPolicy.Item("x", "y", null, d, committed = c,
+                        state = BriefPolicy.STATE_CANCELLED)
+                ) == BriefTriage.Lane.AGENDA
+            })
+
     println("\nstate — the client saying what it knows, v0.20.0")
     // The point of the v2 protocol: the side with the corpus asserts this
     // instead of leaving Medha to read "Cancelled:" off a subject line.
-    val dated = BriefPolicy.Item("Design review", "body", null, NOW + 2 * HOUR)
+    // An OBSERVATION with a declared date. The state and provenance rules
+    // below are about the date path, and the date path only decides anything
+    // for something nobody committed to -- a committed item is on the agenda
+    // with or without a date, so testing the date rule on one proves nothing.
+    val dated = BriefPolicy.Item("Design review", "body", null, NOW + 2 * HOUR,
+        committed = false)
     eq("a dated obligation with no state is on the agenda",
         BriefTriage.laneOf(dated), BriefTriage.Lane.AGENDA)
     eq("state 'open' leaves it there",
@@ -227,7 +342,8 @@ fun main() {
     // promoted one is how "Canceled: DACH Knowledge hour" came to sit on the
     // home screen at 21:30 as though it were happening.
     val announced = BriefPolicy.Item(
-        "Canceled: DACH Knowledge hour", "body", null, NOW + 2 * HOUR
+        "Canceled: DACH Knowledge hour", "body", null, NOW + 2 * HOUR,
+        committed = false
     )
     eq("the title rule still applies with no state",
         BriefTriage.laneOf(announced), BriefTriage.Lane.OPEN)
@@ -238,9 +354,10 @@ fun main() {
         BriefTriage.laneOf(announced.copy(state = BriefPolicy.STATE_CANCELLED)),
         BriefTriage.Lane.OPEN)
     // Nor can a state rescue an item that fails the other two conditions.
-    eq("'open' does not give an undated item a time",
+    eq("'open' does not give an undated observation a time",
         BriefTriage.laneOf(
-            BriefPolicy.Item("Shopping", "body", null, null, state = BriefPolicy.STATE_OPEN)
+            BriefPolicy.Item("Shopping", "body", null, null,
+                state = BriefPolicy.STATE_OPEN, committed = false)
         ),
         BriefTriage.Lane.OPEN)
     eq("nor make a guessed date a commitment",
@@ -252,7 +369,7 @@ fun main() {
         (BriefPolicy.STATES + setOf(null, "nonsense")).none { s ->
             BriefTriage.laneOf(
                 BriefPolicy.Item("Shopping", "body", null, null,
-                    state = BriefPolicy.stateOrNull(s))
+                    state = BriefPolicy.stateOrNull(s), committed = false)
             ) == BriefTriage.Lane.AGENDA
         })
 

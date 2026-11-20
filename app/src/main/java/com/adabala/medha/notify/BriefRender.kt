@@ -196,6 +196,48 @@ object BriefRender {
     )
 
     /**
+     * The key a line is bucketed under on the full-brief screen: the APP it
+     * came from, falling back to the client that posted it.
+     *
+     * [Line.source] and not [Line.clientId], because every notification-
+     * sourced row shares the single client "notifications" while actually
+     * coming from WhatsApp, Teams and Outlook. Bucketing by client would
+     * put all of them in one pile labelled with a registry id nobody was
+     * ever meant to read, which is the opposite of the point.
+     */
+    fun originKey(line: Line): String =
+        line.source?.takeIf { it.isNotBlank() } ?: line.clientId
+
+    /**
+     * Lines grouped by where they came from, biggest bucket first.
+     *
+     * For the open-items part of the full brief, where the question is
+     * "what is all this and can I clear it in one go" rather than "what do
+     * I have to do". Biggest first because the bucket worth dismissing
+     * wholesale is almost always the noisiest one, and making the user hunt
+     * for it defeats the feature.
+     *
+     * Ties keep the order the lines were already in, which is the ranked
+     * order — so two equal buckets appear in the order their most urgent
+     * line did, not alphabetically.
+     *
+     * The AGENDA is deliberately not grouped this way anywhere. Splitting
+     * what needs doing by which app mentioned it turns a list of
+     * obligations back into an inbox: a ₹2,50,000 instalment and a 17:30
+     * meeting belong next to each other because they are both today, not
+     * in separate piles because one arrived as a bank message and the other
+     * from Teams.
+     */
+    fun byOrigin(lines: List<Line>): List<Pair<String, List<Line>>> {
+        if (lines.isEmpty()) return emptyList()
+        val groups = LinkedHashMap<String, MutableList<Line>>()
+        lines.forEach { groups.getOrPut(originKey(it)) { mutableListOf() }.add(it) }
+        // sortedByDescending is stable, so equal sizes keep insertion order
+        // and insertion order is the ranked order.
+        return groups.entries.sortedByDescending { it.value.size }.map { it.key to it.value.toList() }
+    }
+
+    /**
      * Names the fold so a list that never moves is still safe to trust.
      *
      * This is the whole argument against rotating the widget. A fixed top

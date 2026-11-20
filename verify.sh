@@ -60,6 +60,7 @@ need "tools/check_widget_wiring.py"
 need "tools/check_reachable.py"
 need "tools/check_stale.py"
 need "tools/check_mirrored_caps.py"
+need "tools/check_dialog_buttons.py"
 need "tools/manifest.txt"
 need "tools/make_manifest.py"
 need "tools/removed.txt"
@@ -204,6 +205,11 @@ python3 tools/check_reachable.py || { echo "Reachability check failed."; exit 1;
 # clients kept trimming to 5, silently, for every post. The tests could not
 # catch it because they were written against the same literals.
 python3 tools/check_mirrored_caps.py || { echo "Mirrored cap check failed."; exit 1; }
+
+# A dialog that stacks its buttons still works and still looks deliberate --
+# it just reads as a little scrolling list of actions instead of a row. The
+# failure is invisible on the machine that writes the string.
+python3 tools/check_dialog_buttons.py || { echo "Dialog button check failed."; exit 1; }
 
 # The Python client is the only thing here that can be exercised over a
 # REAL HTTP round trip -- a stdlib http.server stands in for Medha -- so

@@ -201,7 +201,97 @@ case it was guarding.
 
 ---
 
-## 6. Database
+## 6. CI: a retry for dependency resolution
+
+v0.20.0's first CI run died **configuring** the root project — before any
+Android compilation — with AGP's own plugin classpath unable to resolve
+`com.android.tools.build:apkzlib:8.7.3`, four levels down from
+`com.android.application`. Nothing in this release touches dependency
+resolution: `build.gradle.kts`, `settings.gradle.kts` and the Gradle wrapper
+are byte-identical to the previous green build, and every checker and the
+whole pure-Kotlin harness had already passed in the same job.
+
+Two things make that failure sticky rather than momentary:
+
+1. `cache-read-only` is true on every branch but `main`, so the Gradle
+   dependency cache is restored from `main` and never written back. A cache
+   holding a partial download or a cached "not found" for one artifact
+   replays on every feature-branch run, and re-running cannot clear it.
+2. Gradle caches a missing-module result for a TTL, so later runs do not
+   retry the network — which is why the log shows a dependency *path* with no
+   download error underneath it.
+
+Both build workflows now try the build normally and, on failure, retry once
+with `--refresh-dependencies --info`. That ignores cached metadata and cached
+misses, so a poisoned cache or a momentary repository outage becomes a slower
+build instead of a red one; and if the retry fails too, `--info` names which
+repositories were tried and what each said, which the first attempt did not.
+
+It is not a blanket retry: a compile error or a failing test runs the same
+task again and fails the same way.
+
+`tools/check_workflows.py` fails if either workflow loses the retry. It found
+the second instance itself — `build-sample.yml` had the same exposure — and
+its first version had a bug of its own: it searched the whole file, so the
+explanatory comment satisfied it while the build command had lost the flag.
+It now matches only the `run:` lines that invoke `assembleDebug`.
+
+**If you want to confirm the diagnosis before trusting the retry:** delete the
+Gradle caches under the repository's Actions → Caches and re-run the job. If
+it goes green on an empty cache, it was the cache.
+
+---
+
+## 7. The dialog that was still making the old promise
+
+The "Read notifications" dialog said, in the words a person actually reads:
+
+> So Medha filters instead, on the device, and keeps nothing: notification
+> text is never written to storage.
+
+v0.20.0 made that conditional and the dialog was never updated, so it kept
+saying it on a phone where it had stopped being true. The class comment and
+`PLAY-PROTECT.md` were updated; the one sentence on screen was not. That is
+the wrong way round — a promise is kept where it is made.
+
+The body now explains that what is kept depends on whether a paired app has
+been given permission to read notifications, and the dialog gained a **third
+status line** computed from the live grant:
+
+- `Stored: nothing. No app has permission to read your notifications.`
+- `Stored: notification text, for 14 days. 1 app(s) can read it; turn that
+  off under API clients and it is deleted.`
+
+Prose cannot track a runtime condition. A line computed from the registry
+can, which is why the promise moved out of the paragraph and into the status
+block.
+
+The endpoints reference dialog was stale the same way — it listed the old
+`PUT /widget/content {items:[...]}` and no `/captures`. Fixed.
+
+## 8. Dialog buttons stopped stacking
+
+A `MaterialAlertDialog` lays its buttons in a horizontal row and silently
+falls back to a **vertical stack** when their combined width does not fit.
+Nothing warns you; the dialog still works and still looks deliberate. Six
+labels were over the line at once — "Open Android settings", "Bring back
+dismissed items", "Export current logs now", "Turn on notifications", "Share
+this report", "Copy API token" — which is what happens when every label is
+written on its own with no sense of the row it has to share.
+
+All six shortened. Two of them turned out to be one string serving as both a
+list row and a button (`undismiss_all`, `copy_token`); those now have a
+separate short string for the button, because the list row is right as it is.
+
+`tools/check_dialog_buttons.py` fails CI above 12 characters. The limit is a
+proxy — a real layout pass needs a device — and deliberately a little strict,
+because this failure is invisible on the machine that writes the string and
+obvious on the phone that shows it. It found `copy_token`'s second use, which
+I had looked at and dismissed.
+
+---
+
+## 9. Database
 
 `DB_VERSION` 4 → 5, adding the `captures` table. `onUpgrade` creates it for
 `oldV < 5`; nothing existing is touched, and downgrade behaviour is unchanged.

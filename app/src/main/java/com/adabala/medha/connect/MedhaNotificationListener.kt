@@ -104,7 +104,12 @@ class MedhaNotificationListener : NotificationListenerService() {
         val label = appLabel(posted.pkg)
         val item = NotificationItem
             .toItem(posted, now, BriefPolicy.deviceOffset(now))
-            .copy(source = label)
+            // committed = false: this is what the PHONE said, not what the
+            // user decided. It is the one source that must not reach the
+            // agenda on its own say-so -- 17 undated rows of shopping list
+            // and "Thanq thanq" came from here. A declared date still
+            // promotes it; nothing else does. See BriefPolicy.Item.committed.
+            .copy(source = label, committed = false)
 
         runCatching {
             val hub = NotificationHub(applicationContext)

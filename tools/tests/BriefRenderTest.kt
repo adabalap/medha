@@ -148,6 +148,45 @@ fun main() {
     eq("and the fold says thirty-seven, not nine",
         crowded.fold, BriefRender.Fold.Clear(37))
 
+    println("\nbyOrigin — the buckets on the full brief")
+    // Only the OPEN lane is bucketed. The agenda stays one ranked list,
+    // because splitting what needs doing by which app mentioned it turns a
+    // list of obligations back into an inbox.
+    fun ln(title: String, source: String?, client: String) = BriefRender.Line(
+        title = title, text = "", mark = "4d", band = null, dueAt = null,
+        kind = null, clientId = client, source = source, dueInferred = false,
+        link = null
+    )
+    val mixed = listOf(
+        ln("Lucid", "WhatsApp", "notifications"),
+        ln("Peddannaya", "WhatsApp", "notifications"),
+        ln("Irfan Khan in Teams", "Microsoft Teams", "notifications"),
+        ln("Payslip available", "Outlook", "notifications"),
+        ln("Thanq thanq", "WhatsApp", "notifications"),
+        ln("Build finished", null, "quicksilver")
+    )
+    val buckets = BriefRender.byOrigin(mixed)
+    eq("one bucket per app, not per client", buckets.size, 4)
+    // Every notification-sourced row shares the single client
+    // "notifications" while coming from three different apps. Bucketing by
+    // client would put all five in one pile labelled with a registry id.
+    eq("biggest first, so the noisy one is where the thumb already is",
+        buckets.map { it.first }, listOf("WhatsApp", "Microsoft Teams", "Outlook", "quicksilver"))
+    eq("and the counts are right", buckets.map { it.second.size }, listOf(3, 1, 1, 1))
+    eq("nothing is lost", buckets.sumOf { it.second.size }, mixed.size)
+    check("a client with no app name falls back to its id",
+        buckets.last().first == "quicksilver")
+    // Ties keep the ranked order rather than sorting alphabetically: two
+    // equal buckets appear in the order their first line did.
+    val tied = listOf(ln("a", "Zebra", "c"), ln("b", "Apple", "c"))
+    eq("equal buckets keep the order their lines were in",
+        BriefRender.byOrigin(tied).map { it.first }, listOf("Zebra", "Apple"))
+    eq("no lines means no buckets", BriefRender.byOrigin(emptyList()).size, 0)
+    eq("a blank source falls back to the client",
+        BriefRender.byOrigin(listOf(ln("x", "   ", "web"))).first().first, "web")
+    eq("and originKey agrees with the grouping",
+        BriefRender.originKey(mixed.first()), "WhatsApp")
+
     println("\n--------------------------------------------------")
     if (failures == 0) {
         println("BriefRenderTest: all $checks checks passed")

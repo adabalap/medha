@@ -159,7 +159,45 @@ object BriefPolicy {
          * actually concluded is echoed back on `GET /widget/content`, so a
          * client can see where it disagreed rather than wonder.
          */
-        val state: String? = null
+        val state: String? = null,
+        /**
+         * Whether a person committed to this, as opposed to an app having
+         * merely mentioned it.
+         *
+         * This replaces "has a date" as the test for belonging on the
+         * agenda, and the replacement matters because the old test was a
+         * proxy for the wrong thing.
+         *
+         * The rule shipped in v0.19.2 required a date. It was written
+         * against a screen holding 19 items of which 17 were undated — a
+         * shopping list, a webinar invitation, a WhatsApp "Thanq thanq" —
+         * and "dated" was chosen because it was the one objective signal
+         * available. But the thing those 17 had in common was not that
+         * they lacked a date. It was that NOBODY HAD COMMITTED TO THEM:
+         * an app had mentioned them, and an app mentioning something is
+         * not an obligation.
+         *
+         * Meanwhile "pick up the dry cleaning" has no date, never will,
+         * and is exactly the sort of thing the brief exists for. Under the
+         * date rule it could never reach the home screen. That was the
+         * report that prompted this, and it is the same defect as
+         * v0.19.1's in the opposite direction: a proxy standing in for
+         * consequence and getting it wrong.
+         *
+         * Defaults TRUE, and the default is the whole design:
+         *
+         *  - A client posting to your brief is asserting that this needs
+         *    you. That assertion is the commitment, so every client-posted
+         *    item qualifies without any client having to change.
+         *  - The notification listener sets it FALSE
+         *    ([BriefPolicy.INFERRED_CLIENT_ID]'s items), because it is
+         *    reporting what the phone said rather than what you decided.
+         *    That is precisely the stream that flooded the agenda.
+         *
+         * It cannot promote something settled or cancelled, and it does
+         * not make a guessed date trustworthy — see [BriefTriage].
+         */
+        val committed: Boolean = true
      ) {
         /** True when the client has said this obligation no longer stands. */
         val settled: Boolean get() = state == STATE_DONE || state == STATE_CANCELLED
@@ -189,7 +227,9 @@ object BriefPolicy {
         /** [Item.id]: the client's stable identity, for dismissals. */
         val id: String? = null,
         /** [Item.state]: what the client says about whether it still stands. */
-        val state: String? = null
+        val state: String? = null,
+        /** [Item.committed]: a person committed to this; an app did not. */
+        val committed: Boolean = true
     ) {
         /** True when the client has said this obligation no longer stands. */
         val settled: Boolean get() = state == STATE_DONE || state == STATE_CANCELLED
@@ -516,7 +556,8 @@ object BriefPolicy {
         source = item.source,
         dueInferred = item.dueInferred,
         id = item.id,
-        state = item.state
+        state = item.state,
+        committed = item.committed
     )
 
     /**

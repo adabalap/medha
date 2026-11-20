@@ -84,6 +84,7 @@ your section, and a lost payload must not be able to do that by accident.
 | `kind` | no | `bill` `date` `event` `alert` `done` `note` — anything else is dropped, the item is kept |
 | `state` | no | `open` `done` `cancelled` (`canceled` too). Unknown values become "you did not say" |
 | `links[]` | no | Preference order. Medha uses the **first** `http`/`https` entry and drops the rest; the response counts them |
+| `committed` | no | Default `true`. Send `false` for something you are relaying rather than vouching for; it then needs a declared date to reach the home screen |
 | `ttlSeconds` | no | Default 24h. **Clamped server-side to 60s … 7 days**, silently |
 
 Three of those fields are the whole point of v2, and each exists because of
@@ -104,6 +105,15 @@ it. An `inferred` date still sorts, still persists and still shows on the
 full brief — it just cannot promote to the widget. If you parsed it out of a
 sentence, say so; the alternative is your guesses competing with the user's
 actual appointments.
+
+**`committed` — the primary test for the home screen as of v0.21.0.** It
+replaced "has a date", which was standing in for a question it could not
+answer: did a *person* decide this needs doing? The date rule kept "pick up
+the dry cleaning" off the brief permanently while admitting any app that
+happened to mention a time. Default `true`, because posting to someone's
+brief **is** the assertion that it needs them — so you need do nothing. Send
+`false` only for something you are relaying: an obligation you inferred from
+a notification, say. Those reach the agenda only with a declared date.
 
 **`state` — only ever demotes.** `done` and `cancelled` take an item off the
 agenda. `open` does **not** rescue an item whose own title begins

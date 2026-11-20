@@ -6,27 +6,42 @@ package com.adabala.medha.notify
  * THE RULE
  *
  * An item belongs in the brief if ignoring it TODAY has a consequence.
- * Operationally that is four conditions, all required:
+ * Operationally: two disqualifiers, then either of two ways in.
  *
- *   1. it has a time,
- *   2. the time was DECLARED rather than guessed out of prose,
- *   3. the client has not said the obligation is settled, and
- *   4. its own words do not announce a cancellation.
+ * Disqualified outright, whatever else is true:
+ *
+ *   - the client has said it is settled (done, cancelled), or
+ *   - its own words announce a cancellation.
+ *
+ * Otherwise it reaches the agenda if EITHER:
+ *
+ *   - a person committed to it ([BriefPolicy.Item.committed]), or
+ *   - it carries a time that was DECLARED rather than guessed out of
+ *     prose.
  *
  * Everything else is an open item — real, worth keeping, worth finding,
  * but not something a two-second glance at a home screen has to carry.
  *
- * Conditions 2 and 4 were added after the first version shipped with only
- * condition 1, which was not enough and failed in the most damaging
- * direction. See [BriefPolicy.Item.dueInferred] and [isCancellation]: on
- * one real evening the agenda held five rows, of which three were emails
- * that merely mentioned a time, one was a MEETING CANCELLATION drawn at
- * the cancelled meeting's hour, and one was a genuine obligation.
+ * HOW THE RULE GOT HERE, BECAUSE IT HAS BEEN WRONG TWICE
  *
- * Condition 3 is the v0.20.0 protocol letting a client say what it knows
- * instead of leaving Medha to read it off a subject line. Condition 4 is
- * that same judgement made badly, kept as the fallback for every client
- * that cannot make it. Both only demote — see [BriefPolicy.Item.state].
+ * v0.19.1 required only a time. On one real evening the agenda held five
+ * rows: three were emails that merely mentioned a time, one was a MEETING
+ * CANCELLATION drawn at the cancelled meeting's hour, and one was a
+ * genuine obligation. The guessed-date and cancellation conditions came
+ * from that.
+ *
+ * v0.19.2 therefore required a time, declared. That was wrong in the
+ * other direction, and it took a one-line report to see it: "pick up the
+ * dry cleaning" has no date, never will, and is exactly what the brief is
+ * for. The date rule kept it off the home screen permanently.
+ *
+ * So "dated" was never the real test. It was standing in for a question
+ * it could not answer: did a PERSON decide this needs doing? The 17
+ * undated items that started all this — a shopping list, a webinar
+ * invitation, "Thanq thanq" — were not junk because they lacked dates.
+ * They were junk because an app had mentioned them and nobody had
+ * committed to them. [BriefPolicy.Item.committed] asks that directly, and
+ * the date rule stays as the fallback for everything nobody vouched for.
  *
  * WHY A RULE AT ALL
  *
@@ -93,11 +108,11 @@ object BriefTriage {
      * own words do not announce a cancellation.
      */
     fun laneOf(item: BriefPolicy.Item): Lane = lane(
-        item.dueAt, item.dueInferred, item.settled, item.title, item.text
+        item.dueAt, item.dueInferred, item.settled, item.committed, item.title, item.text
     )
 
     fun laneOf(row: BriefPolicy.Row): Lane = lane(
-        row.dueAt, row.dueInferred, row.settled, row.title, row.text
+        row.dueAt, row.dueInferred, row.settled, row.committed, row.title, row.text
     )
 
     /**
@@ -118,14 +133,30 @@ object BriefTriage {
         dueAt: Long?,
         inferred: Boolean,
         settled: Boolean,
+        committed: Boolean,
         title: String,
         text: String
-    ): Lane =
-        if (dueAt != null && !inferred && !settled && !isCancellation(title, text)) {
-            Lane.AGENDA
-        } else {
-            Lane.OPEN
-        }
+    ): Lane {
+        // Two disqualifiers, checked first because nothing overrides them.
+        // A settled obligation has stopped existing; a title that announces
+        // a cancellation is the fallback for clients that cannot say so.
+        if (settled || isCancellation(title, text)) return Lane.OPEN
+
+        // Then the two ways in. EITHER is enough, and that is the change:
+        // the rule used to require a date, which kept "pick up the dry
+        // cleaning" off the home screen forever while letting any app that
+        // mentioned a time onto it.
+        //
+        //   - committed: a person decided this needs doing. A date is not
+        //     what makes it matter, and most of a person's real list has
+        //     no date at all.
+        //   - dated AND declared: nobody committed to it here, so it needs
+        //     the one objective signal instead — and the date has to have
+        //     been DECLARED, not scraped out of prose, or v0.19.1 happens
+        //     again.
+        val dated = dueAt != null && !inferred
+        return if (committed || dated) Lane.AGENDA else Lane.OPEN
+    }
 
     /**
      * The sections restricted to one lane, dropping any left with no items.

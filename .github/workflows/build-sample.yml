@@ -74,8 +74,22 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
+      # Same retry as build-apk.yml, for the same reason: a Gradle dependency
+      # cache holding a partial download or a cached "not found" replays on
+      # every run, and the log shows a dependency path with no cause beneath
+      # it. --refresh-dependencies ignores cached metadata and cached misses
+      # and goes back to the network, so a poisoned cache or a momentary
+      # repository outage becomes a slower build rather than a red one.
+      #
+      # This file was the second instance of the gap, found by
+      # tools/check_workflows.py rather than by another broken build.
       - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon
+        run: |
+          if ./gradlew assembleDebug --no-daemon; then
+            exit 0
+          fi
+          echo "::warning::Gradle failed; retrying once with --refresh-dependencies in case the dependency cache is stale or a repository blipped."
+          ./gradlew assembleDebug --no-daemon --refresh-dependencies --info
 
       - name: Stage APK
         run: |

@@ -124,6 +124,46 @@ def main():
             else:
                 ok(f"{rel} Gradle tasks are flavour-free")
 
+        # ------------------------------- the dependency-resolution retry
+        #
+        # v0.20.0's first CI run died configuring the root project because
+        # AGP's own plugin classpath could not resolve apkzlib, four levels
+        # down from com.android.application. Nothing in the repo had changed:
+        # build.gradle.kts, settings.gradle.kts and the wrapper were
+        # byte-identical to the previous green build, and every checker and
+        # the whole pure-Kotlin harness had already passed in the same job.
+        #
+        # `cache-read-only` is true on every branch but main, so a Gradle
+        # dependency cache holding a partial download or a cached "not found"
+        # replays on every feature-branch run and cannot be cleared by
+        # re-running. The retry with --refresh-dependencies is what turns
+        # that into a slow build instead of a red one.
+        #
+        # Guarded here because it looks like belt-and-braces and reads like
+        # something to simplify away. It is neither: without it the build has
+        # no way to recover from a cache it is not allowed to write to.
+        # Matched against the `run:` lines that invoke assembleDebug, NOT
+        # against the whole file: the explanatory comment above the step
+        # contains the flag too, so a file-wide search passes on a workflow
+        # whose build command has lost the retry entirely. The first version
+        # of this check did exactly that, and a probe that deleted the flag
+        # from the command still came back green.
+        runs = "\n".join(
+            line for line in text.splitlines()
+            if "gradlew" in line and "assembleDebug" in line
+        )
+        if "assembleDebug" in text:
+            checks += 1
+            if "--refresh-dependencies" in runs:
+                ok(f"{rel} retries a failed build once with --refresh-dependencies")
+            else:
+                fail(
+                    f"{rel} builds without a --refresh-dependencies retry. A stale "
+                    f"or poisoned Gradle cache -- which cache-read-only makes "
+                    f"unfixable on a feature branch -- then fails every run with a "
+                    f"dependency path and no cause. See the comment on the build step."
+                )
+
     # ------------------------------------------------ main build reachability
     #
     # The Medha APK workflow has to run on every branch. It was once

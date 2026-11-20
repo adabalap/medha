@@ -137,7 +137,13 @@ object BriefJson {
                 // whether a row reaches the home screen, so it is checked
                 // against the vocabulary at every boundary rather than
                 // trusted because it was checked once.
-                state = BriefPolicy.stateOrNull(o.optString("state", "").ifBlank { null })
+                state = BriefPolicy.stateOrNull(o.optString("state", "").ifBlank { null }),
+                // Absent means TRUE, which is what every brief written
+                // before v0.20.0 means: those were all client-posted, and a
+                // client posting to your brief is asserting it needs you.
+                // Only the listener writes false, and it rewrites its own
+                // section on the next notification.
+                committed = o.optBoolean("committed", true)
             )
         }
         return out
@@ -157,6 +163,10 @@ object BriefJson {
                 if (i.dueInferred) o.put("dueInferred", true)
                 if (i.id != null) o.put("id", i.id)
                 if (i.state != null) o.put("state", i.state)
+                // Written only when false, so the common case adds no bytes
+                // and an older reader that ignores the key still gets the
+                // right answer for everything a client posted.
+                if (!i.committed) o.put("committed", false)
                 items.put(o)
             }
             arr.put(

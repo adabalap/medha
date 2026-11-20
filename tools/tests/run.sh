@@ -106,6 +106,19 @@ kotlinc stubs/org/json/Stubs.kt "$SRC/notify/BriefPolicy.kt" \
 java -jar "$WORK/intake.jar"
 
 echo
+echo "== BriefResolveTest =="
+# The same obligation arriving twice, from two apps that cannot see each
+# other. The checks that matter are the ones asserting what must NOT be
+# collapsed -- a recurring meeting's future instances, two bills from one
+# merchant, a one-word title -- and the permutation property: three
+# obligations must resolve the same way whatever order the sections arrive
+# in. The first implementation did not, and returned two rows for three
+# orderings and one row for the other three.
+kotlinc "$SRC/notify/BriefPolicy.kt" "$SRC/notify/BriefResolve.kt" \
+  BriefResolveTest.kt -include-runtime -d "$WORK/resolve.jar"
+java -jar "$WORK/resolve.jar"
+
+echo
 echo "== BriefClockTest =="
 # When the widget next has to be redrawn. updatePeriodMillis is 0 and there
 # was no alarm, so the widget's urgency was frozen at whatever the last

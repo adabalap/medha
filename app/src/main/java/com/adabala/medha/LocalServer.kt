@@ -286,7 +286,22 @@ data class Obligation(
      * is not something to do speculatively. The response reports how many
      * survived, so a client can see what happened rather than assume.
      */
-    val links: List<String> = emptyList()
+    val links: List<String> = emptyList(),
+    /**
+     * Whether a person committed to this, or an app merely mentioned it.
+     *
+     * Defaults true, because posting to someone's brief IS the assertion
+     * that it needs them. Send `false` for anything you are relaying rather
+     * than vouching for — an obligation you inferred from a notification,
+     * say — and it will reach the home screen only if it also carries a
+     * declared date.
+     *
+     * This is now the primary test for the agenda, replacing "has a date".
+     * The date rule kept "pick up the dry cleaning" off the home screen
+     * forever while admitting any app that happened to mention a time. See
+     * [com.adabala.medha.notify.BriefTriage].
+     */
+    val committed: Boolean = true
 )
 
 @Serializable
@@ -1800,7 +1815,8 @@ class LocalServer(
                                 // own registration, which Medha controls.
                                 dueInferred = BriefPolicy.inferredFrom(o.due?.provenance),
                                 id = BriefIntake.idOrNull(o.id),
-                                state = BriefPolicy.stateOrNull(o.state)
+                                state = BriefPolicy.stateOrNull(o.state),
+                                committed = o.committed
                             )
                         }
                     } else {
@@ -1913,6 +1929,10 @@ class LocalServer(
                                                     BriefTriage.laneOf(i).name.lowercase()
                                                 )
                                                 if (i.dueInferred) put("dueInferred", true)
+                                                // Echoed only when false, to
+                                                // match the wire default and
+                                                // keep the common reply small.
+                                                if (!i.committed) put("committed", false)
                                                 // What Medha DERIVED, so a
                                                 // client can see the band it
                                                 // will be drawn in without

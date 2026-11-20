@@ -12,6 +12,13 @@
         Authorization: Bearer &lt;token&gt;. The bundled demo page gets it automatically.</string>
     <string name="token_pending">Token is created when you first start Medha</string>
     <string name="copy_token">Copy API token</string>
+    <!--
+      The BUTTON. The string above is a row in a setItems list, where the
+      longer wording is right; this one shares a dialog footer with Close
+      and has to fit beside it. One string served both until
+      tools/check_dialog_buttons.py pointed out the second use.
+    -->
+    <string name="copy_token_action">Copy token</string>
 
     <!-- drawer -->
     <string name="nav_header_title">Medha · మేధా</string>
@@ -128,7 +135,7 @@ Licensed under the terms in the project repository.</string>
     <string name="pair_cancel_code">Cancel code</string>
     <string name="pair_cancelled">Pairing code cancelled</string>
     <string name="pair_notifications_off">Notifications are turned off for Medha, so a paired app cannot post to the shade. Grant the notification permission first.</string>
-    <string name="pair_grant_notifications">Turn on notifications</string>
+    <string name="pair_grant_notifications">Turn on</string>
     <string name="pair_server_off">Start Medha first — a web app cannot reach the server while it is stopped.</string>
     <string name="pair_url">Server: http://127.0.0.1:%1$d</string>
 
@@ -201,7 +208,7 @@ Licensed under the terms in the project repository.</string>
     <!-- multimodal probe -->
     <string name="nav_multimodal">Multimodal support</string>
     <string name="multimodal_title">Multimodal support</string>
-    <string name="multimodal_share">Share this report</string>
+    <string name="multimodal_share">Share</string>
     <string name="multimodal_disable">Turn off</string>
     <string name="multimodal_enable">Turn on</string>
     <string name="multimodal_toggled">Multimodal %1$s — restart Medha to apply</string>
@@ -279,7 +286,7 @@ Licensed under the terms in the project repository.</string>
     <!-- diagnostics -->
     <string name="diagnostics_title">Diagnostics</string>
     <string name="diagnostics_hint">Local-only. Nothing here is sent anywhere unless you explicitly share it.</string>
-    <string name="diagnostics_export_now">Export current logs now</string>
+    <string name="diagnostics_export_now">Export now</string>
     <string name="diagnostics_share">Share</string>
     <string name="diagnostics_none">No diagnostics files yet. A crash writes one automatically; \"Export current logs now\" writes one on demand.</string>
     <string name="diagnostics_export_failed">Could not write a diagnostics file</string>
@@ -315,6 +322,13 @@ Licensed under the terms in the project repository.</string>
          ITEMS, the other half of the triage rule: real, kept in full,
          searchable, and deliberately not on the widget. -->
     <string name="band_none">OPEN ITEMS</string>
+    <!--
+      The heading over the leftovers on the full brief: things an app
+      mentioned that nobody committed to and that carry no declared time.
+      Deliberately not "Everything else": these are real and findable,
+      which is the whole reason they are kept rather than dropped.
+    -->
+    <string name="brief_open_items">Open items</string>
     <string name="band_count">%1$d</string>
     <string name="brief_from">from %1$s</string>
 
@@ -331,12 +345,22 @@ Licensed under the terms in the project repository.</string>
 
     <!-- Notification reading. -->
     <string name="notif_listen_title">Read notifications</string>
-    <string name="notif_listen_body">Your work calendar lives inside Outlook and Teams, which never sync to the phone\'s calendar — so the only way Medha can see a work meeting is the notification those apps post.\n\nAndroid has one switch for this and it covers every notification on the phone; there is no way to limit it to some apps. So Medha filters instead, on the device, and keeps nothing: notification text is never written to storage. It either becomes a brief line that expires in 8 hours, or it is discarded.\n\nAnything that looks like a passcode is dropped before anything else happens, with no exceptions. A one-time code on your home screen would defeat the point of sending it.</string>
-    <string name="notif_listen_grant">Open Android settings</string>
+    <string name="notif_listen_body">Your work calendar lives inside Outlook and Teams, which never sync to the phone\'s calendar — so the only way Medha can see a work meeting is the notification those apps post.\n\nAndroid has one switch for this and it covers every notification on the phone; there is no way to limit it to some apps. So Medha filters instead, on the device.\n\nWhat is then kept depends on one thing: whether you have given a paired app permission to read your notifications. Without that, notification text is never written to storage — it becomes a brief line that expires in 8 hours, or it is discarded. With it, Medha also keeps the text for %1$d days so that app can read it, and taking the permission away deletes what was kept.\n\nAnything that looks like a passcode is dropped before anything else happens, with no exceptions. A one-time code on your home screen would defeat the point of sending it.</string>
+    <!--
+      The third status line. The two above it report the two switches; this
+      reports the CONSEQUENCE, which is the part a person actually cares
+      about and the part v0.20.0 changed. Through v0.19.2 the body said
+      flatly that notification text was never written to storage; that is
+      now true only while nothing holds the capture capability, so the
+      promise moved from the prose into a line that states which it is.
+    -->
+    <string name="notif_listen_log_off">Stored: nothing. No app has permission to read your notifications.</string>
+    <string name="notif_listen_log_on">Stored: notification text, for %1$d days. %2$d app(s) can read it; turn that off under API clients and it is deleted.</string>
+    <string name="notif_listen_grant">Settings</string>
     <string name="notif_listen_on">Medha: reading is ON</string>
     <string name="notif_listen_off">Medha: reading is OFF</string>
-    <string name="notif_listen_turn_on">Turn on in Medha</string>
-    <string name="notif_listen_turn_off">Turn off in Medha</string>
+    <string name="notif_listen_turn_on">Turn on</string>
+    <string name="notif_listen_turn_off">Turn off</string>
     <string name="notif_listen_granted">Android access: granted</string>
     <string name="notif_listen_not_granted">Android access: not granted yet</string>
 
@@ -380,6 +404,8 @@ Licensed under the terms in the project repository.</string>
     <string name="dismissed_one">Dismissed</string>
     <string name="dismissed_many">Dismissed %1$d</string>
     <string name="undismiss_all">Bring back dismissed items</string>
+    <!-- The button. The string above is the dialog title and stays a sentence. -->
+    <string name="undismiss_all_action">Bring back</string>
     <string name="undismiss_all_done">Dismissed items restored</string>
     <string name="btn_pick_model_first">Choose model file</string>
     <string name="status_no_model">No model chosen yet. Tap below to pick a .litertlm file.</string>

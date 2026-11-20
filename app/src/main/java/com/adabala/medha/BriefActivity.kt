@@ -21,6 +21,7 @@ import com.adabala.medha.notify.BriefDismiss
 import com.adabala.medha.notify.BriefIcons
 import com.adabala.medha.notify.BriefPolicy
 import com.adabala.medha.notify.BriefRender
+import com.adabala.medha.notify.BriefTriage
 import com.adabala.medha.notify.NotificationHub
 import com.google.android.material.color.DynamicColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -145,12 +146,26 @@ class BriefActivity : AppCompatActivity() {
         binding.briefEmpty.visibility = View.GONE
         binding.briefSubtitle.visibility = View.VISIBLE
 
-        // The same ordering the widget draws, from the same function, with
-        // the capacity opened up. This screen is what a widget tap opens
-        // into, so a row must not move between the two: EVERYTHING is the
-        // widget's list without the cut.
+        val offset = BriefPolicy.deviceOffset(now)
+
+        // TWO lanes, drawn differently on purpose.
+        //
+        // The agenda is what needs doing, and it stays ONE ranked list
+        // banded by urgency -- the same ordering the widget draws, from the
+        // same function, with the capacity opened up. This screen is what a
+        // widget tap opens into, so a row must not move between the two.
+        //
+        // Open items are the leftovers: things an app mentioned that nobody
+        // committed to and that carry no declared time. There the question
+        // is not "what do I do" but "what is all this", so they are bucketed
+        // by the app they came from and each bucket can be cleared in one
+        // action. Bucketing the AGENDA that way would turn it back into an
+        // inbox -- see BriefRender.byOrigin.
+        val agenda = BriefTriage.only(sections, BriefTriage.Lane.AGENDA)
+        val open = BriefTriage.only(sections, BriefTriage.Lane.OPEN)
+
         val face = BriefRender.face(
-            sections, now, BriefPolicy.deviceOffset(now), EVERYTHING
+            agenda, now, offset, EVERYTHING
         )
 
         binding.briefSubtitle.text = resources.getQuantityString(
@@ -177,6 +192,99 @@ class BriefActivity : AppCompatActivity() {
             // the attribution worth showing.
             container.addView(bandCard(lines, origins > 1, container))
         }
+
+        renderOpenItems(open, now, offset, container)
+    }
+
+    /**
+     * The leftovers, bucketed by the app that produced them.
+     *
+     * Everything here failed both ways into the agenda: nobody committed to
+     * it and it carries no declared time. That is almost always one app
+     * being noisy, which is why the buckets exist and why each one can be
+     * cleared in a single action -- the alternative is dismissing forty
+     * rows one at a time, which nobody does, so the list just grows until
+     * the screen is useless.
+     *
+     * Drawn BELOW the agenda and under its own heading, never mixed into
+     * it. The ranked list at the top is the thing this screen is for.
+     */
+    private fun renderOpenItems(
+        open: List<BriefPolicy.Section>,
+        now: Long,
+        offset: Long,
+        container: ViewGroup
+    ) {
+        if (open.isEmpty()) return
+        val lines = BriefRender.face(open, now, offset, EVERYTHING).lines
+        if (lines.isEmpty()) return
+
+        container.addView(openHeader(lines.size, container))
+        BriefRender.byOrigin(lines).forEach { (key, group) ->
+            container.addView(originHeader(key, group, container))
+            // Already under the app's own heading, so repeating it on every
+            // row is noise.
+            container.addView(bandCard(group, false, container))
+        }
+    }
+
+    private fun openHeader(count: Int, parent: ViewGroup): View =
+        layoutInflater.inflate(R.layout.item_brief_band, parent, false).apply {
+            findViewById<TextView>(R.id.bandLabel).also {
+                it.setText(R.string.brief_open_items)
+                it.setTextColor(getColor(R.color.band_later))
+            }
+            findViewById<TextView>(R.id.bandCount).text =
+                getString(R.string.band_count, count)
+            // No dismiss on this one: "clear everything nobody asked for"
+            // across every app at once is a bigger action than it looks,
+            // and the per-app buttons below say what they will take.
+            findViewById<View>(R.id.bandDismiss).visibility = View.GONE
+        }
+
+    private fun originHeader(
+        key: String,
+        group: List<BriefRender.Line>,
+        parent: ViewGroup
+    ): View = layoutInflater.inflate(R.layout.item_brief_band, parent, false).apply {
+        val shown = group.firstOrNull()?.let { originOf(it) } ?: key
+        findViewById<TextView>(R.id.bandLabel).also {
+            it.text = shown
+            it.setTextColor(getColor(R.color.band_later))
+        }
+        findViewById<TextView>(R.id.bandCount).text =
+            getString(R.string.band_count, group.size)
+        findViewById<View>(R.id.bandDismiss).setOnClickListener {
+            confirmDismissOrigin(key, shown, group.size)
+        }
+    }
+
+    /**
+     * Dismissing everything one app produced.
+     *
+     * Confirmed, like the band version and for the same reason: it removes
+     * several things at once and nothing shows what a mistake cost until
+     * the next render.
+     *
+     * Matched on BriefRender.originKey rather than the displayed name, so
+     * two apps whose labels happen to read the same are still two buckets,
+     * and a label that changes between renders cannot make the button miss.
+     */
+    private fun confirmDismissOrigin(key: String, shown: String, count: Int) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.dismiss_group_title, shown))
+            .setMessage(getString(R.string.dismiss_group_body, count))
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.dismiss) { _, _ ->
+                val keys = BriefDismiss.keysOf(hub.brief()) { section, item ->
+                    BriefTriage.laneOf(item) == BriefTriage.Lane.OPEN &&
+                        (item.source?.takeIf { it.isNotBlank() } ?: section.clientId) == key
+                }
+                hub.dismiss(keys)
+                toast(getString(R.string.dismissed_many, keys.size))
+                render()
+            }
+            .show()
     }
 
     private fun bandHeader(band: BriefPolicy.Band?, count: Int, parent: ViewGroup): View =

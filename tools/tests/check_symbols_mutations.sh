@@ -40,7 +40,12 @@ p.write_text(s[:i].rstrip("\n ") + "\n}" + s[j+2:])
 PY
 check "cross-file private call fails" 1 "toast()"
 check "and names the right file" 1 "BriefActivity.kt"
-check "and counts both call sites" 1 "2 call sites"
+# Derived, not a literal. This read `"2 call sites"` and went red the
+# moment BriefActivity grew a third toast() -- asserting a count that
+# tracks the tree rather than the behaviour under test. What matters is
+# that EVERY call site is reported, so the number comes from the file.
+CALLS=$(grep -c '^\s*toast(' "$T/app/src/main/java/com/adabala/medha/BriefActivity.kt" || true)
+check "and counts every call site" 1 "$CALLS call sites"
 cp "$SRC/app/src/main/java/com/adabala/medha/BriefActivity.kt" \
    "$T/app/src/main/java/com/adabala/medha/BriefActivity.kt"
 check "restored tree passes again" 0 "check_symbols: OK"

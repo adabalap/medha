@@ -42,6 +42,7 @@ app/src/main/java/com/adabala/medha/notify/BriefJson.kt
 app/src/main/java/com/adabala/medha/notify/BriefNudge.kt
 app/src/main/java/com/adabala/medha/notify/BriefPolicy.kt
 app/src/main/java/com/adabala/medha/notify/BriefRender.kt
+app/src/main/java/com/adabala/medha/notify/BriefResolve.kt
 app/src/main/java/com/adabala/medha/notify/BriefTheme.kt
 app/src/main/java/com/adabala/medha/notify/BriefTriage.kt
 app/src/main/java/com/adabala/medha/notify/BriefWidgets.kt
@@ -159,6 +160,7 @@ docs/PLAY-PROTECT.md
 docs/PRODUCTION-READINESS.md
 docs/PWA-API-HANDOVER.md
 docs/RELEASE-v0.20.0.md
+docs/RELEASE-v0.21.0.md
 docs/TESTING.md
 docs/icon-source.svg
 samples/INTEGRATING.md
@@ -192,6 +194,7 @@ samples/medha-brief.js
 samples/medha_brief.py
 samples/notify-pwa/README.md
 samples/notify-pwa/index.html
+tools/check_dialog_buttons.py
 tools/check_imports.py
 tools/check_ktor_api.py
 tools/check_mirrored_caps.py
@@ -218,6 +221,7 @@ tools/tests/BriefJsonTest.kt
 tools/tests/BriefNudgeTest.kt
 tools/tests/BriefPolicyTest.kt
 tools/tests/BriefRenderTest.kt
+tools/tests/BriefResolveTest.kt
 tools/tests/BriefTriageTest.kt
 tools/tests/CapturePolicyTest.kt
 tools/tests/ChatRequestParserTest.kt
