@@ -119,7 +119,52 @@ the other from Teams.
 
 ---
 
-## 4. New files
+## 4. Dialog actions are capsules now
+
+v0.20.0 stopped the dialog footer stacking by shortening its labels. That
+fixed the symptom reported — actions reading as a vertical list — but left
+them as flat Material text buttons, which was only half the ask.
+
+The confirming action is now a **tonal capsule**; Cancel, Close and the
+neutral slot stay text. Making every button a filled capsule gives equal
+weight to "Share" and "Cancel", which is the wrong emphasis on a screen that
+grants a capability.
+
+A capsule is wider than its label — Material3's tonal padding is 24dp a side
+against a text button's 12dp — so the row's budget did not grow but the
+positive button's share of it shrank. `check_dialog_buttons.py` now applies a
+tighter cap (10 characters) to any string used in the positive slot, and
+immediately caught "Rotate token" at 12. That is the third string found
+serving as both a `setItems` row and a dialog action; a list row and a
+button want different lengths and one string cannot be both.
+
+**Not verified on a device.** Nothing Android renders in this environment,
+so the shape, spacing and contrast of the new footer are reasoned about
+rather than seen. If it reads wrong, deleting the `materialAlertDialogTheme`
+line from `Theme.Medha` in `themes.xml` reverts it completely and changes
+nothing else.
+
+---
+
+## 5. The agenda's order, proved rather than claimed
+
+With chores now reaching the agenda, the obvious worry is whether they can
+bury the things that actually have a deadline.
+
+They cannot. `rows()` walks OVERDUE, then SOON, then LATER, then the undated
+band, so every dated obligation precedes every undated one however many
+chores there are. Within the undated band there is no time to sort by, so
+each client's own ranking is preserved and clients are interleaved so one
+cannot crowd out the others.
+
+`BriefTriageTest` asserts this against a realistic mix — an overdue dentist
+appointment, a 17:30 meeting, an instalment three days out, three undated
+chores and one bare notification — and checks that the first three rows, the
+ones a glance at the widget shows, are the dated ones.
+
+---
+
+## 6. New files
 
 | File | For |
 |---|---|
@@ -129,7 +174,7 @@ the other from Teams.
 
 ---
 
-## 5. Verification
+## 7. Verification
 
 ```
 tools/tests/run.sh          36 suites green, exit 0

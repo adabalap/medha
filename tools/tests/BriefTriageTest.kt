@@ -247,6 +247,52 @@ fun main() {
             (m == 0 && s == null) || (m > 0 && s != null && s.matches(Regex("""\d\d:\d\d""")))
         })
 
+    println("\nThe order the agenda reads in, now that undated items are on it")
+    // The question the committed rule raises: with chores reaching the
+    // agenda, can they bury the things that actually have a deadline?
+    //
+    // They cannot, and this is where that is proved rather than asserted.
+    // rows() walks OVERDUE, SOON, LATER, then the undated band, so every
+    // dated obligation precedes every undated one however many chores there
+    // are. Within the undated band there is no time to sort by, so each
+    // client's own ranking is preserved and the clients are interleaved.
+    val ordering = listOf(
+        BriefPolicy.Section("quicksilver", NOW, NOW + DAY, listOf(
+            item("Pick up the dry cleaning"),
+            item("Apply for the electric meter"),
+            item("Complete mess registration"),
+            item("ICICI instalment", NOW + 3 * DAY),
+            item("Dentist", NOW - 2 * DAY)
+        )),
+        BriefPolicy.Section("notifications", NOW, NOW + DAY, listOf(
+            observed("Milestone Program", IST_MIDNIGHT + 17 * HOUR + 30 * MIN),
+            observed("Thanq thanq")
+        ))
+    )
+    val agendaRows = BriefPolicy.rows(
+        BriefTriage.only(ordering, BriefTriage.Lane.AGENDA), NOW, 50, IST
+    ).map { it.title }
+    eq("overdue leads, then today, then later, then the undated chores",
+        agendaRows,
+        listOf(
+            "Dentist",                      // overdue
+            "Milestone Program",            // today 17:30
+            "ICICI instalment",             // in three days
+            "Pick up the dry cleaning",     // undated, client order
+            "Apply for the electric meter",
+            "Complete mess registration"
+        ))
+    check("every dated row precedes every undated one",
+        agendaRows.indexOf("ICICI instalment") <
+            agendaRows.indexOf("Pick up the dry cleaning"))
+    check("and the observation with no time is not on the agenda at all",
+        "Thanq thanq" !in agendaRows)
+    // The widget draws the first PAGE_ROWS of exactly this list, so what
+    // leads here is what a glance at the home screen shows.
+    eq("so the first three rows are the dated ones",
+        agendaRows.take(3),
+        listOf("Dentist", "Milestone Program", "ICICI instalment"))
+
     println("\ncommitted — the rule that replaced 'has a date', v0.20.0")
     // The report that prompted this, verbatim: "pick up the drycleaning
     // clothes" has no date, never will, and under the date rule could never

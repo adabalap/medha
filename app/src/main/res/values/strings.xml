@@ -162,6 +162,11 @@ Licensed under the terms in the project repository.</string>
     <string name="create">Create</string>
     <string name="revoke">Revoke</string>
     <string name="rotate">Rotate token</string>
+    <!-- The BUTTON: the string above is a setItems row, where the longer
+         wording is right. Third one of these, after undismiss_all and
+         copy_token; a list row and a dialog action want different lengths
+         and one string cannot be both. -->
+    <string name="rotate_action">Rotate</string>
 
     <!-- widget -->
     <!-- The widget header, in two pieces rather than one styled string.

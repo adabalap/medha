@@ -49,7 +49,13 @@ STRINGS = ROOT / "app" / "src" / "main" / "res" / "values" / "strings.xml"
 
 MAX_CHARS = 12
 
-BUTTON = re.compile(r"\.set(?:Positive|Negative|Neutral)Button\(\s*R\.string\.(\w+)")
+# The POSITIVE button is a tonal capsule (Widget.Medha.DialogButton.Tonal),
+# and a capsule is wider than its label: Material3's tonal padding is 24dp a
+# side against a text button's 12dp, so the same word costs ~24dp more. The
+# row's budget did not grow, so this one's share of it shrank.
+MAX_CHARS_POSITIVE = 10
+
+BUTTON = re.compile(r"\.set(Positive|Negative|Neutral)Button\(\s*R\.string\.(\w+)")
 LITERAL = re.compile(r"\.set(?:Positive|Negative|Neutral)Button\(\s*\"([^\"]*)\"")
 
 failures = []
@@ -77,7 +83,10 @@ def main():
         text = f.read_text(encoding="utf-8")
         rel = f.relative_to(ROOT)
         for m in BUTTON.finditer(text):
-            used.setdefault(m.group(1), set()).add(str(rel))
+            slot, name = m.group(1), m.group(2)
+            entry = used.setdefault(name, {"files": set(), "slots": set()})
+            entry["files"].add(str(rel))
+            entry["slots"].add(slot)
         for m in LITERAL.finditer(text):
             literals.append((str(rel), m.group(1)))
 
@@ -89,6 +98,12 @@ def main():
     global checks
     for name in sorted(used):
         checks += 1
+        # A string used in several dialogs takes the tightest cap that
+        # applies to it. `close` sits in the negative slot almost
+        # everywhere and in the positive slot once; the capsule is the one
+        # that has to fit.
+        positive = "Positive" in used[name]["slots"]
+        cap = MAX_CHARS_POSITIVE if positive else MAX_CHARS
         label = values.get(name)
         if label is None:
             fail(f"R.string.{name} is used as a dialog button but is not in strings.xml")
@@ -100,14 +115,15 @@ def main():
         if "%" in label:
             print(f"  ??    {name} is formatted at runtime; length not checkable here")
             continue
-        if len(label) > MAX_CHARS:
+        if len(label) > cap:
+            where = "positive (a tonal capsule, so wider)" if positive else "text button"
             fail(
-                f"{name} = {label!r} is {len(label)} characters (max {MAX_CHARS}). "
-                f"Material will stack the button row instead of laying it out "
-                f"horizontally. Used in: {', '.join(sorted(used[name]))}"
+                f"{name} = {label!r} is {len(label)} characters (max {cap} for a "
+                f"{where}). Material will stack the button row instead of laying "
+                f"it out horizontally. Used in: {', '.join(sorted(used[name]['files']))}"
             )
         else:
-            print(f"  ok    {len(label):2} {name}")
+            print(f"  ok    {len(label):2} {name}{'  (capsule)' if positive else ''}")
 
     for rel, lit in literals:
         checks += 1

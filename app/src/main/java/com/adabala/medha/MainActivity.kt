@@ -752,7 +752,7 @@ class MainActivity : AppCompatActivity() {
             .setTitle(getString(R.string.rotate_title, client.id))
             .setMessage(R.string.rotate_body)
             .setNegativeButton(R.string.cancel, null)
-            .setPositiveButton(R.string.rotate) { _, _ ->
+            .setPositiveButton(R.string.rotate_action) { _, _ ->
                 val fresh = registry.rotate(client.id)
                 if (fresh == null) {
                     toast(getString(R.string.caps_failed))
