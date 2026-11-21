@@ -25,3 +25,7 @@ tools/tests/package-lock.json
 samples/*/build/
 samples/*/app/build/
 samples/*/dist/
+
+# Bytecode from running tools/check_*.py and the Python test helpers locally.
+__pycache__/
+*.pyc
