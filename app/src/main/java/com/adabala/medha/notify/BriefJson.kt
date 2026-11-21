@@ -143,7 +143,10 @@ object BriefJson {
                 // client posting to your brief is asserting it needs you.
                 // Only the listener writes false, and it rewrites its own
                 // section on the next notification.
-                committed = o.optBoolean("committed", true)
+                committed = o.optBoolean("committed", true),
+                // v0.23.0. Absent before it, and from v1 clients and the
+                // listener, all of which leave the mark on the post time.
+                since = o.optLong("since", 0L).takeIf { it > 0L }
             )
         }
         return out
@@ -167,6 +170,7 @@ object BriefJson {
                 // and an older reader that ignores the key still gets the
                 // right answer for everything a client posted.
                 if (!i.committed) o.put("committed", false)
+                if (i.since != null) o.put("since", i.since)
                 items.put(o)
             }
             arr.put(

@@ -65,6 +65,27 @@ object BriefIntake {
      */
     fun dueAtOrNull(at: Long?): Long? = at?.takeIf { it > 0L }
 
+    /** How far ahead of Medha's clock a `since` may be before it is refused. */
+    const val SINCE_SKEW_MS = 5 * 60 * 1000L
+
+    /**
+     * When an obligation began, if the client's value can be believed.
+     *
+     * The brief's right-hand mark on an undated row used to be the age of the
+     * SECTION — when the client last posted — which is one value for every
+     * row it sends. A real brief showed "40m" on thirteen rows in a column,
+     * a forty-eight-day-old task among them. `since` lets the mark say how
+     * long the thing has been waiting, which is the only age a person reads.
+     *
+     * Refused when it is not positive (as [dueAtOrNull], 0 is "no value" far
+     * more often than it is 1970) and when it is in the future beyond a few
+     * minutes of clock skew: a task cannot have been waiting for a negative
+     * time, and drawing "just now" for something that has not begun would
+     * be quietly wrong.
+     */
+    fun sinceOrNull(at: Long?, now: Long): Long? =
+        at?.takeIf { it > 0L && it <= now + SINCE_SKEW_MS }
+
     /**
      * The result of choosing a tap target from the v2 `links` array.
      *

@@ -140,6 +140,18 @@ fun main() {
         BriefIntake.tooLong("t".repeat(81), "x".repeat(201), 80, 200), "title")
     eq("empty strings fit any cap", BriefIntake.tooLong("", "", 80, 200), null)
 
+    println("\nsinceOrNull — when an obligation began, if believable")
+    val now = 1_700_000_000_000L
+    eq("a past instant is kept", BriefIntake.sinceOrNull(now - 48L * 86_400_000L, now), now - 48L * 86_400_000L)
+    eq("absent stays absent", BriefIntake.sinceOrNull(null, now), null)
+    eq("zero means no value, not 1970", BriefIntake.sinceOrNull(0L, now), null)
+    eq("negative is refused", BriefIntake.sinceOrNull(-5L, now), null)
+    eq("a little clock skew is tolerated", BriefIntake.sinceOrNull(now + 60_000L, now), now + 60_000L)
+    eq("exactly at the skew limit is tolerated",
+        BriefIntake.sinceOrNull(now + BriefIntake.SINCE_SKEW_MS, now), now + BriefIntake.SINCE_SKEW_MS)
+    eq("beyond it, a future start is refused",
+        BriefIntake.sinceOrNull(now + BriefIntake.SINCE_SKEW_MS + 1, now), null)
+
     println("\n" + "-".repeat(50))
     if (failures == 0) println("BriefIntakeTest: all $checks checks passed")
     else { println("BriefIntakeTest: $failures of $checks FAILED"); kotlin.system.exitProcess(1) }

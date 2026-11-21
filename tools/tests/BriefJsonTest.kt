@@ -356,6 +356,16 @@ fun main() {
     check("the item itself is still kept -- a bad field is not a lost row",
         t2.title == "X")
 
+    println("\nsince — stored only when present")
+    val withSince = listOf(BriefPolicy.Section("qs", NOW, NOW + 3_600_000L, listOf(
+        BriefPolicy.Item("Apply for the meter", "x", since = NOW - 48L * 86_400_000L),
+        BriefPolicy.Item("Groceries", "y"))))
+    val enc = BriefJson.encode(withSince)
+    val back2 = BriefJson.parse(enc, NOW).first().items
+    eq("since survives a round trip", back2[0].since, NOW - 48L * 86_400_000L)
+    eq("an item without it reads back without it", back2[1].since, null)
+    check("and costs no bytes when absent", enc.split("\"since\"").size == 2)
+
     println("\n--------------------------------------------------")
     if (failures == 0) {
         println("BriefJsonTest: all $checks checks passed")

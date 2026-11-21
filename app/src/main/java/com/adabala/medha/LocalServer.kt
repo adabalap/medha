@@ -302,7 +302,17 @@ data class Obligation(
      * forever while admitting any app that happened to mention a time. See
      * [com.adabala.medha.notify.BriefTriage].
      */
-    val committed: Boolean = true
+    val committed: Boolean = true,
+    /**
+     * When this obligation began, epoch milliseconds: a task's creation, the
+     * first nudge of a follow-up. Optional.
+     *
+     * An undated row's right-hand mark shows how long it has been waiting
+     * when this is sent, and how long since your last post when it is not —
+     * which is the same for every row you send, and so says nothing. A value
+     * more than a few minutes in the future is ignored.
+     */
+    val since: Long? = null
 )
 
 @Serializable
@@ -1817,7 +1827,8 @@ class LocalServer(
                                 dueInferred = BriefPolicy.inferredFrom(o.due?.provenance),
                                 id = BriefIntake.idOrNull(o.id),
                                 state = BriefPolicy.stateOrNull(o.state),
-                                committed = o.committed
+                                committed = o.committed,
+                                since = BriefIntake.sinceOrNull(o.since, System.currentTimeMillis())
                             )
                         }
                     } else {

@@ -197,7 +197,15 @@ object BriefPolicy {
          * It cannot promote something settled or cancelled, and it does
          * not make a guessed date trustworthy — see [BriefTriage].
          */
-        val committed: Boolean = true
+        val committed: Boolean = true,
+        /**
+         * When this obligation began, if the client said: a task's creation,
+         * a follow-up's first nudge. Drives the age shown on an undated row,
+         * which otherwise could only be the age of the client's last post.
+         * Null for everything Medha read off the shade, whose own post time
+         * is already the right answer.
+         */
+        val since: Long? = null
      ) {
         /** True when the client has said this obligation no longer stands. */
         val settled: Boolean get() = state == STATE_DONE || state == STATE_CANCELLED
@@ -229,7 +237,9 @@ object BriefPolicy {
         /** [Item.state]: what the client says about whether it still stands. */
         val state: String? = null,
         /** [Item.committed]: a person committed to this; an app did not. */
-        val committed: Boolean = true
+        val committed: Boolean = true,
+        /** [Item.since]: when the obligation began, if the client said. */
+        val since: Long? = null
     ) {
         /** True when the client has said this obligation no longer stands. */
         val settled: Boolean get() = state == STATE_DONE || state == STATE_CANCELLED
@@ -557,7 +567,8 @@ object BriefPolicy {
         dueInferred = item.dueInferred,
         id = item.id,
         state = item.state,
-        committed = item.committed
+        committed = item.committed,
+        since = item.since
     )
 
     /**

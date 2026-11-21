@@ -187,6 +187,19 @@ fun main() {
     eq("and originKey agrees with the grouping",
         BriefRender.originKey(mixed.first()), "WhatsApp")
 
+    println("\nthe mark on an undated row is how long it has waited")
+    // One post time for every row a client sends; the brief drew "40m" on
+    // thirteen rows, a 48-day-old task among them.
+    fun row(since: Long?, dueAt: Long? = null) = BriefPolicy.Row(
+        title = "Apply for Sriram Nagar 3rd Electric Meter", text = "x", clientId = "quicksilver",
+        updatedAt = T - 40 * 60_000L, dueAt = dueAt, since = since)
+    eq("with since, the mark is the task's age", BriefRender.line(row(T - 48 * DAY), T, 0L).mark, "48d")
+    eq("without it, the post time as before", BriefRender.line(row(null), T, 0L).mark, "40m")
+    check("a dated row still shows its date, not an age",
+        BriefRender.line(row(T - 48 * DAY, T + 2 * DAY), T, 0L).mark != "48d")
+    eq("postedAt for Save is still the post time, not since",
+        BriefRender.line(row(T - 48 * DAY), T, 0L).postedAt, T - 40 * 60_000L)
+
     println("\n--------------------------------------------------")
     if (failures == 0) {
         println("BriefRenderTest: all $checks checks passed")

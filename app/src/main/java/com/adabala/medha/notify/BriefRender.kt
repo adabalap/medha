@@ -195,7 +195,11 @@ object BriefRender {
         // shows anyway. The guess is kept in the data for later use.
         mark = (if (row.dueInferred) null else BriefPolicy.clockAt(row.dueAt, now, offsetMs))
             ?: (if (row.dueInferred) null else BriefPolicy.relative(row.dueAt, now, offsetMs))
-            ?: BriefPolicy.age(row.updatedAt, now),
+            // How long it has been WAITING when the client said, not how
+            // long since the client last posted: the latter is one value
+            // for every row a client sends, and drew "40m" down a column
+            // that held a 48-day-old task.
+            ?: BriefPolicy.age(row.since ?: row.updatedAt, now),
         band = BriefPolicy.bandOf(row.dueAt, now, offsetMs),
         dueAt = row.dueAt,
         kind = row.kind,
