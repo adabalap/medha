@@ -394,6 +394,38 @@ def scan(root):
             line = code[: m.start()].count("\n") + 1
             problems.append((f, line, name))
 
+    # One property read IS checked, and only one: a bare `TAG`.
+    #
+    # Everything above checks calls, and skips capitalised names on purpose;
+    # a general check of property reads drowns in false positives. But TAG is
+    # the exception that makes a narrow rule safe. It is the log tag, every
+    # class declares its own, and none is ever shared -- so a file that reads
+    # a bare `TAG` must declare one itself, full stop. `Foo.TAG` is a
+    # qualified read and is left alone.
+    #
+    # It is here because nothing else catches it. A missing TAG is not a
+    # call, so the loop above never sees it; it is not a type, so
+    # check_imports never sees it either. It surfaced writing Save in
+    # BriefActivity: three missing imports were caught, the TAG was not, and
+    # the only thing standing between it and a red CI build was reading the
+    # diff by eye. A public `const val TAG` in AccessRequestActivity's
+    # companion made it worse, not better -- a module-wide "is it declared
+    # anywhere?" would have said yes.
+    tag_problems = []
+    for f, src in sources.items():
+        code = strip_literals(src)
+        if re.search(r"(?<![\w.$])TAG\b", code) and not re.search(r"\bval\s+TAG\b", code):
+            line = code[: re.search(r"(?<![\w.$])TAG\b", code).start()].count("\n") + 1
+            tag_problems.append((f, line))
+    if tag_problems:
+        print("A bare TAG is read in a file that does not declare one:\n")
+        for f, line in tag_problems:
+            print(f"  {f}:{line}  TAG")
+        print("\nEach class keeps its own log tag. Add `private const val TAG = \"...\"`\n"
+              "to this file's companion object; another file's TAG is not visible here.\n")
+        # Not an early return: a TAG problem must not hide a call problem in
+        # the same run, which would cost a second round trip to find.
+
     if problems:
         seen = set()
         print("Symbols called but never declared in this module:\n")
@@ -407,6 +439,8 @@ def scan(root):
                   f"{'s' if count > 1 else ''})")
         print("\nEither the declaration was deleted, or it is an external API this "
               "checker does not know about — add it to BUILTIN if so.")
+        return 1
+    if tag_problems:
         return 1
 
     print(f"check_symbols: OK ({len(files)} files, {len(declared)} declarations)")

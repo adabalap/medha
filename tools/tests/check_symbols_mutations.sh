@@ -44,7 +44,14 @@ check "and names the right file" 1 "BriefActivity.kt"
 # moment BriefActivity grew a third toast() -- asserting a count that
 # tracks the tree rather than the behaviour under test. What matters is
 # that EVERY call site is reported, so the number comes from the file.
-CALLS=$(grep -c '^\s*toast(' "$T/app/src/main/java/com/adabala/medha/BriefActivity.kt" || true)
+# And derived by the SAME rule the checker applies, not an approximation
+# of it. This was `grep -c '^\s*toast('` -- calls at the start of a line --
+# which matched the checker only while every call happened to be one. Save
+# added `?: return toast(...)`, the checker counted five, the grep counted
+# four, and a correct checker went red. The checker's CALL regex accepts a
+# bare call anywhere not preceded by a word character, `.`, `$` or `::`.
+CALLS=$(grep -oE '(^|[^[:alnum:]_.$:])toast[[:space:]]*\(' \
+  "$T/app/src/main/java/com/adabala/medha/BriefActivity.kt" | wc -l | tr -d ' ')
 check "and counts every call site" 1 "$CALLS call sites"
 cp "$SRC/app/src/main/java/com/adabala/medha/BriefActivity.kt" \
    "$T/app/src/main/java/com/adabala/medha/BriefActivity.kt"
@@ -241,6 +248,67 @@ else
   echo "FAIL  the launch collision no longer exists; EXPECTED_COLLISIONS is stale"
   fail=$((fail+1))
 fi
+
+echo "== 11. a bare TAG must be declared in the file that reads it =="
+# The one property read this checker looks at. A missing TAG is neither a
+# call nor a type, so neither the loop above nor check_imports would see it,
+# and AccessRequestActivity's public companion TAG means a module-wide
+# "declared somewhere?" would wrongly say yes.
+clean
+cat > "$P/Logs.kt" <<'K'
+package com.adabala.medha.probe
+class ZzLogs {
+    fun go(): String {
+        return TAG
+    }
+}
+K
+check "a bare TAG with no declaration fails" 1 "Logs.kt"
+check "and names TAG" 1 "TAG"
+clean
+cat > "$P/Logs.kt" <<'K'
+package com.adabala.medha.probe
+class ZzLogs {
+    fun go(): String {
+        return TAG
+    }
+    private companion object {
+        const val TAG = "ZzLogs"
+    }
+}
+K
+check "a file that declares its own TAG passes" 0 "check_symbols: OK"
+clean
+cat > "$P/Logs.kt" <<'K'
+package com.adabala.medha.probe
+class ZzLogs {
+    fun go(): String {
+        return AccessRequestActivity.TAG
+    }
+}
+K
+check "a qualified Other.TAG is a different thing and passes" 0 "check_symbols: OK"
+clean
+cat > "$P/Logs.kt" <<'K'
+package com.adabala.medha.probe
+class ZzLogs {
+    // TAG is mentioned here only in a comment
+    fun go(): String = "the TAG in a string is not a read"
+}
+K
+check "TAG inside a comment or string is not a read" 0 "check_symbols: OK"
+clean
+cat > "$P/Logs.kt" <<'K'
+package com.adabala.medha.probe
+class ZzLogs {
+    fun go(): String {
+        return TAG
+    }
+}
+fun zzOther(): Int = zzMissing()
+K
+check "a TAG problem does not hide a call problem in the same run" 1 "zzMissing()"
+clean; rmdir "$P"
 
 echo
 echo "mutation: $pass passed, $fail failed"

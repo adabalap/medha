@@ -11,6 +11,7 @@ import com.adabala.medha.net.RateLimiter
 import com.adabala.medha.net.WebOrigin
 import com.adabala.medha.connect.CapturePolicy
 import com.adabala.medha.connect.MedhaNotificationListener
+import com.adabala.medha.connect.SavePolicy
 import com.adabala.medha.notify.BriefJson
 import com.adabala.medha.audio.Wav
 import com.adabala.medha.oai.ChatRequestParser
@@ -2031,6 +2032,77 @@ class LocalServer(
                         put("listening", MedhaNotificationListener.isEnabled(appContext))
                         put("retainDays", CapturePolicy.RETAIN_DAYS)
                         put("maxRows", CapturePolicy.MAX_ROWS)
+                    })
+                }
+
+                // ------------------------------- saved ------------------------------
+                //
+                // Things a person pressed Save on in the brief, waiting for
+                // Quicksilver to turn them into whatever they choose there.
+                //
+                // Same capability as /captures, for the reason that one
+                // exists: this is notification text, and CAPTURES is the
+                // grant that governs who reads notification text. A save is
+                // a strict subset of what that client could already see, so
+                // this widens nothing, and the agent already holds it -- no
+                // new grant for the person to understand.
+                //
+                // VERBATIM. Nothing here strips, re-titles or splits. The
+                // decision about what this becomes is made in Quicksilver by
+                // a person, and a decision made on a rewritten copy is made
+                // on evidence somebody already edited.
+                //
+                // Delivery is at-least-once: rows stay until POST /saved/ack.
+                // The consumer keys its insert on `fp`, so a crash between
+                // "made the note" and "acked" re-reads the row and lands on
+                // the note it already made.
+                get("/saved") {
+                    call.requireCap(ClientRegistry.Cap.CAPTURES) ?: return@get
+                    val q = call.request.queryParameters
+                    val since = SavePolicy.cursor(q["since"]?.toLongOrNull())
+                    val limit = SavePolicy.pageSize(q["limit"]?.toIntOrNull())
+                    val rows = db.savesSince(since, limit)
+                    val head = db.savesHead()
+                    call.respondJson(buildJsonObject {
+                        putJsonArray("items") {
+                            rows.forEach { r ->
+                                addJsonObject {
+                                    put("id", r.id)
+                                    put("saved_at", r.at)
+                                    put("posted_at", r.postedAt)
+                                    put("origin", r.origin)
+                                    put("title", r.title)
+                                    put("text", r.text)
+                                    put("truncated", r.truncated)
+                                    // Recomputed rather than stored-and-read so
+                                    // the consumer gets exactly the key the
+                                    // UNIQUE index was built on.
+                                    put("fp", SavePolicy.fingerprint(r.origin, r.title, r.text, r.postedAt))
+                                }
+                            }
+                        }
+                        val lastId = rows.lastOrNull()?.id
+                        put("cursor", SavePolicy.nextCursor(lastId, head))
+                        put("more", SavePolicy.hasMore(rows.size, limit, lastId, head))
+                        put("head", head)
+                        put("retainDays", SavePolicy.RETAIN_DAYS)
+                    })
+                }
+
+                // Acknowledges every save up to and including `through`.
+                // A query parameter rather than a JSON body: there is one
+                // number to send and nothing to gain from a parser in a file
+                // the harness cannot compile.
+                post("/saved/ack") {
+                    call.requireCap(ClientRegistry.Cap.CAPTURES) ?: return@post
+                    val through = call.request.queryParameters["through"]?.toLongOrNull()
+                    if (through == null || through < 0) {
+                        return@post call.badRequest("'through' must be a non-negative row id")
+                    }
+                    val dropped = db.savesAck(through)
+                    call.respondJson(buildJsonObject {
+                        put("acked", dropped)
+                        put("pending", db.savesPending())
                     })
                 }
 

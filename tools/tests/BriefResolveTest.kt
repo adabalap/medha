@@ -165,24 +165,69 @@ fun main() {
         titles(out).containsAll(listOf("Pick up the dry cleaning", "Lucid")))
     eq("and it says how many went", BriefResolve.duplicateCount(both, IST), 1)
 
-    // A client repeating itself is that client's business: two bills from one
-    // merchant are two bills, and Medha editing what one client said about
-    // itself is a different and worse power than noticing an overlap.
-    println("\ndedupe leaves a section's own repeats alone")
-    // TWO sections, because dedupe returns a one-section brief untouched
-    // before the same-section guard is ever consulted -- the first version
-    // of this fixture had one section, so removing the guard left the suite
-    // green while Medha started editing what a client said about itself.
-    val repeats = listOf(
-        section("quicksilver",
-            committed("Electricity bill", NOW + DAY),
-            committed("Electricity bill", NOW + DAY)),
-        section("notifications", observed("Lucid screen recorder"))
-    )
-    eq("both survive", BriefResolve.dedupe(repeats, IST).sumOf { it.items.size }, 3)
-    eq("and they are still in their own section",
-        BriefResolve.dedupe(repeats, IST)
-            .first { it.clientId == "quicksilver" }.items.size, 2)
+    // Within one client: collapsed, but only at a stricter bar. Two bills
+    // from one merchant are still two bills.
+    println("\ndedupe within one app — the brief that showed each task three times")
+    // ONE section, deliberately. dedupe used to return a one-section brief
+    // before looking at a single item, and one section is the common case:
+    // Quicksilver alone. These are the rows a real brief showed.
+    val oneApp = listOf(section("quicksilver",
+        committed("Pick up dry cleaner clothes", NOW + 2 * DAY),
+        committed("Stalled: Apply for Sriram Nagar 3rd Electric Meter"),
+        committed("Apply for Sriram Nagar 3rd Electric"),
+        committed("Complete mess registration"),
+        committed("Thomas Blackwell DOB"),
+        committed("Pick up dry cleaner clothes"),
+        committed("Apply for Sriram Nagar 3rd Electric Meter")))
+    val oneOut = BriefResolve.dedupe(oneApp, IST)
+    eq("seven rows for four things become four", oneOut.sumOf { it.items.size }, 4)
+    eq("dry cleaning appears once", titles(oneOut).count { "dry cleaner" in it }, 1)
+    eq("the electric meter appears once", titles(oneOut).count { "Electric" in it }, 1)
+    check("the dry cleaning that survives is the one with a day on it",
+        oneOut.flatMap { it.items }.first { "dry cleaner" in it.title }.dueAt == NOW + 2 * DAY)
+    check("unrelated rows are untouched",
+        titles(oneOut).containsAll(listOf("Complete mess registration", "Thomas Blackwell DOB")))
+    eq("and it says how many went", BriefResolve.duplicateCount(oneApp, IST), 3)
+
+    println("\n…but not at the expense of two real things")
+    // "Electricity bill" twice may be two meters. Two identifying words is
+    // under STRICT_SHARED, so these never match within one app.
+    val twoBills = listOf(section("quicksilver",
+        committed("Electricity bill", NOW + DAY), committed("Electricity bill", NOW + DAY)))
+    eq("two short titles from one app both survive",
+        BriefResolve.dedupe(twoBills, IST).sumOf { it.items.size }, 2)
+    // The tokenizer drops one-character words, so without the numbers rule
+    // these two are identical words -- and they are two meters.
+    val meters = listOf(section("quicksilver",
+        committed("Pay electricity bill for meter 1"), committed("Pay electricity bill for meter 2")))
+    eq("titles that differ only in a number both survive",
+        BriefResolve.dedupe(meters, IST).sumOf { it.items.size }, 2)
+    val days = listOf(section("quicksilver",
+        committed("Pay Sriram Nagar electricity bill", NOW + DAY),
+        committed("Pay Sriram Nagar electricity bill", NOW + 31 * DAY)))
+    eq("the same bill in two different months both survive",
+        BriefResolve.dedupe(days, IST).sumOf { it.items.size }, 2)
+    eq("numbers ignore leading zeros", BriefResolve.numbers("Flat 007, 3rd floor"), setOf("7", "3"))
+    eq("a title with no numbers has none", BriefResolve.numbers("Pick up dry cleaner clothes"), emptySet<String>())
+    // The stricter bar is a different number, not the same one renamed: a
+    // pair that clears the cross-app bar can still be refused within one app.
+    val loose = listOf(section("quicksilver",
+        committed("Renew Sriram Nagar property tax"), committed("Renew Sriram Nagar tax receipt copy")))
+    eq("a match good enough across apps is not enough within one",
+        BriefResolve.dedupe(loose, IST).sumOf { it.items.size }, 2)
+    check("…and it IS good enough across apps",
+        BriefResolve.same(committed("Renew Sriram Nagar property tax"),
+            committed("Renew Sriram Nagar tax receipt copy"), IST))
+
+    println("\nwithin one app, the outcome does not depend on order")
+    val rows = oneApp.first().items
+    val orders = listOf(rows, rows.reversed(), rows.drop(3) + rows.take(3), rows.shuffled(java.util.Random(7)))
+    check("every ordering leaves four rows",
+        orders.all { BriefResolve.dedupe(listOf(section("quicksilver", *it.toTypedArray())), IST)
+            .sumOf { s -> s.items.size } == 4 })
+    check("and the dated dry cleaning survives in every ordering",
+        orders.all { o -> BriefResolve.dedupe(listOf(section("quicksilver", *o.toTypedArray())), IST)
+            .flatMap { it.items }.first { "dry cleaner" in it.title }.dueAt == NOW + 2 * DAY })
 
     println("\ndedupe — shape and edges")
     eq("one section is returned unchanged",

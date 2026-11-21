@@ -209,6 +209,14 @@ Licensed under the terms in the project repository.</string>
     <string name="brief_item_meta">Posted by %1$s · %2$s ago</string>
     <string name="brief_item_open">Open</string>
     <string name="brief_item_open_app">Open the app</string>
+    <!-- Its own string, not R.string.save: that one means save a setting,
+         this one means hand a notification to Quicksilver, and a shared
+         resource lets one meaning be edited into the other by accident. -->
+    <string name="brief_item_save">Save</string>
+    <string name="brief_saved">Saved. Choose what it becomes in Quicksilver.</string>
+    <string name="brief_already_saved">Already saved</string>
+    <string name="brief_save_failed">Couldn\'t save that</string>
+    <string name="brief_save_nothing">Nothing here to save</string>
 
     <!-- multimodal probe -->
     <string name="nav_multimodal">Multimodal support</string>

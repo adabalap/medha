@@ -201,6 +201,18 @@ kotlinc "$SRC/connect/CapturePolicy.kt" CapturePolicyTest.kt \
 java -jar "$WORK/capture.jar"
 
 echo
+echo "== SavePolicyTest =="
+# The save outbox. Shares a shape with the capture log and not its lifetime:
+# a capture is something Medha noticed and may age out, a save is something a
+# person pressed a button for and must not. The fingerprint tests are the
+# other half -- they have to stop a double tap WITHOUT stopping the same
+# grocery list being saved again next week, which is why postedAt is in the
+# key and why the separator is a character notification text cannot contain.
+kotlinc "$SRC/connect/SavePolicy.kt" "$SRC/connect/CapturePolicy.kt" "$SRC/notify/BriefPolicy.kt" SavePolicyTest.kt \
+  -include-runtime -d "$WORK/save.jar"
+java -jar "$WORK/save.jar"
+
+echo
 echo "== BriefJsonTest =="
 # The brief's on-disk format, INCLUDING the v0.9.0 -> v0.9.1 migration. Runs
 # against the real BriefJson.kt plus stubs/org/json, which mirror Android's

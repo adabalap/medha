@@ -19,6 +19,9 @@ import com.adabala.medha.databinding.ActivityBriefBinding
 import com.adabala.medha.notify.BriefJson
 import com.adabala.medha.notify.BriefDismiss
 import com.adabala.medha.notify.BriefIcons
+import com.adabala.medha.connect.SavePolicy
+import com.adabala.medha.data.MedhaDatabase
+import com.adabala.medha.diag.Diagnostics
 import com.adabala.medha.notify.BriefPolicy
 import com.adabala.medha.notify.BriefRender
 import com.adabala.medha.notify.BriefTriage
@@ -408,10 +411,14 @@ class BriefActivity : AppCompatActivity() {
             if (link != null) append("\n").append(link)
         }
 
+        // A notification-sourced line gets Save as its primary action: it is
+        // the one thing on the brief that nothing else is keeping. Lines a
+        // client posted already live in that client, so they keep Close.
+        val saveable = SavePolicy.offersSave(line.clientId)
+
         val b = MaterialAlertDialogBuilder(this)
             .setTitle(line.title)
             .setMessage(body)
-            .setPositiveButton(R.string.close, null)
             // Not confirmed: one item is cheap to lose, the sheet showed
             // exactly what it was, and a confirmation on every single
             // dismissal is how a feature becomes one nobody uses.
@@ -428,14 +435,71 @@ class BriefActivity : AppCompatActivity() {
                 render()
             }
 
+        // Three slots, four candidate actions, so one has to give. Close is
+        // the one: back and a tap outside both close a Material dialog, which
+        // makes it the only action here with another way to do it. It keeps
+        // its slot whenever there is room.
+        //
+        //   posted by a client        Close · Dismiss · [Open]
+        //   from the shade, no link   Save  · Dismiss · Close
+        //   from the shade, link      Save  · Dismiss · Open
+        //
         // Only a paired web app has an origin Medha can offer to open.
         val origin = webOriginFor(line.clientId)
+        if (saveable) {
+            b.setPositiveButton(R.string.brief_item_save) { _, _ -> save(line) }
+        } else {
+            b.setPositiveButton(R.string.close, null)
+        }
         if (link != null) {
             b.setNeutralButton(R.string.brief_item_open) { _, _ -> launch(link) }
         } else if (origin != null) {
             b.setNeutralButton(R.string.brief_item_open_app) { _, _ -> launch(origin) }
+        } else if (saveable) {
+            b.setNeutralButton(R.string.close, null)
         }
         b.show()
+    }
+
+    /**
+     * Hands a line to the save outbox, exactly as it reads.
+     *
+     * Verbatim by design: what this becomes — a note, a checklist, a
+     * reminder — is decided in Quicksilver, by a person, and a decision
+     * made on a rewritten copy is made on evidence that was already edited.
+     *
+     * Off the main thread because this can be the first thing in the app to
+     * open the database, and that first open may run the v6 migration.
+     * A plain Thread rather than a coroutine scope: the app has no
+     * lifecycle-runtime dependency, and one insert does not justify adding
+     * one.
+     */
+    private fun save(line: BriefRender.Line) {
+        val now = System.currentTimeMillis()
+        val row = SavePolicy.row(originOf(line), line.title, line.text, line.postedAt, now)
+            ?: return toast(getString(R.string.brief_save_nothing))
+        val app = applicationContext
+        Thread {
+            // -1 is "this exact save is already waiting" (the UNIQUE index
+            // refused it), which is an answer, not an error; -2 is ours for
+            // "the write itself failed".
+            val id = runCatching {
+                MedhaDatabase.get(app).saveAdd(
+                    now, row.postedAt, row.origin, row.title, row.text, row.truncated, row.fp
+                )
+            }.getOrElse { e ->
+                Diagnostics.w(TAG, "save failed: ${e.message}")
+                -2L
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                toast(getString(when {
+                    id > 0L -> R.string.brief_saved
+                    id == -1L -> R.string.brief_already_saved
+                    else -> R.string.brief_save_failed
+                }))
+            }
+        }.start()
     }
 
     /**
@@ -509,6 +573,8 @@ class BriefActivity : AppCompatActivity() {
          */
         const val EVERYTHING =
             BriefPolicy.MAX_SECTIONS * BriefPolicy.MAX_ITEMS_PER_SECTION
+
+        const val TAG = "BriefActivity"
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()

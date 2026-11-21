@@ -27,6 +27,7 @@ app/src/main/java/com/adabala/medha/connect/CapturePolicy.kt
 app/src/main/java/com/adabala/medha/connect/MedhaNotificationListener.kt
 app/src/main/java/com/adabala/medha/connect/NotificationFilter.kt
 app/src/main/java/com/adabala/medha/connect/NotificationItem.kt
+app/src/main/java/com/adabala/medha/connect/SavePolicy.kt
 app/src/main/java/com/adabala/medha/data/Entities.kt
 app/src/main/java/com/adabala/medha/data/MedhaDatabase.kt
 app/src/main/java/com/adabala/medha/diag/Diagnostics.kt
@@ -161,6 +162,7 @@ docs/PRODUCTION-READINESS.md
 docs/PWA-API-HANDOVER.md
 docs/RELEASE-v0.20.0.md
 docs/RELEASE-v0.21.0.md
+docs/RELEASE-v0.22.0.md
 docs/TESTING.md
 docs/icon-source.svg
 samples/INTEGRATING.md
@@ -234,6 +236,7 @@ tools/tests/NotificationFilterTest.kt
 tools/tests/NotificationItemTest.kt
 tools/tests/PortProbeTest.kt
 tools/tests/ResampleTest.kt
+tools/tests/SavePolicyTest.kt
 tools/tests/SchedulerConfigTest.kt
 tools/tests/TokenCapTest.kt
 tools/tests/TranscriptionRequestTest.kt

@@ -105,6 +105,46 @@ object BriefResolve {
      * the case this exists for, where the agent has the note and the phone
      * has the notification and only one of them knows when.
      */
+    /**
+     * The bar for two items from the SAME client. Higher than across clients
+     * on both counts, because here a match overrides what one app said about
+     * itself, which is a stronger thing to do than noticing two apps agree.
+     */
+    const val STRICT_OVERLAP = 0.85
+    const val STRICT_SHARED = 3
+
+    private val NUM = Regex("\\d+")
+
+    /** Every number in a title, leading zeros ignored. "3rd" gives "3". */
+    fun numbers(title: String): Set<String> =
+        NUM.findAll(title).map { it.value.trimStart('0').ifEmpty { "0" } }.toSet()
+
+    /**
+     * [same], at the stricter bar, plus one rule [same] does not need.
+     *
+     * Two titles from one app must also mention the same numbers. [tokens]
+     * drops anything under three characters, so "Pay electricity bill meter
+     * 1" and "...meter 2" reduce to identical words — and they are two
+     * meters, two bills, two things a person must do. Numbers are what tell
+     * a flat, a meter, an amount or an instalment apart, and across one
+     * client's own list they are often the ONLY thing that does.
+     *
+     * Across clients the looser [same] stands unchanged: it is tested, its
+     * outcomes are relied on, and two apps describing one event rarely agree
+     * on its numbers' formatting ("Rs 2,500" against "2500.00") anyway.
+     */
+    fun sameWithin(a: BriefPolicy.Item, b: BriefPolicy.Item, offsetMs: Long): Boolean {
+        val ta = tokens(a.title)
+        val tb = tokens(b.title)
+        if ((ta intersect tb).size < STRICT_SHARED) return false
+        if (overlap(ta, tb) < STRICT_OVERLAP) return false
+        if (numbers(a.title) != numbers(b.title)) return false
+        val da = a.dueAt
+        val db = b.dueAt
+        if (da != null && db != null) return day(da, offsetMs) == day(db, offsetMs)
+        return true
+    }
+
     fun same(a: BriefPolicy.Item, b: BriefPolicy.Item, offsetMs: Long): Boolean {
         val ta = tokens(a.title)
         val tb = tokens(b.title)
@@ -142,11 +182,22 @@ object BriefResolve {
     /**
      * The sections with cross-section duplicates removed.
      *
-     * Only ACROSS sections. A client repeating itself inside its own section
-     * is that client's business and it may well be deliberate — two bills
-     * from the same merchant are two bills. Medha's standing is that it sees
-     * what no single client can, and it should not use that to start editing
-     * what one client said about itself.
+     * Across sections at the ordinary bar, and WITHIN one section at a
+     * stricter one ([sameWithin]).
+     *
+     * This was across-only, on the principle that a client repeating itself
+     * is that client's business — two bills from one merchant are two bills.
+     * The principle was sound and the conclusion was too strong. What a
+     * person saw was "Pick up dry cleaner clothes" three times and the same
+     * electric-meter task three times, all from one app, because that app
+     * holds one task in three tables. The brief is read by a person, and the
+     * same words three times is never what anyone means.
+     *
+     * The two-bills case is still protected, by the stricter bar rather than
+     * by refusing to look: two dated bills on different days never match,
+     * two titles with fewer than [STRICT_SHARED] identifying words never
+     * match ("Electricity bill" twice may be two meters), and two titles
+     * whose numbers differ never match.
      *
      * Sections keep their order and their metadata; a section emptied by
      * resolution is dropped, like everywhere else, so no heading is left
@@ -156,11 +207,12 @@ object BriefResolve {
         sections: List<BriefPolicy.Section>,
         offsetMs: Long = 0L
     ): List<BriefPolicy.Section> {
-        // An optimisation, not a rule: a one-section brief has no
-        // cross-section pair to find, so the loop below would reach the
-        // same answer after building an index for nothing. Removing this
-        // line changes no result, which is exactly what it should do.
-        if (sections.size < 2) return sections
+        // Nothing to compare. This used to be `sections.size < 2`, which was
+        // a harmless shortcut while only cross-section pairs counted -- and
+        // became the whole bug once they did not: a brief with ONE app in it
+        // (the common case, Quicksilver alone) returned before any item was
+        // looked at, and showed one task three times.
+        if (sections.sumOf { it.items.size } < 2) return sections
 
         // BEST FIRST, and only a SURVIVOR may eliminate anything.
         //
@@ -203,7 +255,8 @@ object BriefResolve {
         val dropped = HashSet<Pair<Int, Int>>()
         for (r in best) {
             val covered = kept.any {
-                it.section != r.section && same(it.item, r.item, offsetMs)
+                if (it.section != r.section) same(it.item, r.item, offsetMs)
+                else sameWithin(it.item, r.item, offsetMs)
             }
             if (covered) dropped += r.section to r.index else kept += r
         }

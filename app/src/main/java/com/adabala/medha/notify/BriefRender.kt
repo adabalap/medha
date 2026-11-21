@@ -116,7 +116,18 @@ object BriefRender {
          * [BriefDismiss.apply] computed the id-based one, and tapping
          * Dismiss on a v2 item would appear to work and change nothing.
          */
-        val id: String? = null
+        val id: String? = null,
+        /**
+         * [BriefPolicy.Row.updatedAt]: when the posting app last wrote this.
+         *
+         * Carried for Save, and for one property of it. A save's identity has
+         * to tell "pressed Save twice" apart from "saved the same grocery
+         * list again next week", and for an undated row this instant is the
+         * only thing that does: the words are identical every week, and
+         * [dueAt] is null. Without it either the double tap duplicates or
+         * the second week's list is silently refused.
+         */
+        val postedAt: Long? = null
     )
 
     /**
@@ -192,7 +203,8 @@ object BriefRender {
         source = row.source,
         dueInferred = row.dueInferred,
         link = row.link,
-        id = row.id
+        id = row.id,
+        postedAt = row.updatedAt
     )
 
     /**
