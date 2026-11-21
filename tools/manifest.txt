@@ -163,6 +163,7 @@ docs/PWA-API-HANDOVER.md
 docs/RELEASE-v0.20.0.md
 docs/RELEASE-v0.21.0.md
 docs/RELEASE-v0.22.0.md
+docs/RELEASE-v0.23.0.md
 docs/TESTING.md
 docs/icon-source.svg
 samples/INTEGRATING.md
