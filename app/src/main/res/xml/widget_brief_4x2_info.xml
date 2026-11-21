@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Brief, 4x2. The default. Three lines in urgency order, with the footer naming whatever is below the fold.
+
+  Three sizes means three receivers, not one resizable provider: the picker
+  shows one entry per provider, so a single provider is a single choice no
+  matter how well it resizes. Each of these is its own entry under Medha.
+
+  targetCellWidth/Height (API 31+) say the size in launcher cells, which is
+  the only honest unit: a "4x2" is about 276x220dp on a
+  Pixel-style 5x4 grid and something else on every other grid. minWidth and
+  minHeight remain for API 27-30, which has no cell attributes, and are set
+  deliberately low: they are the floor below which the launcher refuses to
+  place the widget, not the size we want.
+
+  previewLayout renders the real thing in the picker. previewImage is the
+  pre-31 fallback and is the app mark, because a stale PNG of a widget is
+  worse than no picture of it.
+
+  updatePeriodMillis is 0: the brief is pushed by apps through Medha and
+  redrawn on demand, so there is nothing to poll for and no reason to wake
+  the phone on a timer.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="250dp"
+    android:minHeight="110dp"
+    android:minResizeWidth="180dp"
+    android:minResizeHeight="110dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="2"
+    android:updatePeriodMillis="0"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:previewLayout="@layout/widget_brief_4x2"
+    android:previewImage="@drawable/ic_medha_mark"
+    android:description="@string/widget_desc_4x2"
+    android:initialLayout="@layout/widget_brief_4x2" />

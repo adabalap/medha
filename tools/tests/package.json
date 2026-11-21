@@ -1,0 +1,8 @@
+{
+  "name": "medha-webapp-tests",
+  "private": true,
+  "description": "Test-only tooling for app/src/main/assets/webapp/index.html. Not part of the Android build in any way — run manually or via tools/tests/run.sh.",
+  "devDependencies": {
+    "jsdom": "^24.0.0"
+  }
+}

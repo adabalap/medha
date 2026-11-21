@@ -8,5 +8,62 @@
         <item name="colorSecondary">@color/saffron</item>
         <item name="colorOnSecondary">@color/on_saffron</item>
         <item name="android:statusBarColor">@color/indigo_dark</item>
+        <!--
+          Dialog actions as capsules rather than flat text.
+          Material3's default dialog footer is three borderless text
+          buttons. They are easy to miss against the body text, and when
+          the labels do not fit the row they stack vertically with no
+          warning, which reads as a little list of links rather than as
+          actions. Shortening the labels fixed the stacking
+          (tools/check_dialog_buttons.py keeps it fixed); this gives the
+          row a shape.
+
+          Tonal for the action, text for Cancel/Close. Making every button
+          a filled capsule gives equal weight to "Share" and "Cancel",
+          which is the wrong emphasis on a screen that grants a
+          capability.
+        -->
+        <item name="materialAlertDialogTheme">@style/Theme.Medha.Dialog</item>
+    </style>
+
+    <style name="Theme.Medha.Dialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="buttonBarPositiveButtonStyle">@style/Widget.Medha.DialogButton.Tonal</item>
+        <item name="buttonBarNeutralButtonStyle">@style/Widget.Medha.DialogButton</item>
+        <item name="buttonBarNegativeButtonStyle">@style/Widget.Medha.DialogButton</item>
+    </style>
+
+    <!--
+      The confirming action. Tonal rather than filled: a dialog footer with
+      a solid primary button pulls the eye hard enough that people press it
+      to make the dialog go away, and several of these grant something.
+    -->
+    <style name="Widget.Medha.DialogButton.Tonal"
+        parent="Widget.Material3.Button.TonalButton">
+        <item name="android:minWidth">0dp</item>
+        <item name="android:insetLeft">0dp</item>
+        <item name="android:insetRight">0dp</item>
+    </style>
+
+    <!--
+      Cancel, Close, and the neutral slot. Kept as text so the row has one
+      obvious action rather than three competing ones, and so a crowded
+      footer still fits: a capsule is wider than its label.
+    -->
+    <style name="Widget.Medha.DialogButton" parent="Widget.Material3.Button.TextButton.Dialog">
+        <item name="android:minWidth">0dp</item>
+    </style>
+    <!--
+      For AccessRequestActivity, which shows only a consent dialog. Without a
+      transparent, no-title theme the dialog floats over a full-screen opaque
+      Medha background, which reads as "Medha launched itself" rather than as
+      a permission prompt belonging to the app the user was actually using.
+      windowIsFloating keeps normal dialog sizing/insets behaviour.
+    -->
+    <style name="Theme.Medha.Transparent" parent="Theme.Medha">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:windowContentOverlay">@null</item>
     </style>
 </resources>

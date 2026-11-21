@@ -6,7 +6,7 @@ on the device can consume it. Named for *medhā* (मेधा / మేధా) �
 with retentive memory.
 
 Medha is a **substrate**, not an app. The intended pattern is: run Medha once,
-then build thin PWAs (SMS organizer, note triage, an `hf_agent` pointed at
+then build thin PWAs (note triage, a journal, an `hf_agent` pointed at
 `127.0.0.1`) that hold no model and no inference code of their own.
 
 ---
@@ -25,7 +25,7 @@ TOKEN=<paste from the app>
 curl -s http://127.0.0.1:8080/health
 curl -s -H "Authorization: Bearer $TOKEN" \
      -H 'Content-Type: application/json' \
-     -d '{"prompt":"Summarise this SMS: your parcel arrives Tuesday"}' \
+     -d '{"prompt":"Summarise: your parcel arrives Tuesday"}' \
      http://127.0.0.1:8080/generate
 ```
 
@@ -103,6 +103,46 @@ To disable auth entirely (not recommended), set the `require_auth` preference to
 | GET | `/rag/collections` | yes | list collections with doc/chunk/embedded counts |
 | DELETE | `/rag/collections/{name}` | yes | drop a collection |
 
+### Notifications
+| Method | Path | Auth | Purpose |
+|---|---|:--:|---|
+| POST | `/pair` | – | `{code}` → a token for a web app, bound to its origin |
+| GET | `/notify/capabilities` | yes | what this device supports, instead of guessing from OS version |
+| POST | `/notify` | yes | `{id, title, text, ongoing?, progressCurrent?, progressMax?}` |
+| DELETE | `/notify/{id}` | yes | cancel |
+| PUT | `/widget/content` | yes | v2 `{obligations:[{id, title, text, kind, state, due:{at, provenance}, links[]}], ttlSeconds?}` — or v1 `{items:[{title, text, link, dueAt, kind}]}` |
+| GET | `/widget/content` | yes | read your section back, with the `lane` Medha concluded (admin sees all) |
+| DELETE | `/widget/content` | yes | withdraw your section |
+| GET | `/captures?since=&limit=` | **`captures`** | the phone's notification stream, raw, with a cursor |
+
+`/notify` is rate limited per client (10 burst, 30/min).
+
+**Two brief protocols, both supported.** v1 is a rendered row; v2 is an
+obligation with identity, date provenance and state, so Medha draws it instead
+of guessing. Ask `GET /notify/capabilities` for `briefProtocol`. See
+[docs/BRIEF-API.md](docs/BRIEF-API.md).
+
+**`GET /captures` is the only route that runs the other way** — everything
+else is written *to* Medha. It carries its own capability, `captures`, which
+is off by default and, unlike every other one, cannot be obtained through the
+consent dialog an app triggers: it is granted from Medha's own client editor.
+Nothing is recorded until some client holds it, and revoking the last grant
+deletes the log.
+
+**To integrate:** `samples/INTEGRATING.md`. Two dependency-free drop-in
+clients — `samples/medha-brief.js` for a browser PWA, `samples/medha_brief.py`
+for a Python process on the same device (no CORS, no pairing code, since
+none of that governs a non-browser). Worked example for a Termux service in
+`samples/hg-agent-brief.py`. Reference docs in `docs/NOTIFICATIONS.md`;
+a complete working page in `samples/notify-pwa/`.
+
+### Key-value store
+| Method | Path | Auth | Purpose |
+|---|---|:--:|---|
+| PUT/GET/DELETE | `/store/{key}` | yes | per-client JSON store, auto-namespaced |
+| GET | `/store?prefix=` | yes | list keys |
+| POST | `/store/bulk` | yes | write many at once |
+
 ### UI
 | Method | Path | Auth | Purpose |
 |---|---|:--:|---|
@@ -125,7 +165,7 @@ const h = {
 await fetch(`${MEDHA}/generate`, {
   method: "POST", headers: h,
   body: JSON.stringify({
-    prompt: "Classify this SMS: ...",
+    prompt: "Classify this note: ...",
     system: "Reply with one word."
   })
 }).then(r => r.json());
@@ -133,12 +173,12 @@ await fetch(`${MEDHA}/generate`, {
 // Stateful — Medha keeps the thread, your app keeps only the id
 await fetch(`${MEDHA}/chat`, {
   method: "POST", headers: h,
-  body: JSON.stringify({ sessionId: "sms-organizer-v1", message: "..." })
+  body: JSON.stringify({ sessionId: "journal-v1", message: "..." })
 }).then(r => r.json());
 ```
 
 Use a **distinct, stable `sessionId` per consumer app** (e.g.
-`sms-organizer-v1`) so threads do not collide across PWAs.
+`journal-v1`) so threads do not collide across PWAs.
 
 Pointing an OpenAI-compatible client (`hf_agent`, LangChain, the `openai` SDK)
 at Medha:
@@ -203,22 +243,40 @@ across spaces. See `docs/EMBEDDINGS.md`.
   load, memory-pressure release, battery-exemption prompt for OEM killers.
 - **Browsable model** — SAF picker, free-space check, atomic `.part` → final
   rename so a truncated copy never becomes the configured model.
+- **Notifications for web apps** — a page on any origin can pair with a
+  six-digit code and post to the Android notification shade, including the
+  One UI 8 Now Bar via Android 16 Live Updates. Tokens are bound to the origin
+  that paired them, CORS never returns `*`, and the Private Network Access
+  preflight Chrome requires is answered only for paired origins.
+  (`docs/NOTIFICATIONS.md`)
+- **Medha's brief** — a home-screen widget several paired apps write to at
+  once. Each app owns a section, sections expire (24h default), and rows fill
+  round-robin so one noisy app cannot crowd the others out. It shows three
+  rows at a time and **cycles through the rest while the screen is on** (3s by
+  default, user-configurable, or off); tapping it opens the full list. This
+  exists
+  because **Samsung's Now Brief has no third-party API** — the One UI 9 custom
+  cards are authored by the user in Settings and generated by Samsung's AI,
+  with no field an app can write — so `capabilities.nowBrief` is `false` and
+  carries a `nowBriefReason` saying why instead of failing quietly.
 
 ---
 
-## Two builds: core and full
+## One build
 
-CI produces **two APKs per build type**:
+CI produces one APK per build type: `medha-<v>-<type>-<sha>.apk`.
 
-| APK | SMS connector | Play Protect |
-|---|---|---|
-| `medha-<v>-core-<type>-<sha>.apk` | no | installs cleanly |
-| `medha-<v>-full-<type>-<sha>.apk` | yes | will warn |
+v0.8.x shipped a `core`/`full` pair, because the SMS connector's permissions
+tripped Play Protect and had to be quarantined into a separate flavour. The
+connector was removed in v0.9.0 and the split went with it. Medha now declares
+no sensitive-data permissions at all, so there is one variant, one
+`applicationId` — `com.adabala.medha`, always — and nothing for that warning to
+fire on. See `docs/PLAY-PROTECT.md`.
 
-Install **core** unless you need SMS. Everything else is identical. Play Protect
-blocks sideloaded APKs that merely *declare* SMS permissions, so keeping them out
-of the default build is what makes a clean install possible. See
-`docs/PLAY-PROTECT.md`.
+**Upgrading from v0.8.x:** the `applicationId` changed (it was
+`com.adabala.medha.full.debug` for a full debug build). Android cannot upgrade
+across an `applicationId` change, so **uninstall the old build first**, and
+re-pair any apps that held a token.
 
 ## Debug vs release builds
 

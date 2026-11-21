@@ -1,0 +1,108 @@
+# Files that must NOT exist in a checked-out tree.
+#
+# WHY THIS FILE EXISTS
+#
+# Medha is delivered as a zip of the source tree, and a zip extracted over an
+# existing checkout adds and overwrites but never deletes. Every file removed
+# in a release therefore survives in the consumer's repo, and the first thing
+# anyone hears about it is an error that points at a file they did not touch.
+#
+# v0.13.0 did exactly this. It deleted four files; extracting it over v0.12.2
+# left all four behind, and CI failed with:
+#
+#     MedhaWidgetProvider.kt: R.string.widget_footer not declared
+#
+# which names a file that no longer exists in the release, reports a string
+# that was deliberately retired, and says nothing at all about the actual
+# problem. The real failures underneath it were worse and would have surfaced
+# one at a time: MedhaWidgetProvider.kt declares a class that BriefWidgets.kt
+# also declares, so the Kotlin compiler would have reported a redeclaration;
+# BriefRotator.kt calls methods that no longer exist.
+#
+# So the removals are listed here and enforced, and the error becomes "delete
+# this file" instead of a scavenger hunt.
+#
+# SUPERSEDED, BUT KEPT
+#
+# tools/manifest.txt now lists every file a release DOES ship, and
+# check_stale.py reports anything on disk that is not in it. That catches
+# removals nobody wrote down, including connectors/SmsConnector.kt — deleted
+# in v0.9.0, still present in a consumer repo nine releases later, and found
+# only when a checker was fixed enough to read it.
+#
+# This file stays because a list of what went and WHY is worth having; the
+# manifest knows what is orphaned but not what it was for.
+#
+# HOW TO MAINTAIN IT
+#
+# When a release deletes a source file, add its repo-relative path below under
+# that version. Never remove entries: someone upgrading from an old version
+# still has the old files, and an entry costs one stat() per build. A path
+# listed here that the release also ships is a contradiction, and
+# check_stale.py reports it as one.
+
+# --- removed in v0.9.0 ------------------------------------------------------
+# Recorded in v0.18.3, nine releases late. These were found by the manifest,
+# not by this file, which is the whole reason the manifest exists: nobody
+# wrote them down at the time, and SmsConnector.kt went on being compiled
+# into every APK built from a zip-updated checkout until a fixed checker
+# finally read it properly.
+#
+# The SMS connector. Play Protect blocks a sideloaded APK that declares SMS
+# permissions, evaluated on the manifest rather than on use, so the feature
+# could not ship at all. Its icon and its quarantine flavour went with it.
+app/src/main/java/com/adabala/medha/connectors/SmsConnector.kt
+app/src/main/res/drawable/ic_sms.xml
+app/src/full/AndroidManifest.xml
+
+# --- removed in an unrecorded release before v0.13.0 ------------------------
+# Found by the manifest in v0.18.3. The version each one went in is not
+# recorded anywhere in the tree, and guessing it would be worse than saying
+# so, but what they were for is clear enough.
+#
+# A one-shot patch script for a specific build failure, kept in docs/ long
+# after the failure it patched stopped existing.
+docs/apply-minimal-fix.sh
+
+# Hand-written Kotlin test scaffolding pasted into .txt files so it would not
+# be compiled. tools/tests/ replaced all three with harnesses that run against
+# the real sources, which is the only version of this idea that catches
+# anything.
+docs/verification-harness.kt.txt
+docs/verification-harness-rag.kt.txt
+docs/verification-harness-sched.kt.txt
+
+# A redaction pass over logs and diagnostics, superseded by doing it at the
+# source: drop reasons are logged without content, and the brief never
+# persists raw notification text.
+tools/REDACTION.md
+tools/redact.py
+
+# --- removed in v0.13.0 -----------------------------------------------------
+# The widget rebuild. Three sized providers replaced the single one, and all
+# three live in BriefWidgets.kt; MedhaWidgetProvider survives as a class name
+# there (so placed widgets are not orphaned) but not as a file.
+app/src/main/java/com/adabala/medha/notify/MedhaWidgetProvider.kt
+app/src/main/res/layout/widget_medha.xml
+app/src/main/res/xml/widget_medha_info.xml
+
+# Rotation is gone entirely: a brief read in a two-second glance must not
+# move, so there is no timer, no screen-on receiver and no interval setting.
+app/src/main/java/com/adabala/medha/notify/BriefRotator.kt
+
+# --- removed in v0.17.0 -----------------------------------------------------
+# The navigation drawer. Sixteen entries, fourteen of which opened a dialog,
+# replaced by three destinations in a bottom navigation bar. Leaving these
+# behind breaks nothing at build time and quietly keeps a dead menu and a
+# dead header in the APK.
+app/src/main/res/menu/drawer_menu.xml
+app/src/main/res/layout/nav_header.xml
+
+# --- removed in v0.18.0 -----------------------------------------------------
+# Row tiles moved from being keyed on urgency to being keyed on kind, so the
+# four band tiles have no callers. Urgency still colours the pill.
+app/src/main/res/drawable/tile_overdue.xml
+app/src/main/res/drawable/tile_soon.xml
+app/src/main/res/drawable/tile_later.xml
+app/src/main/res/drawable/tile_none.xml
+

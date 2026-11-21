@@ -42,8 +42,9 @@ android {
         applicationId = "com.adabala.medha"
         minSdk = 27
         targetSdk = 34
-        versionCode = 6
-        versionName = "0.7.0"
+        versionCode = 53
+        versionName = "0.22.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -58,47 +59,57 @@ android {
     }
 
     // ---------------------------------------------------------------------
-    // Flavours exist for ONE reason: Play Protect blocks sideloaded APKs that
-    // declare SMS permissions, and that block is evaluated on the manifest, not
-    // on whether the feature is ever used. Keeping SMS out of the default build
-    // means the inference service installs cleanly.
+    // NO PRODUCT FLAVOURS, and no applicationIdSuffix anywhere.
     //
-    //   core  - inference, memory, RAG, store, notifications. No SMS.
-    //   full  - adds the SMS connector. Expect a Play Protect warning.
+    // v0.8.x shipped a core/full split for one reason: Play Protect blocks
+    // sideloaded APKs that declare SMS permissions, and that block is
+    // evaluated on the manifest rather than on whether the feature is ever
+    // used, so SMS had to be quarantined into a separate flavour.
+    //
+    // With the SMS connector gone there is nothing to quarantine, and the
+    // split was never free. Combined with the debug suffix it produced four
+    // applicationIds -- com.adabala.medha{,.full}{,.debug} -- and a consumer
+    // app cannot hardcode a package name it cannot predict. That is exactly
+    // the bug the hello-medha sample hit: it looked for com.adabala.medha
+    // while the installed build was com.adabala.medha.full.debug, and
+    // reported "Medha is not installed on this device" on a device where it
+    // plainly was.
+    //
+    // One variant, one applicationId, forever: com.adabala.medha. The build
+    // type still shows up in versionName, so the About screen can tell you
+    // which APK you are on without the package name having to encode it.
+    //
+    // Cost, stated plainly: a debug and a release build can no longer sit
+    // side by side on one device. Installing either replaces the other.
     // ---------------------------------------------------------------------
-    flavorDimensions += "connectors"
-    productFlavors {
-        create("core") {
-            dimension = "connectors"
-            versionNameSuffix = "-core"
-        }
-        create("full") {
-            dimension = "connectors"
-            versionNameSuffix = "-full"
-            // Separate applicationId so both can sit side by side and so a
-            // "full" install never silently replaces a clean "core" one.
-            applicationIdSuffix = ".full"
-        }
-    }
 
     buildTypes {
         debug {
             isDebuggable = true
-            // Lets a debug and a release build coexist on the same device, so
-            // you can compare them without uninstalling.
-            applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
         }
         release {
             isDebuggable = false
-            // Minification is deliberately OFF. Ktor resolves plugins and
+            // Minification is ON, backed by app/proguard-rules.pro.
+            //
+            // The rules exist because Ktor resolves plugins reflectively,
             // kotlinx.serialization resolves serializers reflectively, and
-            // LlmEngine probes the LiteRT AAR by reflection for
-            // sendMessageAsync. R8 would strip all three without a carefully
-            // written keep-rule set, and the failures are runtime-only.
-            // Turn this on only alongside a tested proguard-rules.pro.
-            isMinifyEnabled = false
-            isShrinkResources = false
+            // LlmEngine/AiEdgeEmbedder probe their SDKs by method name. R8
+            // renaming any of those produces silent wrong behaviour in
+            // release builds only — see the header comment in
+            // proguard-rules.pro for the specific failure.
+            //
+            // NOT yet verified at runtime: the rules are written and R8
+            // parses them, but no minified build has been installed and
+            // exercised. Before trusting a release APK, run through
+            // docs/TESTING.md tier 3L — a debug build proves nothing about
+            // this, because minification does not run in debug.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
             if (hasReleaseSigning) {
                 signingConfig = signingConfigs.getByName("release")
             }
@@ -112,6 +123,7 @@ android {
 
     buildFeatures {
         viewBinding = true
+        buildConfig = true
     }
 
     androidResources {
@@ -164,6 +176,10 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
+    // Client list, item_client.xml — replaces a plain-text dialog setItems()
+    // with a real Material list row (admin badge, capability summary,
+    // overflow action button) and DiffUtil-backed incremental updates.
+    implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("androidx.preference:preference-ktx:1.2.1")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     // Pulled in transitively by material, but declared explicitly because the
@@ -177,7 +193,9 @@ dependencies {
     implementation("io.ktor:ktor-server-cio:2.3.12")
     implementation("io.ktor:ktor-server-content-negotiation:2.3.12")
     implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.12")
-    implementation("io.ktor:ktor-server-cors:2.3.12")
+    // ktor-server-cors removed in v0.9.0: CORS is hand-rolled in
+    // net/CorsPolicy.kt, which the plugin could not express (dynamic origin
+    // set, and the Private Network Access preflight header).
     implementation("io.ktor:ktor-server-status-pages:2.3.12")
 
     // LiteRT-LM
@@ -198,4 +216,27 @@ dependencies {
     //
     // implementation("com.google.ai.edge.localagents:localagents-rag:0.3.0")
     // implementation("com.google.mediapipe:tasks-genai:0.10.27")
+
+    // ---------------------------------------------------------------------
+    // Unit tests (app/src/test — plain JVM, no device/emulator needed).
+    //
+    // InferenceScheduler's admission-control and timeout behavior is
+    // concurrency-dependent and needs a real kotlinx.coroutines dispatcher to
+    // mean anything, so it lives here rather than in tools/tests (which only
+    // covers the two files with zero framework dependencies). mockk supplies
+    // a relaxed Context — the tests only exercise Priority.INTERACTIVE, which
+    // never touches BatteryManager/thermal APIs, so nothing Android-specific
+    // actually needs to be real.
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+    testImplementation("io.mockk:mockk:1.13.11")
+
+    // ---------------------------------------------------------------------
+    // Instrumented tests (app/src/androidTest — real device/emulator, real
+    // SQLite). This is what actually exercises MedhaDatabase's v1->v4
+    // migration and FTS4 sync, which no unit test or sandbox harness can:
+    // both need Android's bundled SQLite, not a desktop JDBC driver.
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:core:1.6.1")
 }

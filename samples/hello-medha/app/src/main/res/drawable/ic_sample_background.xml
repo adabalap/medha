@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!--
+      Teal rather than Medha's indigo: this is a *consumer* of Medha, and two
+      near-identical launcher icons sitting next to each other in a drawer is
+      a usability problem, not a branding win.
+    -->
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="14" android:startY="10" android:endX="94" android:endY="98"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#FF0E4F52" />
+                <item android:offset="0.55" android:color="#FF12797E" />
+                <item android:offset="1.0" android:color="#FF1AA39A" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M54,48m-46,0a46,46 0,1 1,92 0a46,46 0,1 1,-92 0z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:centerX="54" android:centerY="48" android:gradientRadius="46"
+                android:type="radial">
+                <item android:offset="0.0" android:color="#33FFFFFF" />
+                <item android:offset="1.0" android:color="#00FFFFFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>

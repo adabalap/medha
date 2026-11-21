@@ -8,17 +8,13 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!--
-      NOTE: SMS and contacts permissions are NOT declared here. They live in the
-      "full" product flavour (app/src/full/AndroidManifest.xml).
+      Medha declares no sensitive-data permissions. There is no SMS, contacts,
+      location, camera or storage access anywhere in this manifest, which is
+      what keeps a sideloaded build clear of the Play Protect warning about
+      apps that "can request access to sensitive data".
 
-      Google Play Protect blocks sideloaded APKs that declare SMS permissions,
-      with "This app can request access to sensitive data." That block applies
-      to the whole APK regardless of whether the user ever enables the
-      connector, so declaring them unconditionally made the CORE service
-      un-installable for people who only wanted inference.
-
-      Build "core" for a clean install; build "full" only if you need the SMS
-      connector, and expect to bypass Play Protect deliberately.
+      POST_NOTIFICATIONS is the one user-facing permission, and it is requested
+      at runtime so clients of the /notify API can reach the shade.
     -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
@@ -29,6 +25,7 @@
     <uses-feature android:name="android.hardware.opengles.aep" android:required="false" />
 
     <application
+        android:name=".MedhaApplication"
         android:allowBackup="false"
         android:fullBackupContent="@xml/backup_rules"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -54,6 +51,86 @@
             </intent-filter>
         </activity>
 
+        <!--
+          Third-party integration entry point. See MedhaAccessContract and
+          docs/INTEGRATION.md.
+
+          exported=true is required for other apps to reach it at all; the
+          activity itself refuses any caller it cannot identify via
+          getCallingPackage(), which is the actual security control here
+          rather than the manifest.
+
+          launchMode is deliberately left at the default "standard":
+          singleTask/singleInstance make startActivityForResult return
+          RESULT_CANCELED immediately, which would break every integration in
+          a way that looks to the calling app like an instant user decline.
+
+          excludeFromRecents keeps a bare consent dialog out of the recents
+          list, where it would otherwise linger as a confusing Medha entry
+          with no content behind it.
+        -->
+        <!--
+          Opened by tapping the brief widget. Not exported: nothing outside
+          Medha has any reason to launch it, and the brief is the user's
+          content. excludeFromRecents because it is a glance at a widget's
+          overflow, not a place to come back to.
+        -->
+        <activity
+            android:name=".BriefActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:label="@string/brief_title"
+            android:launchMode="singleTop" />
+
+        <activity
+            android:name=".auth.AccessRequestActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.Medha.Transparent">
+            <intent-filter>
+                <action android:name="com.adabala.medha.action.REQUEST_ACCESS" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!-- ===============================================================
+             NOTIFICATION LISTENER.
+
+             Declared with android:permission so ONLY the system may bind
+             it. Without that line any app could bind this service directly
+             and drive it.
+
+             exported="true" is required and is not a loosening: a listener
+             is started by the system, which cannot bind an unexported
+             service. The permission above is what keeps that narrow.
+
+             Nothing happens until the user grants notification access in
+             Android settings AND leaves Medha's own switch on. Until then
+             the system never binds this and no notification is read.
+             =============================================================== -->
+        <service
+            android:name=".connect.MedhaNotificationListener"
+            android:label="@string/notif_listen_title"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- ===============================================================
+             THREE BRIEF WIDGETS, THREE RECEIVERS.
+
+             The widget picker lists one entry per provider, so three sizes
+             have to be three receivers; a single resizable provider is still
+             a single thing to pick. All three share BriefWidgetProvider and
+             differ only in layout and row count.
+
+             MedhaWidgetProvider keeps the name it had when it was the only
+             one, so widgets already on a home screen survive the upgrade and
+             redraw in the new design instead of disappearing.
+             =============================================================== -->
+        <!-- 4x2 — the default. -->
         <receiver
             android:name=".notify.MedhaWidgetProvider"
             android:exported="false">
@@ -62,7 +139,31 @@
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
-                android:resource="@xml/widget_medha_info" />
+                android:resource="@xml/widget_brief_4x2_info" />
+        </receiver>
+
+        <!-- 2x2 — the next item only. -->
+        <receiver
+            android:name=".notify.MedhaWidget2x2Provider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_brief_2x2_info" />
+        </receiver>
+
+        <!-- 4x4 — the horizon. -->
+        <receiver
+            android:name=".notify.MedhaWidget4x4Provider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_brief_4x4_info" />
         </receiver>
 
         <service
@@ -70,5 +171,24 @@
             android:exported="false"
             android:stopWithTask="false"
             android:foregroundServiceType="dataSync" />
+
+        <!--
+          Diagnostics dumps live under filesDir/diagnostics, which is private
+          to the app. Sharing one via an ACTION_SEND intent needs a content
+          URI another app's share-sheet target can actually read: a raw
+          file:// URI to app-private storage is rejected by modern Android
+          (StrictMode FileUriExposedException) or simply unreadable by the
+          receiving app. FileProvider is the standard, no-extra-dependency way
+          to hand out a short-lived, scoped read grant for exactly that file.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.diagnostics"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 </manifest>

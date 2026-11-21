@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Three destinations, which is the whole point.
+
+  Before v0.17.0 this app had a sixteen-item navigation drawer of dialogs
+  and a home screen that was a status readout and a settings panel sharing
+  one scroll. Nothing was hard to reach and everything was hard to find.
+
+  The split is by question rather than by feature: "is it running and how do
+  I connect" (Home), "what is connected" (Apps), "everything I set once and
+  forget" (Settings).
+-->
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@+id/tab_home" android:icon="@drawable/ic_nav_home"
+        android:title="@string/tab_home" />
+    <item android:id="@+id/tab_apps" android:icon="@drawable/ic_nav_apps"
+        android:title="@string/tab_apps" />
+    <item android:id="@+id/tab_settings" android:icon="@drawable/ic_nav_settings"
+        android:title="@string/tab_settings" />
+</menu>

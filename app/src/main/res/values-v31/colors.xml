@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MATERIAL YOU — Android 12 and up, light.
+
+  From API 31 the framework publishes the palette it derived from the user's
+  wallpaper as ordinary colour resources. Referencing them here is the whole
+  of "dynamic colour": the launcher resolves these at inflation, against its
+  own configuration, exactly as it resolves every other colour in the widget
+  layout. That is why this works in a RemoteViews widget at all, where
+  runtime tinting does not.
+
+  API 27-30 has no system_* resources, so values/colors.xml keeps the Medha
+  indigo and those devices simply get the fixed palette. Nothing breaks and
+  nothing needs a code path.
+
+  WHAT IS NOT HERE IS THE POINT. band_overdue and band_soon are absent, so
+  they fall through to values/ and stay fixed on every device and every
+  wallpaper. Only band_later follows the accent, because "later" is the
+  absence of urgency rather than a grade of it. Adding the other two bands
+  to this file would be the one change that breaks the design.
+-->
+<resources>
+    <!-- Surface and text: the neutral ramp, which is tinted toward the
+         wallpaper accent by the framework, so the card belongs beside One
+         UI's own widgets instead of sitting on top of them. -->
+    <color name="brief_widget_bg">@android:color/system_neutral1_50</color>
+    <color name="brief_widget_title">@android:color/system_neutral1_900</color>
+    <color name="brief_widget_body">@android:color/system_neutral2_700</color>
+    <color name="brief_widget_meta">@android:color/system_neutral2_600</color>
+
+    <!-- The mark, the badge behind it, and the one band that follows. -->
+    <color name="brief_widget_brand">@android:color/system_accent1_600</color>
+    <color name="brief_accent">@android:color/system_accent1_600</color>
+    <color name="band_later">@android:color/system_accent1_600</color>
+</resources>

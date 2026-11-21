@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      Android 11+ package visibility. Declared by INTENT, not by a fixed
+      package name, and that distinction is load-bearing: Medha applies an
+      applicationIdSuffix per build variant, so it installs as any of
+      com.adabala.medha[.full][.debug]. A <package> entry naming just one of
+      them makes resolveActivity() return null against every other variant,
+      and the app reports "Medha is not installed" while Medha is very much
+      installed and running. Matching the action finds whichever variant is
+      actually present.
+    -->
+    <queries>
+        <intent>
+            <action android:name="com.adabala.medha.action.REQUEST_ACCESS" />
+        </intent>
+    </queries>
+
+    <!--
+      INTERNET is required even though Medha is on 127.0.0.1.
+      Android gates socket() itself on this permission: the kernel denies
+      socket creation to any process outside the "inet" group, and loopback
+      is not exempt. Without it every request dies with
+      "socket failed: EPERM (Operation not permitted)" before a single byte
+      moves, which reads like a server problem and is not one.
+
+      usesCleartextTraffic is separately required because the local server is
+      plain HTTP; TLS to 127.0.0.1 would be ceremony without benefit, since
+      the traffic never leaves the device.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.HelloMedha"
+        android:usesCleartextTraffic="true">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

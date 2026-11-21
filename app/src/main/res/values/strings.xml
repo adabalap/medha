@@ -12,6 +12,13 @@
         Authorization: Bearer &lt;token&gt;. The bundled demo page gets it automatically.</string>
     <string name="token_pending">Token is created when you first start Medha</string>
     <string name="copy_token">Copy API token</string>
+    <!--
+      The BUTTON. The string above is a row in a setItems list, where the
+      longer wording is right; this one shares a dialog footer with Close
+      and has to fit beside it. One string served both until
+      tools/check_dialog_buttons.py pointed out the second use.
+    -->
+    <string name="copy_token_action">Copy token</string>
 
     <!-- drawer -->
     <string name="nav_header_title">Medha · మేధా</string>
@@ -23,6 +30,7 @@
     <string name="nav_regen_token">Regenerate token</string>
     <string name="nav_group_system">Service</string>
     <string name="nav_battery">Battery optimisation</string>
+    <string name="nav_diagnostics">Diagnostics</string>
     <string name="nav_stop">Stop Medha</string>
     <string name="nav_group_about">About</string>
     <string name="nav_endpoints">API endpoints</string>
@@ -55,6 +63,16 @@ Licensed under the terms in the project repository.</string>
     <!-- button labels driven by the state machine -->
     <string name="btn_start">Start Medha</string>
     <string name="btn_starting">Starting…</string>
+    <string name="btn_stop">Stop</string>
+    <string name="section_runtime">Runtime</string>
+    <string name="section_model">Model</string>
+    <string name="section_backend">Backend</string>
+    <string name="btn_browse_model">Browse for .litertlm model</string>
+    <string name="backend_gpu">GPU</string>
+    <string name="backend_cpu">CPU</string>
+    <string name="backend_npu">NPU</string>
+    <string name="runtime_placeholder">Backend: —\nMemory: —\nDevice: —</string>
+    <string name="metrics_placeholder">Requests: 0\nAvg speed: — tok/s\nStored: —</string>
     <string name="btn_loading">Loading model…</string>
     <string name="btn_running">Running</string>
     <string name="btn_retry">Retry start</string>
@@ -80,6 +98,14 @@ Licensed under the terms in the project repository.</string>
     <string name="toast_battery_ok">Already allowed</string>
 
     <!-- stat pills -->
+    <!-- Shown in a stat pill before there is a number to put there. -->
+    <!-- The post-crash banner on Home. Deliberately not in Settings: the
+         report has to be reachable when a screen is what crashed. -->
+    <string name="crash_title">Medha stopped unexpectedly</string>
+    <string name="crash_body">A report from %1$s was saved on this phone. Nothing leaves the device unless you share it.</string>
+    <string name="crash_share">Share report</string>
+    <string name="crash_dismiss">Dismiss</string>
+    <string name="stat_placeholder">&#8212;</string>
     <string name="stat_speed">SPEED</string>
     <string name="stat_queue">QUEUE</string>
     <string name="stat_thermal">THERMAL</string>
@@ -97,25 +123,304 @@ Licensed under the terms in the project repository.</string>
 
     <!-- drawer additions -->
     <string name="nav_clients">API clients</string>
-    <string name="nav_sms">SMS connector</string>
+    <string name="nav_pair_web">Pair a web app</string>
+
+    <!-- web app pairing -->
+    <string name="pair_title">Pair a web app</string>
+    <string name="pair_intro">Enter this code in the web app within 5 minutes:</string>
+    <string name="pair_code_hint">The web app sends it to POST /pair. It works once, then expires.</string>
+    <string name="pair_expires">Expires at %1$s · one use · 5 wrong tries cancels it</string>
+    <string name="pair_caps_title">The web app will be granted</string>
+    <string name="pair_choose_caps">Choose what to grant</string>
+    <string name="pair_cancel_code">Cancel code</string>
+    <string name="pair_cancelled">Pairing code cancelled</string>
+    <string name="pair_notifications_off">Notifications are turned off for Medha, so a paired app cannot post to the shade. Grant the notification permission first.</string>
+    <string name="pair_grant_notifications">Turn on</string>
+    <string name="pair_server_off">Start Medha first — a web app cannot reach the server while it is stopped.</string>
+    <string name="pair_url">Server: http://127.0.0.1:%1$d</string>
+
     <string name="nav_scheduler">Scheduler status</string>
-    <string name="nav_group_connectors">Connectors</string>
 
     <!-- clients -->
     <string name="clients_title">API clients</string>
     <string name="client_add">Add client</string>
+    <string name="client_admin_badge">Admin client — full access</string>
+    <string name="client_actions">More actions</string>
+    <string name="client_full_access">full access</string>
+    <string name="client_row_subtitle">%1$s:*  •  %2$s</string>
+    <string name="client_row_meta">%1$s · %2$s</string>
+    <string name="client_origin_app">Granted to an app</string>
+    <string name="client_origin_manual">Created by you</string>
+    <string name="client_origin_bootstrap">Built in</string>
+    <string name="client_never_used">never used</string>
+    <string name="client_used_today">used today</string>
+    <string name="client_used_yesterday">used yesterday</string>
+    <string name="client_used_days_ago">used %1$d days ago</string>
+    <string name="clients_empty">No clients yet. Tap Add client to create one.</string>
     <string name="client_new_title">New API client</string>
-    <string name="client_id_hint">id (e.g. sms-organizer)</string>
+    <string name="client_id_hint">id (e.g. journal)</string>
     <string name="create">Create</string>
     <string name="revoke">Revoke</string>
     <string name="rotate">Rotate token</string>
+    <!-- The BUTTON: the string above is a setItems row, where the longer
+         wording is right. Third one of these, after undismiss_all and
+         copy_token; a list row and a dialog action want different lengths
+         and one string cannot be both. -->
+    <string name="rotate_action">Rotate</string>
 
-    <!-- sms -->
-    <string name="sms_title">SMS connector</string>
-    <string name="sms_grant">Grant SMS permission</string>
-    <string name="sms_denied">SMS permission not granted. The connector endpoints will return 403.</string>
-    <string name="sms_granted">SMS read permission granted.</string>
+    <!-- widget -->
+    <!-- The widget header, in two pieces rather than one styled string.
+         A span carrying its own colour would be resolved in MEDHA's process
+         and shipped to the launcher as an int, so it would be wrong in
+         whichever theme Medha was not in at the time. Two TextViews each
+         naming a colour RESOURCE lets the launcher resolve both against its
+         own configuration, which is the same reason widgetBadge is an
+         ImageView. The split also gives the brand its own size and weight
+         for free.
+
+         The brand is wrap_content and the tagline takes what is left, so if
+         a narrow widget runs out of room it is the tagline that ellipsises
+         and never "పాదరసం". -->
+    <string name="widget_header_brand">పాదరసం</string>
+    <string name="widget_header_rest">: నేను నా ఆలోచనలు.</string>
+    <!-- Kept: the widget's accessibility label and the 2×2, which has no
+         room for a header at all. -->
+    <string name="widget_header">Brief</string>
     <string name="widget_empty">No updates yet. Apps using Medha can post here.</string>
+    <!-- Shown when nothing is SCHEDULED but open items exist. "Nothing in
+         the brief" would be false with seventeen of them a tap away, and
+         a widget that lies once is one you stop reading. -->
+    <plurals name="widget_clear_with_open">
+        <item quantity="one">Nothing scheduled · %1$d open item</item>
+        <item quantity="other">Nothing scheduled · %1$d open items</item>
+    </plurals>
+    <string name="widget_count">%1$d app(s)</string>
+
+    <!-- full brief screen -->
+    <!-- Kept short: this is also the activity's android:label, which is what
+         the recents switcher shows under the app card. -->
+    <string name="brief_title">Brief</string>
+    <string name="brief_empty">Nothing in the brief right now.\n\nApps you have paired with Medha post here, and whatever they post shows on the home-screen widget. Nothing has in the last day.</string>
+    <string name="brief_refresh">Refresh</string>
+    <string name="brief_clear_all">Clear everything</string>
+    <string name="brief_clear_all_body">Removes every app\'s section from the brief. The apps are not revoked and can post again.</string>
+    <string name="brief_clear_all_confirm">Clear</string>
+    <string name="brief_section_lead">From %1$s, %2$s ago.</string>
+    <string name="brief_item_meta">Posted by %1$s · %2$s ago</string>
+    <string name="brief_item_open">Open</string>
+    <string name="brief_item_open_app">Open the app</string>
+    <!-- Its own string, not R.string.save: that one means save a setting,
+         this one means hand a notification to Quicksilver, and a shared
+         resource lets one meaning be edited into the other by accident. -->
+    <string name="brief_item_save">Save</string>
+    <string name="brief_saved">Saved. Choose what it becomes in Quicksilver.</string>
+    <string name="brief_already_saved">Already saved</string>
+    <string name="brief_save_failed">Couldn\'t save that</string>
+    <string name="brief_save_nothing">Nothing here to save</string>
+
+    <!-- multimodal probe -->
+    <string name="nav_multimodal">Multimodal support</string>
+    <string name="multimodal_title">Multimodal support</string>
+    <string name="multimodal_share">Share</string>
+    <string name="multimodal_disable">Turn off</string>
+    <string name="multimodal_enable">Turn on</string>
+    <string name="multimodal_toggled">Multimodal %1$s — restart Medha to apply</string>
+    <string name="on">on</string>
+    <string name="off">off</string>
+
+    <!-- brief rotation -->
+    <string name="nav_brief">Brief</string>
     <string name="widget_description">Cards pushed by apps using Medha</string>
-    <string name="sms_unsupported">This is the “core” build, which ships without SMS permissions so that it installs without a Google Play Protect block.\n\nTo use the SMS connector, install the “full” build (medha-…-full-…apk). Play Protect will warn about it; that warning is caused by the SMS permission itself, not by anything the app does with it.</string>
+    <string name="client_edit">Edit permissions</string>
+    <string name="save">Save</string>
+    <string name="caps_saved">Permissions updated for %1$s</string>
+    <string name="caps_failed">Could not update permissions</string>
+    <string name="rotate_title">Rotate token for %1$s?</string>
+    <string name="rotate_body">The current token stops working immediately. Any app using it must be given the new one.</string>
+    <string name="revoke_title">Delete client %1$s?</string>
+    <string name="revoke_body">Its token stops working immediately. Data stored under its namespace is left untouched and becomes unreachable until a client with the same namespace is recreated.</string>
+    <string name="revoked">Deleted %1$s</string>
+    <string name="revoke_refused">Cannot delete the last admin client</string>
+
+    <!-- client capability labels -->
+    <string name="cap_generate">Run the model</string>
+    <string name="cap_memory">Chat memory / sessions</string>
+    <string name="cap_rag">Knowledge (RAG)</string>
+    <string name="cap_store">Store its own data</string>
+    <string name="cap_notify">Post notifications</string>
+    <string name="cap_captures">Read your notifications</string>
+
+    <!--
+      Shown once, when "Read your notifications" is being turned on for a
+      client that did not have it. A one-line label in a checkbox list is
+      the only thing the user sees for every other capability, and for this
+      one that is not enough: it is the only grant whose abuse has no
+      symptom, so the scope and the retention get said out loud at the
+      moment of the decision rather than living in a doc.
+    -->
+    <string name="cap_captures_confirm_title">Share your notifications?</string>
+    <string name="cap_captures_confirm_body">%1$s will be able to read the title and text of
+        notifications Medha has seen — from every app, for the last %2$d days — whenever it
+        asks.\n\nOne-time passcodes and messages Medha filters out are never included. You can
+        turn this off again here at any time.</string>
+    <string name="cap_captures_confirm_grant">Share</string>
+    <!-- Stands in for the client name when pairing, where there isn't one yet. -->
+    <string name="cap_captures_subject_paired">The app you pair</string>
+
+    <!-- primary status line, shown on the main screen -->
+    <string name="status_starting">● Starting…</string>
+    <string name="status_not_running">● Not running</string>
+    <!-- Distinct from "Not running": the difference between nobody has
+         pressed Start and Start cannot work until something changes. -->
+    <string name="status_cannot_start">● Cannot start</string>
+    <!-- Appended to a port-in-use message. The port field is in Settings,
+         which is not where someone reading an error on Home would look. -->
+    <string name="status_port_where">Change it in Settings › Port.</string>
+    <!-- Live status lines. Previously built by string concatenation in
+         MainActivity, which put four user-visible sentences outside
+         strings.xml where nothing could translate or review them. The
+         leading ● is coloured by a span; the rest is ordinary text. -->
+    <string name="status_running_loaded">● Running · model loaded</string>
+    <string name="status_running_generating">● Running · generating</string>
+    <string name="status_load_failed">● Load failed</string>
+    <string name="status_loading_model">● Loading model…</string>
+    <string name="status_waiting_for_service">Waiting for the service</string>
+    <string name="status_tap_start">Tap Start to load the model</string>
+
+    <!-- third-party access consent -->
+    <string name="consent_title">%1$s wants to use Medha</string>
+    <string name="consent_body">%1$s is asking for:</string>
+    <string name="consent_reason">%1$s says: “%2$s”</string>
+    <string name="consent_scope">Its data stays in its own space (%1$s). It cannot read other apps\' chats or knowledge collections, and it cannot manage Medha itself.</string>
+    <string name="consent_expanding">This app already has access. Approving adds the permissions above to what it already had.</string>
+    <string name="consent_allow">Allow</string>
+    <string name="consent_deny">Deny</string>
+
+    <!-- diagnostics -->
+    <string name="diagnostics_title">Diagnostics</string>
+    <string name="diagnostics_hint">Local-only. Nothing here is sent anywhere unless you explicitly share it.</string>
+    <string name="diagnostics_export_now">Export now</string>
+    <string name="diagnostics_share">Share</string>
+    <string name="diagnostics_none">No diagnostics files yet. A crash writes one automatically; \"Export current logs now\" writes one on demand.</string>
+    <string name="diagnostics_export_failed">Could not write a diagnostics file</string>
+    <string name="diagnostics_exported">Diagnostics saved</string>
+
+    <plurals name="brief_subtitle">
+        <item quantity="one">%1$d app · %2$d items</item>
+        <item quantity="other">%1$d apps · %2$d items</item>
+    </plurals>
+    <!-- ===================================================================
+         BRIEF WIDGET, v0.13.0.
+
+         The fold strings replace the old page indicator. A page number told
+         you there was another page; these tell you what is ON it, which is
+         the only reason a widget that never moves is safe to trust.
+         =================================================================== -->
+    <string name="widget_overdue">%1$d overdue</string>
+    <string name="widget_fold_overdue">%1$d more · %2$d overdue</string>
+    <string name="widget_fold_soon">%1$d more · %2$d due this week</string>
+    <string name="widget_fold_clear">%1$d more · nothing else due this week</string>
+
+    <!-- Shown under each size in the widget picker. -->
+    <string name="widget_desc_2x2">The next thing on your plate, and nothing else.</string>
+    <string name="widget_desc_4x2">Three lines, most urgent first, from the apps using Medha.</string>
+    <string name="widget_desc_4x4">Everything live, grouped by how soon it is due.</string>
+
+    <!-- Band headings on the full brief screen. Grouped by when a thing is
+         due, not by which app wrote it. -->
+    <string name="band_overdue">OVERDUE</string>
+    <string name="band_soon">THIS WEEK</string>
+    <string name="band_later">LATER</string>
+    <!-- The undated lane. "NO DATE" described a band; these are OPEN
+         ITEMS, the other half of the triage rule: real, kept in full,
+         searchable, and deliberately not on the widget. -->
+    <string name="band_none">OPEN ITEMS</string>
+    <!--
+      The heading over the leftovers on the full brief: things an app
+      mentioned that nobody committed to and that carry no declared time.
+      Deliberately not "Everything else": these are real and findable,
+      which is the whole reason they are kept rather than dropped.
+    -->
+    <string name="brief_open_items">Open items</string>
+    <string name="band_count">%1$d</string>
+    <string name="brief_from">from %1$s</string>
+
+    <!-- Brief accent picker. -->
+    <string name="theme_title">Brief accent</string>
+    <string name="theme_body">Picks the accent the brief widget draws with. Surfaces and text always follow your system theme, and the overdue and this-week colours never change — a wallpaper should not be able to make an overdue bill look calm.</string>
+    <string name="theme_dynamic">From your wallpaper</string>
+    <string name="theme_indigo">Medha indigo</string>
+    <string name="theme_teal">Teal</string>
+    <string name="theme_rose">Rose</string>
+    <string name="theme_amber">Amber</string>
+    <string name="theme_saved">Brief accent: %1$s</string>
+    <string name="theme_dynamic_note">Needs Android 12 or newer; below that it matches Medha indigo.</string>
+
+    <!-- Notification reading. -->
+    <string name="notif_listen_title">Read notifications</string>
+    <string name="notif_listen_body">Your work calendar lives inside Outlook and Teams, which never sync to the phone\'s calendar — so the only way Medha can see a work meeting is the notification those apps post.\n\nAndroid has one switch for this and it covers every notification on the phone; there is no way to limit it to some apps. So Medha filters instead, on the device.\n\nWhat is then kept depends on one thing: whether you have given a paired app permission to read your notifications. Without that, notification text is never written to storage — it becomes a brief line that expires in 8 hours, or it is discarded. With it, Medha also keeps the text for %1$d days so that app can read it, and taking the permission away deletes what was kept.\n\nAnything that looks like a passcode is dropped before anything else happens, with no exceptions. A one-time code on your home screen would defeat the point of sending it.</string>
+    <!--
+      The third status line. The two above it report the two switches; this
+      reports the CONSEQUENCE, which is the part a person actually cares
+      about and the part v0.20.0 changed. Through v0.19.2 the body said
+      flatly that notification text was never written to storage; that is
+      now true only while nothing holds the capture capability, so the
+      promise moved from the prose into a line that states which it is.
+    -->
+    <string name="notif_listen_log_off">Stored: nothing. No app has permission to read your notifications.</string>
+    <string name="notif_listen_log_on">Stored: notification text, for %1$d days. %2$d app(s) can read it; turn that off under API clients and it is deleted.</string>
+    <string name="notif_listen_grant">Settings</string>
+    <string name="notif_listen_on">Medha: reading is ON</string>
+    <string name="notif_listen_off">Medha: reading is OFF</string>
+    <string name="notif_listen_turn_on">Turn on</string>
+    <string name="notif_listen_turn_off">Turn off</string>
+    <string name="notif_listen_granted">Android access: granted</string>
+    <string name="notif_listen_not_granted">Android access: not granted yet</string>
+
+    <!-- Medha's own nudge. Names one thing rather than only counting:
+         "3 overdue" is a statistic, a title and a countdown is a reminder. -->
+    <string name="nudge_title">%1$d overdue on your brief</string>
+    <string name="nudge_text">%1$s · %2$s</string>
+    <string name="nudge_setting">Remind me about overdue items</string>
+    <string name="nudge_setting_body">Medha posts one quiet notification when something on your brief goes overdue. At most twice a day, never between 10 pm and 7 am, and never twice for the same thing unless the count grows.</string>
+    <string name="nudge_on">Reminders on</string>
+    <string name="nudge_off">Reminders off</string>
+
+    <!-- The three-destination shell, v0.17.0. -->
+    <string name="tab_home">Home</string>
+    <string name="tab_apps">Apps</string>
+    <string name="tab_settings">Settings</string>
+    <string name="sec_connect">CONNECT AN APP</string>
+    <string name="sec_model">MODEL</string>
+    <string name="sec_perf">PERFORMANCE</string>
+    <string name="sec_brief">BRIEF</string>
+    <string name="sec_system">SYSTEM</string>
+    <string name="sec_diag">DIAGNOSTICS</string>
+    <string name="status_idle">Not running</string>
+    <string name="start">Start</string>
+    <string name="stop">Stop</string>
+    <string name="pick_model">Choose model file</string>
+    <string name="backend">Backend</string>
+    <string name="port">Port</string>
+    <string name="batch_charging">Run batch work only while charging</string>
+    <string name="pair_web">Pair a web app</string>
+    <string name="open_demo">Open the demo app</string>
+    <string name="apps_empty">Nothing is paired yet. Pair a web app to let it use Medha.</string>
+    <string name="endpoint_fmt">http://127.0.0.1:%1$d</string>
+    <string name="endpoint_idle">Start Medha to get an address</string>
+
+    <!-- Dismissing. -->
+    <string name="dismiss">Dismiss</string>
+    <string name="dismiss_group">Dismiss this group</string>
+    <string name="dismiss_group_title">Dismiss %1$s?</string>
+    <string name="dismiss_group_body">Removes %1$d item(s) from your brief. They come back if an app posts them again with a new date, and the dismissal is forgotten after 30 days.</string>
+    <string name="dismissed_one">Dismissed</string>
+    <string name="dismissed_many">Dismissed %1$d</string>
+    <string name="undismiss_all">Bring back dismissed items</string>
+    <!-- The button. The string above is the dialog title and stays a sentence. -->
+    <string name="undismiss_all_action">Bring back</string>
+    <string name="undismiss_all_done">Dismissed items restored</string>
+    <string name="btn_pick_model_first">Choose model file</string>
+    <string name="status_no_model">No model chosen yet. Tap below to pick a .litertlm file.</string>
+    <string name="add_client">Add an API client</string>
 </resources>

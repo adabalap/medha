@@ -1,0 +1,244 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Brief, 4x2 - the default size.
+
+  GENERATED SHAPE, HAND-OWNED CONTENT. All three brief layouts carry the
+  identical row block — bar, kind icon, title, text, mark — so a row looks
+  the same at every size and the provider can bind any of them with one
+  piece of code. tools/check_widget_wiring.py counts the row ids here and
+  compares them with BriefRender.ROWS_4X2; if they disagree the widget
+  silently drops items, which is the v0.9.0 bug.
+
+  NOTHING HERE ROTATES. Earlier versions paged through the brief and showed
+  "1/2" in the footer, which meant the row you came to check might not be on
+  screen when you looked. The rows are now ordered by urgency and fixed, and
+  the footer names what is below the fold instead of numbering pages.
+
+  Every colour is a resource reference, never a literal, so the LAUNCHER
+  resolves it: that is what makes values-night and the Material You palette
+  in values-v31 work on a home screen. The provider only ever sends resource
+  ids and strings.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widgetRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/bg_widget"
+    android:paddingStart="15dp"
+    android:paddingEnd="15dp"
+    android:paddingTop="11dp"
+    android:paddingBottom="11dp">
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:gravity="center_vertical"
+        android:paddingBottom="8dp">
+
+        <FrameLayout android:layout_width="26dp" android:layout_height="26dp">
+            <!-- The badge fill is an ImageView rather than the FrameLayout's
+                 background so the provider can swap it per chosen accent.
+                 setImageViewResource takes a resource ID, which the LAUNCHER
+                 resolves against its own configuration; a background set from
+                 a resolved colour int would bake in Medha's idea of light or
+                 dark and be wrong in the other theme. -->
+            <ImageView android:id="@+id/widgetBadge"
+                android:layout_width="match_parent" android:layout_height="match_parent"
+                android:scaleType="fitXY"
+                android:contentDescription="@null"
+                android:src="@drawable/bg_brief_badge" />
+            <ImageView android:layout_width="16dp" android:layout_height="16dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_medha_mark"
+                android:contentDescription="@string/app_name" />
+        </FrameLayout>
+
+        <!-- Two views, not one styled string: see widget_header_brand in
+             strings.xml for why a span cannot carry the colour here. -->
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:paddingStart="10dp" android:text="@string/widget_header_brand"
+            android:textColor="@color/brief_widget_brand" android:textSize="15sp"
+            android:textStyle="bold" android:maxLines="1"
+            android:includeFontPadding="false" />
+
+        <TextView android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:paddingStart="3dp" android:text="@string/widget_header_rest"
+            android:textColor="@color/brief_widget_title" android:textSize="11sp"
+            android:maxLines="1" android:ellipsize="end"
+            android:includeFontPadding="false" />
+
+        <TextView android:id="@+id/widgetOverdue"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:paddingStart="8dp" android:textSize="10.5sp" android:textStyle="bold"
+            android:textColor="@color/band_overdue" android:text="" />
+    </LinearLayout>
+
+    <TextView android:id="@+id/widgetEmpty" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:paddingTop="10dp"
+        android:text="@string/widget_empty" android:textColor="@color/brief_widget_body"
+        android:textSize="12.5sp" android:lineSpacingExtra="2dp" />
+
+    <!-- THE ROWS ABSORB THE SQUEEZE, NOT THE FOOTER.
+
+         height=0dp with weight=1 means this container takes whatever is left
+         after the header and the footer are laid out, so a widget shorter
+         than its content clips a ROW rather than the fold line. That matters:
+         the fold line is the entire reason a widget that does not rotate is
+         safe to trust, and v0.13.0 shipped with it sliced in half on a real
+         4x2. A half-drawn row, by contrast, is the honest "there is more
+         below" signal a list gives for free. -->
+    <LinearLayout android:layout_width="match_parent" android:layout_height="0dp"
+        android:layout_weight="1" android:orientation="vertical">
+
+    <LinearLayout android:id="@+id/widgetRow1"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:baselineAligned="false"
+        android:gravity="center_vertical">
+
+        <FrameLayout android:layout_width="30dp" android:layout_height="30dp"
+            android:layout_marginEnd="12dp">
+            <ImageView android:id="@+id/widgetTile1"
+                android:layout_width="match_parent" android:layout_height="match_parent"
+                android:scaleType="fitXY" android:contentDescription="@null"
+                android:src="@drawable/tile_note" />
+            <ImageView android:id="@+id/widgetIcon1"
+                android:layout_width="16dp" android:layout_height="16dp"
+                android:layout_gravity="center"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_kind_note" />
+        </FrameLayout>
+
+        <LinearLayout android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:orientation="vertical">
+            <TextView android:id="@+id/widgetTitle1"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:textSize="14sp" android:textStyle="bold"
+                android:textColor="@color/brief_widget_title"
+                android:maxLines="1" android:ellipsize="end" android:text="" />
+            <TextView android:id="@+id/widgetText1"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:textSize="12.5sp" android:textColor="@color/brief_widget_body"
+                android:maxLines="1" android:ellipsize="end"
+                android:lineSpacingExtra="1dp" android:text="" />
+        </LinearLayout>
+
+        <FrameLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginStart="10dp">
+            <ImageView android:id="@+id/widgetPill1"
+                android:layout_width="match_parent" android:layout_height="match_parent"
+                android:scaleType="fitXY" android:contentDescription="@null"
+                android:src="@drawable/pill_none" />
+            <TextView android:id="@+id/widgetMark1"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:paddingStart="9dp" android:paddingEnd="9dp"
+                android:paddingTop="3dp" android:paddingBottom="3dp"
+                android:textSize="10.5sp" android:textStyle="bold"
+                android:textColor="@color/brief_widget_title"
+                android:maxLines="1" android:text="" />
+        </FrameLayout>
+    </LinearLayout>
+
+    <LinearLayout android:id="@+id/widgetRow2"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:baselineAligned="false"
+        android:gravity="center_vertical" android:paddingTop="9dp">
+
+        <FrameLayout android:layout_width="30dp" android:layout_height="30dp"
+            android:layout_marginEnd="12dp">
+            <ImageView android:id="@+id/widgetTile2"
+                android:layout_width="match_parent" android:layout_height="match_parent"
+                android:scaleType="fitXY" android:contentDescription="@null"
+                android:src="@drawable/tile_note" />
+            <ImageView android:id="@+id/widgetIcon2"
+                android:layout_width="16dp" android:layout_height="16dp"
+                android:layout_gravity="center"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_kind_note" />
+        </FrameLayout>
+
+        <LinearLayout android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:orientation="vertical">
+            <TextView android:id="@+id/widgetTitle2"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:textSize="14sp" android:textStyle="bold"
+                android:textColor="@color/brief_widget_title"
+                android:maxLines="1" android:ellipsize="end" android:text="" />
+            <TextView android:id="@+id/widgetText2"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:textSize="12.5sp" android:textColor="@color/brief_widget_body"
+                android:maxLines="1" android:ellipsize="end"
+                android:lineSpacingExtra="1dp" android:text="" />
+        </LinearLayout>
+
+        <FrameLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginStart="10dp">
+            <ImageView android:id="@+id/widgetPill2"
+                android:layout_width="match_parent" android:layout_height="match_parent"
+                android:scaleType="fitXY" android:contentDescription="@null"
+                android:src="@drawable/pill_none" />
+            <TextView android:id="@+id/widgetMark2"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:paddingStart="9dp" android:paddingEnd="9dp"
+                android:paddingTop="3dp" android:paddingBottom="3dp"
+                android:textSize="10.5sp" android:textStyle="bold"
+                android:textColor="@color/brief_widget_title"
+                android:maxLines="1" android:text="" />
+        </FrameLayout>
+    </LinearLayout>
+
+    <LinearLayout android:id="@+id/widgetRow3"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:baselineAligned="false"
+        android:gravity="center_vertical" android:paddingTop="9dp">
+
+        <FrameLayout android:layout_width="30dp" android:layout_height="30dp"
+            android:layout_marginEnd="12dp">
+            <ImageView android:id="@+id/widgetTile3"
+                android:layout_width="match_parent" android:layout_height="match_parent"
+                android:scaleType="fitXY" android:contentDescription="@null"
+                android:src="@drawable/tile_note" />
+            <ImageView android:id="@+id/widgetIcon3"
+                android:layout_width="16dp" android:layout_height="16dp"
+                android:layout_gravity="center"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_kind_note" />
+        </FrameLayout>
+
+        <LinearLayout android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:orientation="vertical">
+            <TextView android:id="@+id/widgetTitle3"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:textSize="14sp" android:textStyle="bold"
+                android:textColor="@color/brief_widget_title"
+                android:maxLines="1" android:ellipsize="end" android:text="" />
+            <TextView android:id="@+id/widgetText3"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:textSize="12.5sp" android:textColor="@color/brief_widget_body"
+                android:maxLines="1" android:ellipsize="end"
+                android:lineSpacingExtra="1dp" android:text="" />
+        </LinearLayout>
+
+        <FrameLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginStart="10dp">
+            <ImageView android:id="@+id/widgetPill3"
+                android:layout_width="match_parent" android:layout_height="match_parent"
+                android:scaleType="fitXY" android:contentDescription="@null"
+                android:src="@drawable/pill_none" />
+            <TextView android:id="@+id/widgetMark3"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:paddingStart="9dp" android:paddingEnd="9dp"
+                android:paddingTop="3dp" android:paddingBottom="3dp"
+                android:textSize="10.5sp" android:textStyle="bold"
+                android:textColor="@color/brief_widget_title"
+                android:maxLines="1" android:text="" />
+        </FrameLayout>
+    </LinearLayout>
+
+    </LinearLayout>
+
+    <TextView android:id="@+id/widgetFold" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:paddingTop="10dp"
+        android:textSize="10.5sp" android:textColor="@color/brief_widget_meta"
+        android:maxLines="1" android:ellipsize="end" android:text="" />
+
+</LinearLayout>

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Atomic orbital, no container.
+
+  The earlier version wrapped this in a white speech bubble; at launcher size
+  the bubble dominated and the orbital shrank to an unreadable speck, so the
+  icon read as "a generic messaging app" rather than as anything to do with
+  Medha. Dropping the bubble lets the orbital use the full keyline, which is
+  both clearer and a stronger family resemblance to Medha's own mark.
+
+  Teal, not Medha's indigo: two near-identical icons adjacent in a launcher
+  is a usability problem, not a branding win.
+
+  Content stays within x,y in [24,84] of the 108 viewport, inside the
+  adaptive-icon keyline, so no launcher mask clips it.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+
+    <group android:pivotX="54" android:pivotY="54">
+        <path android:pathData="M24,54 a30,10.5 0 1,0 60,0 a30,10.5 0 1,0 -60,0"
+            android:strokeColor="#FFFFFFFF" android:strokeWidth="5.5" android:fillColor="#00000000" />
+    </group>
+    <group android:pivotX="54" android:pivotY="54" android:rotation="60">
+        <path android:pathData="M24,54 a30,10.5 0 1,0 60,0 a30,10.5 0 1,0 -60,0"
+            android:strokeColor="#FFFFFFFF" android:strokeWidth="5.5" android:fillColor="#00000000" />
+    </group>
+    <group android:pivotX="54" android:pivotY="54" android:rotation="120">
+        <path android:pathData="M24,54 a30,10.5 0 1,0 60,0 a30,10.5 0 1,0 -60,0"
+            android:strokeColor="#FFFFFFFF" android:strokeWidth="5.5" android:fillColor="#00000000" />
+    </group>
+
+    <!-- Nucleus sits on a disc of the background teal so the three orbits
+         crossing behind it do not turn the centre into a blob. -->
+    <path android:pathData="M54,42.5 a11.5,11.5 0 1,0 0,23 a11.5,11.5 0 1,0 0,-23"
+        android:fillColor="#FF12797E" />
+    <path android:pathData="M54,46 a8,8 0 1,0 0,16 a8,8 0 1,0 0,-16"
+        android:fillColor="#FFF4A32E" />
+</vector>
