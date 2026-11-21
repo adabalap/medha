@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The pill behind the overdue count. A tint of the fixed band colour
+     rather than of the theme accent, so it cannot be recoloured into
+     something reassuring by a wallpaper. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/band_overdue_tint" />
+    <corners android:radius="999dp" />
+</shape>

@@ -1,6 +1,6 @@
 package com.adabala.medha.rag
 
-import android.util.Log
+import com.adabala.medha.diag.Diagnostics
 import com.adabala.medha.data.ChunkEntity
 import com.adabala.medha.data.MedhaDatabase
 import kotlin.math.ln
@@ -23,7 +23,7 @@ import kotlin.math.sqrt
  * Dense retrieval is strong on paraphrase and weak on *exact tokens*. An
  * embedding of "order AX-99213" and one of "order AX-99871" sit almost on top
  * of each other, because the model encodes "an order reference" and not the
- * digits. For an SMS organizer — OTP codes, tracking numbers, account digits,
+ * digits. For transactional corpora — order numbers, tracking codes, IDs,
  * short names — that is the common case, not an edge case. Lexical search is
  * exact but brittle to phrasing; dense is robust to phrasing but blurry on
  * identifiers. Fusing them recovers both.
@@ -69,7 +69,7 @@ class Retriever(
             // the query prefix here instead would cost recall silently.
             val vec = if (embedder.isReady) {
                 runCatching { embedder.embedDocument(piece, title) }
-                    .onFailure { Log.w(TAG, "embedDocument failed; storing chunk without a vector", it) }
+                    .onFailure { Diagnostics.w(TAG, "embedDocument failed; storing chunk without a vector", it) }
                     .getOrNull()
             } else null
 
@@ -137,7 +137,7 @@ class Retriever(
     private suspend fun denseSearch(collection: String, query: String, limit: Int): List<Hit> {
         if (!embedder.isReady) return emptyList()
         val q = runCatching { embedder.embedQuery(query) }
-            .onFailure { Log.w(TAG, "embedQuery failed; falling back to lexical", it) }
+            .onFailure { Diagnostics.w(TAG, "embedQuery failed; falling back to lexical", it) }
             .getOrNull() ?: return emptyList()
 
         // Scoped to this embedding space; stale vectors are invisible.

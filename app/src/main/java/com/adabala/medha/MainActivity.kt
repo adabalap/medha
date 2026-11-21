@@ -9,6 +9,10 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.Uri
 import android.os.Build
+import com.adabala.medha.connect.MedhaNotificationListener
+import com.adabala.medha.notify.BriefTheme
+import com.adabala.medha.notify.NotificationHub
+import com.adabala.medha.notify.BriefWidgets
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -20,18 +24,27 @@ import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import android.content.res.ColorStateList
+import android.text.Spannable
+import android.text.SpannableString
+import android.text.style.ForegroundColorSpan
 import androidx.core.content.ContextCompat
-import androidx.core.view.GravityCompat
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
+import com.google.android.material.button.MaterialButton
+import androidx.core.content.FileProvider
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import androidx.core.app.NotificationManagerCompat
 import com.adabala.medha.auth.ClientRegistry
-import com.adabala.medha.connectors.SmsConnector
-import com.adabala.medha.sched.InferenceScheduler
+import com.adabala.medha.auth.PairingManager
+import com.adabala.medha.diag.Diagnostics
+import com.adabala.medha.ui.ClientListAdapter
 import android.widget.EditText
 import android.widget.LinearLayout
 import androidx.preference.PreferenceManager
 import com.adabala.medha.databinding.ActivityMainBinding
+import com.google.android.material.color.DynamicColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.slider.Slider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -43,7 +56,10 @@ import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
 class MainActivity : AppCompatActivity() {
 
@@ -69,14 +85,6 @@ class MainActivity : AppCompatActivity() {
     private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(this) }
 
     private val registry by lazy { ClientRegistry.get(this) }
-    private val sms by lazy { SmsConnector(this) }
-
-    private val smsPerm =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { res ->
-            val granted = res[Manifest.permission.READ_SMS] == true
-            toast(getString(if (granted) R.string.sms_granted else R.string.sms_denied))
-        }
-
     private val notifPerm =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
@@ -96,10 +104,15 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Material You. Before any view is inflated: it swaps the theme's
+        // colour roles for the ones derived from the wallpaper, and anything
+        // already inflated keeps the old ones. A no-op below API 31, where
+        // there is no system palette to take.
+        DynamicColors.applyToActivityIfAvailable(this)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        setupDrawer()
+        setupNavigation()
         setupScheduler()
 
         binding.editPort.setText(
@@ -131,63 +144,129 @@ class MainActivity : AppCompatActivity() {
             prefs.edit().putString(InferenceService.KEY_BACKEND, v).apply()
         }
 
-        binding.btnStart.setOnClickListener { startMedha() }
+        binding.btnStart.setOnClickListener {
+            // With no model chosen, Start IS the model picker.
+            //
+            // v0.17.0 moved the picker into Settings and left this button
+            // disabled with "Tap Start to load the model" above it: a screen
+            // that tells you to press a button you cannot press, and no hint
+            // that the fix is two taps away in another tab. The button now
+            // always does the next useful thing.
+            if (hasModel()) startMedha() else pickModel.launch(arrayOf("*/*"))
+        }
         binding.btnStop.setOnClickListener { stopMedha() }
         binding.btnCopyToken.setOnClickListener { copyToken() }
 
         applyState(UiState.IDLE)
+
+        // Start at the top.
+        //
+        // Android focuses the first focusable descendant during layout, which
+        // here is the Port field near the bottom of the card stack, and the
+        // NestedScrollView then scrolls to reveal it. The result is the app
+        // opening halfway down its own settings. The root LinearLayout is
+        // focusableInTouchMode so it wins that race, and this puts the scroll
+        // position back to zero after the first pass for good measure.
+        binding.contentScroll.post {
+            binding.contentScroll.scrollTo(0, 0)
+            binding.contentScroll.smoothScrollTo(0, 0)
+        }
     }
 
-    // ----------------------------- drawer -----------------------------
+    // --------------------------- navigation ---------------------------
 
-    private fun setupDrawer() {
-        // fitsSystemWindows on NavigationView REPLACES the header's padding with
-        // the window insets instead of adding to it, which drew the title under
-        // the status bar. Apply the top inset ourselves and keep the layout's
-        // own padding intact.
-        val header = binding.navView.getHeaderView(0)
-        val basePad = header.paddingTop
-        ViewCompat.setOnApplyWindowInsetsListener(header) { v, insets ->
-            val top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
-            v.setPadding(v.paddingLeft, basePad + top, v.paddingRight, v.paddingBottom)
-            insets
-        }
+    /**
+     * Three destinations instead of a sixteen-item drawer.
+     *
+     * The drawer was not slow to use; it was impossible to learn. Fourteen
+     * of its entries opened a dialog, so the app's entire surface was a list
+     * of nouns with no sense of which mattered, over a home screen that put
+     * a live status readout and every setting in one scroll.
+     *
+     * Sections are sibling views swapped by visibility rather than
+     * fragments. The content is three scrolls in one Activity that already
+     * binds every one of these views directly; fragments would add a
+     * lifecycle, a back stack and a state-restore path to solve a problem
+     * nobody has here.
+     */
+    private fun setupNavigation() {
         binding.toolbar.contentDescription = getString(R.string.app_name)
-        binding.toolbar.setNavigationContentDescription(R.string.open_drawer)
-        binding.toolbar.setNavigationOnClickListener {
-            binding.drawerLayout.openDrawer(GravityCompat.START)
-        }
-
-        binding.navView.setNavigationItemSelectedListener { item ->
-            binding.drawerLayout.closeDrawer(GravityCompat.START)
-            when (item.itemId) {
-                R.id.nav_open_pwa -> openDemo()
-                R.id.nav_clients -> showClientsDialog()
-                R.id.nav_sms -> showSmsDialog()
-                R.id.nav_scheduler -> showSchedulerDialog()
-                R.id.nav_thermal -> showThermalDialog()
-                R.id.nav_copy_token -> copyToken()
-                R.id.nav_regen_token -> confirmRegenerateToken()
-                R.id.nav_battery -> requestBatteryExemption()
-                R.id.nav_stop -> stopMedha()
-                R.id.nav_endpoints -> showEndpointsDialog()
-                R.id.nav_about -> showAboutDialog()
-                else -> return@setNavigationItemSelectedListener false
-            }
+        binding.bottomNav.setOnItemSelectedListener { item ->
+            show(
+                when (item.itemId) {
+                    R.id.tab_apps -> Tab.APPS
+                    R.id.tab_settings -> Tab.SETTINGS
+                    else -> Tab.HOME
+                }
+            )
             true
         }
+        show(Tab.HOME)
 
-        // Back closes the drawer before leaving the screen.
+        // Apps
+        binding.appsClientList.layoutManager = LinearLayoutManager(this)
+        binding.appsClientList.adapter = clientAdapter
+        binding.btnAddClient.setOnClickListener { showAddClientDialog() }
+        binding.btnPairWeb.setOnClickListener { showPairWebDialog() }
+        binding.btnOpenDemo.setOnClickListener { openDemo() }
+
+        // Settings rows. Each one opens the dialog the drawer used to.
+        binding.rowBrief.setOnClickListener { openBrief() }
+        binding.rowBriefTheme.setOnClickListener { showBriefThemeDialog() }
+        binding.rowNotifListen.setOnClickListener { showNotificationListenDialog() }
+        binding.rowNudge.setOnClickListener { showNudgeDialog() }
+        binding.rowUndismiss.setOnClickListener { confirmUndismissAll() }
+        binding.rowMultimodal.setOnClickListener { showMultimodalDialog() }
+        binding.rowThermal.setOnClickListener { showThermalDialog() }
+        binding.rowScheduler.setOnClickListener { showSchedulerDialog() }
+        binding.rowBattery.setOnClickListener { requestBatteryExemption() }
+        binding.rowEndpoints.setOnClickListener { showEndpointsDialog() }
+        binding.rowRegenToken.setOnClickListener { confirmRegenerateToken() }
+        binding.rowDiagnostics.setOnClickListener { showDiagnosticsDialog() }
+        binding.rowAbout.setOnClickListener { showAboutDialog() }
+
+        // Back goes to Home before it leaves the app: a tab is a place, and
+        // leaving the app from Settings is never what the gesture meant.
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (binding.drawerLayout.isDrawerOpen(GravityCompat.START)) {
-                    binding.drawerLayout.closeDrawer(GravityCompat.START)
+                if (tab != Tab.HOME) {
+                    binding.bottomNav.selectedItemId = R.id.tab_home
                 } else {
                     isEnabled = false
                     onBackPressedDispatcher.onBackPressed()
                 }
             }
         })
+    }
+
+    private enum class Tab { HOME, APPS, SETTINGS }
+
+    private var tab: Tab = Tab.HOME
+
+    private fun show(which: Tab) {
+        tab = which
+        binding.contentScroll.visibility = if (which == Tab.HOME) View.VISIBLE else View.GONE
+        binding.sectionApps.visibility = if (which == Tab.APPS) View.VISIBLE else View.GONE
+        binding.sectionSettings.visibility =
+            if (which == Tab.SETTINGS) View.VISIBLE else View.GONE
+        if (which == Tab.APPS) refreshClients()
+    }
+
+    /**
+     * The paired clients, inline.
+     *
+     * This was a dialog. "What is connected to this" is a question about the
+     * app's state, and state does not belong behind a modal that is
+     * dismissed by tapping next to it.
+     */
+    private fun refreshClients() {
+        val clients = runCatching { registry.all() }.getOrDefault(emptyList())
+        clientAdapter.submitList(clients)
+        binding.appsEmpty.visibility = if (clients.isEmpty()) View.VISIBLE else View.GONE
+    }
+
+    private val clientAdapter by lazy {
+        ClientListAdapter { client -> showClientActions(client) }
     }
 
     // -------------------------- state machine --------------------------
@@ -197,22 +276,104 @@ class MainActivity : AppCompatActivity() {
      * UI tracks the service even when it is started or stopped from elsewhere
      * (the notification's Stop action, or the system killing it).
      */
+    /** Whether a model file has been chosen. */
+    private fun hasModel(): Boolean =
+        prefs.getString(InferenceService.KEY_MODEL_PATH, null) != null
+
+    /**
+     * The status line, with colour on the dot and nowhere else.
+     *
+     * It used to be drawn entirely in one of four pale tints -- #B7F5C8 for
+     * running, and so on -- picked when the card behind it was deep purple.
+     * The card is light now and those tints are barely legible on it: the
+     * most important sentence on the screen was the hardest one to read.
+     *
+     * Leaving the TEXT alone means it inherits textColorPrimary, so it is
+     * black on light and white on dark without this function knowing which.
+     * The leading dot keeps the state readable at a glance.
+     */
+    private fun setStatus(text: String, dotColorRes: Int) {
+        val s = SpannableString(text)
+        if (text.isNotEmpty() && text[0] == '●') {
+            s.setSpan(
+                ForegroundColorSpan(ContextCompat.getColor(this, dotColorRes)),
+                0, 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
+        binding.statusText.text = s
+    }
+
+    /**
+     * Paints a MaterialButton, or hands it back to the theme.
+     *
+     * [fillRes] null restores the default tint and label colour rather than
+     * leaving the last state's paint on the view. applyState runs on every
+     * poll, so a button that is only ever painted and never un-painted keeps
+     * whichever colour it was given first and stops tracking state at all.
+     */
+    private val originalTints = mutableMapOf<Int, Pair<ColorStateList?, ColorStateList>>()
+
+    private fun tintButton(button: MaterialButton, fillRes: Int?, onFillRes: Int) {
+        // Captured on the first call, which happens before anything has been
+        // painted, so this is the tint the theme gave the button. It cannot
+        // be rebuilt from a colour resource: Material's default background
+        // tint is a ColorStateList with a disabled state in it, and a flat
+        // colour in its place makes a disabled button look pressable.
+        val (bg, fg) = originalTints.getOrPut(button.id) {
+            button.backgroundTintList to button.textColors
+        }
+        if (fillRes == null) {
+            button.backgroundTintList = bg
+            button.setTextColor(fg)
+            button.iconTint = fg
+            return
+        }
+        // A flat fill is safe here only because these are applied when the
+        // button is enabled and removed when it is not; see applyState.
+        button.backgroundTintList =
+            ColorStateList.valueOf(ContextCompat.getColor(this, fillRes))
+        val on = ColorStateList.valueOf(ContextCompat.getColor(this, onFillRes))
+        button.setTextColor(on)
+        button.iconTint = on
+    }
+
     private fun applyState(state: UiState) {
         uiState = state
         val hasModel = prefs.getString(InferenceService.KEY_MODEL_PATH, null) != null
         val busy = state == UiState.STARTING || state == UiState.LOADING
         val live = state == UiState.RUNNING || busy
 
-        binding.btnStart.isEnabled = hasModel && (state == UiState.IDLE || state == UiState.ERROR)
-        binding.btnStart.text = when (state) {
-            UiState.STARTING -> getString(R.string.btn_starting)
-            UiState.LOADING -> getString(R.string.btn_loading)
-            UiState.RUNNING -> getString(R.string.btn_running)
-            UiState.ERROR -> getString(R.string.btn_retry)
-            UiState.IDLE -> getString(R.string.btn_start)
+        // Never disabled for want of a model: without one it becomes the
+        // picker instead. Only a run already in progress disables it.
+        binding.btnStart.isEnabled = state == UiState.IDLE || state == UiState.ERROR
+        binding.btnStart.text = when {
+            !hasModel -> getString(R.string.btn_pick_model_first)
+            state == UiState.STARTING -> getString(R.string.btn_starting)
+            state == UiState.LOADING -> getString(R.string.btn_loading)
+            state == UiState.RUNNING -> getString(R.string.btn_running)
+            state == UiState.ERROR -> getString(R.string.btn_retry)
+            else -> getString(R.string.btn_start)
         }
 
         binding.btnStop.isEnabled = live
+
+        // Colour follows what the button will DO, not what it is called.
+        //
+        // Green only when pressing it starts something: with no model it is
+        // the file picker, and while a run is in progress it does nothing at
+        // all, so in both of those it stays the neutral theme fill. A green
+        // button that is disabled, or that opens a file chooser, teaches
+        // people to stop reading the colour.
+        //
+        // Maroon on Stop whenever there is something to stop. A disabled
+        // button keeps the theme fill rather than a greyed maroon: Material
+        // already dims a disabled button, and dimming a strong red produces
+        // a muddy brown that looks like a rendering fault.
+        val startIsGo = hasModel && (state == UiState.IDLE || state == UiState.ERROR)
+        tintButton(binding.btnStart, if (startIsGo) R.color.run_green else null,
+            R.color.run_green_on)
+        tintButton(binding.btnStop, if (live) R.color.stop_maroon else null,
+            R.color.stop_maroon_on)
 
         // Config that only takes effect on (re)start is locked while live, so a
         // change cannot silently disagree with what the service is actually
@@ -226,11 +387,18 @@ class MainActivity : AppCompatActivity() {
 
         binding.btnCopyToken.isEnabled = apiToken() != null
 
-        binding.navView.menu.findItem(R.id.nav_open_pwa)?.isEnabled = state == UiState.RUNNING
-        binding.navView.menu.findItem(R.id.nav_stop)?.isEnabled = live
-        binding.navView.menu.findItem(R.id.nav_copy_token)?.isEnabled = apiToken() != null
-        binding.navView.menu.findItem(R.id.nav_regen_token)?.isEnabled = apiToken() != null
-        binding.navView.menu.findItem(R.id.nav_thermal)?.isEnabled = lastSystemJson != null
+        binding.btnOpenDemo.isEnabled = state == UiState.RUNNING
+        binding.rowRegenToken.isEnabled = apiToken() != null
+        binding.rowThermal.isEnabled = lastSystemJson != null
+
+        // The endpoint belongs beside the token: the two are useless apart,
+        // and "what do I point my app at" was previously answered only by a
+        // dialog three taps into the drawer.
+        binding.endpointText.text = if (state == UiState.RUNNING) {
+            getString(R.string.endpoint_fmt, currentPort())
+        } else {
+            getString(R.string.endpoint_idle)
+        }
 
         val sub = when (state) {
             UiState.IDLE -> getString(R.string.state_stopped)
@@ -240,22 +408,38 @@ class MainActivity : AppCompatActivity() {
             UiState.ERROR -> getString(R.string.state_error)
         }
         binding.toolbarTitle.toolbarSubtitle.text = sub
-        runCatching {
-            binding.navView.getHeaderView(0)
-                .findViewById<android.widget.TextView>(R.id.navHeaderStatus)?.text = sub
-        }
         binding.loadProgress.visibility = if (busy) View.VISIBLE else View.GONE
         binding.configLockedHint.visibility = if (live) View.VISIBLE else View.GONE
     }
 
     // --------------------------- scheduler UI ---------------------------
 
+    /**
+     * Put a value on this slider without any chance of killing the process.
+     *
+     * A Material Slider throws IllegalStateException for a value that is not
+     * valueFrom plus a whole number of stepSize, and it checks when it DRAWS,
+     * not when the value is set. So a bad value is stored silently and the
+     * crash arrives later, wherever that view first becomes visible -- which
+     * is why an invalid thermal setting presented as "the Settings tab
+     * minimises the app".
+     *
+     * Clamping alone is not enough. prefs are written by whatever version ran
+     * last; a 0.83 left behind by an older build clamps to 0.83, lands
+     * between two ticks, and crashes exactly the same way. Snapping to the
+     * nearest tick is what makes the value always drawable, whatever is on
+     * disk.
+     */
+    private fun Slider.setSnapped(raw: Float) {
+        val safe = raw.coerceIn(valueFrom, valueTo)
+        val steps = ((safe - valueFrom) / stepSize).roundToInt()
+        value = (valueFrom + steps * stepSize).coerceIn(valueFrom, valueTo)
+    }
+
     private fun setupScheduler() {
         val p = prefs
-        binding.pauseSlider.value =
-            p.getFloat(InferenceService.KEY_THERMAL_PAUSE, 0.85f).coerceIn(0.30f, 1.20f)
-        binding.resumeSlider.value =
-            p.getFloat(InferenceService.KEY_THERMAL_RESUME, 0.70f).coerceIn(0.20f, 1.10f)
+        binding.pauseSlider.setSnapped(p.getFloat(InferenceService.KEY_THERMAL_PAUSE, 0.85f))
+        binding.resumeSlider.setSnapped(p.getFloat(InferenceService.KEY_THERMAL_RESUME, 0.70f))
         binding.switchCharging.isChecked = p.getBoolean(InferenceService.KEY_BATCH_CHARGING, false)
         renderSliderLabels()
 
@@ -263,14 +447,13 @@ class MainActivity : AppCompatActivity() {
             // Keep resume strictly below pause in the UI too, so the user never
             // sees a configuration the service will silently rewrite.
             if (binding.resumeSlider.value >= v - 0.05f) {
-                binding.resumeSlider.value = (v - 0.05f).coerceAtLeast(0.20f)
+                binding.resumeSlider.setSnapped(v - 0.05f)
             }
             persistScheduler(); renderSliderLabels()
         }
         binding.resumeSlider.addOnChangeListener { _, v, _ ->
             if (v >= binding.pauseSlider.value - 0.05f) {
-                binding.resumeSlider.value =
-                    (binding.pauseSlider.value - 0.05f).coerceAtLeast(0.20f)
+                binding.resumeSlider.setSnapped(binding.pauseSlider.value - 0.05f)
             }
             persistScheduler(); renderSliderLabels()
         }
@@ -335,25 +518,368 @@ class MainActivity : AppCompatActivity() {
 
     // ---------------------------- dialogs ----------------------------
 
-    private fun showClientsDialog() {
-        val clients = registry.all()
+    /**
+     * Client manager.
+     *
+     * The previous version was a read-only wall of text: no way to copy a
+     * token, rotate one, or delete a client created by mistake. A token is
+     * shown in full exactly once at creation, so "no copy" meant a typo in the
+     * client id was unrecoverable and the token was gone for good.
+     */
+    /**
+     * Turning notification reading on, and explaining what it costs.
+     *
+     * Two switches, shown together because they fail differently. Android's
+     * grant is the consent and lives in system settings; Medha's own switch
+     * is so the feature can be stopped from here without hunting for that
+     * screen again. Neither alone reads anything.
+     *
+     * The body is long on purpose. This is the one place in Medha that
+     * reads data the user did not hand to it, and the honest version of
+     * that sentence does not fit on a toggle label.
+     *
+     * THREE status lines, not two, as of v0.20.0. The first two report the
+     * two switches. The third reports the consequence, and it exists
+     * because this dialog used to state flatly that notification text was
+     * never written to storage — a promise v0.20.0 made conditional and
+     * which was still being shown, unchanged, on a phone where it had
+     * stopped being true. A sentence in prose cannot track that; a line
+     * computed from the live grant can.
+     */
+    private fun showNotificationListenDialog() {
+        val granted = notificationAccessGranted()
+        val medhaOn = prefs.getBoolean(
+            MedhaNotificationListener.KEY_ENABLED,
+            MedhaNotificationListener.DEFAULT_ENABLED
+        )
+        // Read now rather than cached: a capability revoked a minute ago has
+        // to be reflected here, because this is the screen someone opens to
+        // find out what their phone is currently doing.
+        val readers = registry.all().count {
+            ClientRegistry.Cap.CAPTURES in it.capabilities
+        }
+
+        val status =
+            (if (granted) getString(R.string.notif_listen_granted)
+            else getString(R.string.notif_listen_not_granted)) + "\n" +
+                (if (medhaOn) getString(R.string.notif_listen_on)
+                else getString(R.string.notif_listen_off)) + "\n" +
+                (if (readers > 0)
+                    getString(
+                        R.string.notif_listen_log_on,
+                        com.adabala.medha.connect.CapturePolicy.RETAIN_DAYS,
+                        readers
+                    )
+                else getString(R.string.notif_listen_log_off))
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.notif_listen_title)
+            .setIcon(R.drawable.ic_info)
+            .setMessage(
+                getString(
+                    R.string.notif_listen_body,
+                    com.adabala.medha.connect.CapturePolicy.RETAIN_DAYS
+                ) + "\n\n" + status
+            )
+            .setPositiveButton(R.string.notif_listen_grant) { _, _ ->
+                openNotificationAccessSettings()
+            }
+            .setNeutralButton(
+                if (medhaOn) R.string.notif_listen_turn_off else R.string.notif_listen_turn_on
+            ) { _, _ ->
+                prefs.edit()
+                    .putBoolean(MedhaNotificationListener.KEY_ENABLED, !medhaOn)
+                    .apply()
+                toast(
+                    getString(
+                        if (medhaOn) R.string.notif_listen_off else R.string.notif_listen_on
+                    )
+                )
+            }
+            .setNegativeButton(R.string.close, null)
+            .show()
+    }
+
+    /**
+     * Whether the system has bound our listener.
+     *
+     * Read from Settings.Secure every time rather than cached: the user can
+     * revoke it in system settings whenever they like and Medha is never
+     * told, so a remembered answer would be confidently wrong exactly when
+     * it mattered.
+     */
+    // Delegates rather than keeping its own copy: the server now reports the
+    // same state on /captures, and two independent readings of one setting
+    // is how a screen and an API come to disagree about whether the phone is
+    // listening.
+    private fun notificationAccessGranted(): Boolean =
+        MedhaNotificationListener.hasSystemGrant(this)
+
+    /**
+     * Falls back to the top of Settings rather than dying: the listener
+     * screen is missing or renamed on some vendor builds, and a dead button
+     * is worse than a longer walk.
+     */
+    private fun openNotificationAccessSettings() {
+        val actions = listOf(
+            android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS,
+            android.provider.Settings.ACTION_SETTINGS
+        )
+        for (action in actions) {
+            if (runCatching { startActivity(Intent(action)); true }.getOrDefault(false)) return
+        }
+    }
+
+    /**
+     * A way back from a dismissal.
+     *
+     * Every destructive gesture in this app needs one. Dismissals expire on
+     * their own after thirty days, but "wait a month" is not an undo.
+     */
+    private fun confirmUndismissAll() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.undismiss_all)
+            .setIcon(R.drawable.ic_refresh)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.undismiss_all_action) { _, _ ->
+                NotificationHub(applicationContext).undismissAll()
+                toast(getString(R.string.undismiss_all_done))
+            }
+            .show()
+    }
+
+    /** Medha's own reminder about overdue items. */
+    private fun showNudgeDialog() {
+        val on = prefs.getBoolean(NotificationHub.KEY_NUDGE, NotificationHub.NUDGE_DEFAULT)
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.nudge_setting)
+            .setIcon(R.drawable.ic_stat_medha)
+            .setMessage(R.string.nudge_setting_body)
+            .setPositiveButton(if (on) R.string.nudge_off else R.string.nudge_on) { _, _ ->
+                prefs.edit().putBoolean(NotificationHub.KEY_NUDGE, !on).apply()
+                toast(getString(if (on) R.string.nudge_off else R.string.nudge_on))
+            }
+            .setNegativeButton(R.string.close, null)
+            .show()
+    }
+
+    /**
+     * Picks the accent the brief widget draws with.
+     *
+     * A short list of presets rather than a colour wheel, and that is a
+     * correctness decision rather than a shortcut. The widget is drawn by
+     * the launcher, which resolves resource ids against its own
+     * configuration; that is what makes dark mode work out there. An
+     * arbitrary colour would have to be resolved here in Medha's process and
+     * shipped as an int, baking in this process's idea of light or dark, and
+     * would then be wrong in the other theme with nothing to see until
+     * someone switched. See [BriefTheme].
+     */
+    private fun showBriefThemeDialog() {
+        val themes = BriefTheme.values()
+        val labels = themes.map { getString(it.labelRes) }.toTypedArray()
+        val current = themes.indexOf(BriefTheme.current(this)).takeIf { it >= 0 } ?: 0
+
         val body = buildString {
-            append("Each client gets its own token and namespace. A client can only\n")
-            append("see sessions and collections under its own prefix.\n\n")
-            clients.forEach { c ->
-                append(c.id).append("  [").append(c.namespace).append(":*]\n")
-                append("  ").append(c.token.take(10)).append("…").append(c.token.takeLast(4)).append("\n")
-                append("  ").append(if (c.isAdmin) "admin (full access)" else c.capabilities.sorted().joinToString(", "))
-                append("\n\n")
+            append(getString(R.string.theme_body))
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                append("\n\n").append(getString(R.string.theme_dynamic_note))
             }
         }
+
         MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.clients_title)
-            .setIcon(R.drawable.ic_client)
+            .setTitle(R.string.theme_title)
+            .setIcon(R.drawable.ic_tune)
             .setMessage(body)
-            .setPositiveButton(R.string.close, null)
-            .setNeutralButton(R.string.client_add) { _, _ -> showAddClientDialog() }
+            .setSingleChoiceItems(labels, current) { dialog, which ->
+                prefs.edit().putString(BriefTheme.KEY, themes[which].key).apply()
+                // Redraw now. The widget reads the preference on every
+                // render, so this is the whole of "apply": no service to
+                // nudge, nothing to restart.
+                BriefWidgets.refresh(applicationContext)
+                toast(getString(R.string.theme_saved, labels[which]))
+                dialog.dismiss()
+            }
+            .setNegativeButton(R.string.close, null)
             .show()
+    }
+
+    private fun showClientActions(client: ClientRegistry.Client) {
+        val actions = mutableListOf(
+            getString(R.string.copy_token),
+            getString(R.string.rotate),
+            getString(R.string.client_edit)
+        )
+        // The last admin must keep existing, or the owner is locked out of
+        // their own service with no recovery short of clearing app data.
+        val deletable = !client.isAdmin || registry.all().count { it.isAdmin } > 1
+        if (deletable) actions.add(getString(R.string.revoke))
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(client.id)
+            .setItems(actions.toTypedArray()) { _, i ->
+                when (actions[i]) {
+                    getString(R.string.copy_token) -> {
+                        copyText("Medha token: ${client.id}", client.token)
+                        showTokenDialog(client)
+                    }
+                    getString(R.string.rotate) -> confirmRotate(client)
+                    getString(R.string.client_edit) -> showCapabilitiesDialog(client)
+                    getString(R.string.revoke) -> confirmRevoke(client)
+                }
+            }
+            .setNegativeButton(R.string.close, null)
+            .show()
+    }
+
+    /** Shows the token in full and selectable, since clipboards can fail. */
+    private fun showTokenDialog(client: ClientRegistry.Client) {
+        val caps = if (client.isAdmin) getString(R.string.client_full_access)
+            else client.capabilities.sorted().joinToString(", ")
+        MaterialAlertDialogBuilder(this)
+            .setTitle(client.id)
+            .setMessage(
+                "${client.token}\n\nCopied to the clipboard.\n" +
+                    "Namespace: ${client.namespace}:*\n" +
+                    "Capabilities: $caps"
+            )
+            .setPositiveButton(R.string.close, null)
+            .show()
+    }
+
+    private fun confirmRotate(client: ClientRegistry.Client) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.rotate_title, client.id))
+            .setMessage(R.string.rotate_body)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.rotate_action) { _, _ ->
+                val fresh = registry.rotate(client.id)
+                if (fresh == null) {
+                    toast(getString(R.string.caps_failed))
+                } else {
+                    copyText("Medha token: ${fresh.id}", fresh.token)
+                    restartServiceIfLive()
+                    showTokenDialog(fresh)
+                }
+            }
+            .show()
+    }
+
+    private fun confirmRevoke(client: ClientRegistry.Client) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.revoke_title, client.id))
+            .setMessage(R.string.revoke_body)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.revoke) { _, _ ->
+                if (registry.revoke(client.id)) {
+                    restartServiceIfLive()
+                    toast(getString(R.string.revoked, client.id))
+                } else {
+                    toast(getString(R.string.revoke_refused))
+                }
+            }
+            .show()
+    }
+
+    private fun copyText(label: String, value: String) {
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        cm.setPrimaryClip(ClipData.newPlainText(label, value))
+    }
+
+    /**
+     * Capabilities offered in the UI, in the order they are shown.
+     *
+     * `by lazy`, not a plain `val`: this is a class-body property, and a
+     * plain `val` here would call [getString] while the Activity is still
+     * being constructed — before Android has attached its Resources via
+     * `attachBaseContext()`. `lazy` defers evaluation to first access, which
+     * only happens from [showCapabilitiesDialog], well after `onCreate`.
+     *
+     * [ClientRegistry.Cap.NOTIFY] is deliberately absent from the default
+     * set: posting to the notification shade is intrusive enough that it
+     * should be a decision rather than a default.
+     *
+     * [ClientRegistry.Cap.CAPTURES] is absent too, and last in the list
+     * rather than next to `notify`: it is the opposite direction and a
+     * different order of exposure, and sitting beside its near-namesake is
+     * exactly how a box gets ticked by someone who read one word of it.
+     */
+    private val grantable by lazy {
+        listOf(
+            ClientRegistry.Cap.GENERATE to getString(R.string.cap_generate),
+            ClientRegistry.Cap.MEMORY to getString(R.string.cap_memory),
+            ClientRegistry.Cap.RAG to getString(R.string.cap_rag),
+            ClientRegistry.Cap.STORE to getString(R.string.cap_store),
+            ClientRegistry.Cap.NOTIFY to getString(R.string.cap_notify),
+            ClientRegistry.Cap.CAPTURES to getString(R.string.cap_captures)
+        )
+    }
+
+    private fun showCapabilitiesDialog(client: ClientRegistry.Client) {
+        val checked = grantable.map { it.first in client.capabilities }.toBooleanArray()
+        MaterialAlertDialogBuilder(this)
+            .setTitle(client.id)
+            .setMultiChoiceItems(
+                grantable.map { it.second }.toTypedArray(), checked
+            ) { _, which, isChecked -> checked[which] = isChecked }
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.save) { _, _ ->
+                val caps = grantable.filterIndexed { i, _ -> checked[i] }.map { it.first }.toSet()
+                // Only when it is being turned ON, and only when it was off
+                // before: re-confirming a grant the user already made, every
+                // time they adjust some unrelated box, teaches them to tap
+                // through it.
+                val newlyShared = ClientRegistry.Cap.CAPTURES in caps &&
+                    ClientRegistry.Cap.CAPTURES !in client.capabilities
+                if (newlyShared) confirmCaptures(client.id) { applyCaps(client.id, caps) }
+                else applyCaps(client.id, caps)
+            }
+            .show()
+    }
+
+    private fun applyCaps(clientId: String, caps: Set<String>) {
+        val updated = registry.setCapabilities(clientId, caps)
+        if (updated != null) {
+            // The server captured the client list at construction, so it
+            // has to be rebuilt for the change to take effect.
+            restartServiceIfLive()
+            toast(getString(R.string.caps_saved, updated.id))
+        } else {
+            toast(getString(R.string.caps_failed))
+        }
+    }
+
+    /**
+     * The one capability that gets said out loud before it is granted.
+     *
+     * Every other box in that list describes something the user will notice
+     * the effect of. This one does not: a client reading the notification
+     * stream looks identical to a client that never asked, so the scope and
+     * the retention are stated here, at the moment of the decision, instead
+     * of in a document nobody opens. Cancelling leaves the whole capability
+     * change unapplied, which is the safe direction — a user who hesitates
+     * here should not find they granted it anyway.
+     */
+    private fun confirmCaptures(subject: String, onGrant: () -> Unit) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.cap_captures_confirm_title)
+            .setMessage(
+                getString(
+                    R.string.cap_captures_confirm_body,
+                    subject,
+                    com.adabala.medha.connect.CapturePolicy.RETAIN_DAYS
+                )
+            )
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.cap_captures_confirm_grant) { _, _ -> onGrant() }
+            .show()
+    }
+
+    /** Rebuilds the server so a credential or capability change takes effect. */
+    private fun restartServiceIfLive() {
+        if (uiState == UiState.RUNNING || uiState == UiState.LOADING) {
+            ContextCompat.startForegroundService(this, Intent(this, InferenceService::class.java))
+        }
     }
 
     private fun showAddClientDialog() {
@@ -366,66 +892,130 @@ class MainActivity : AppCompatActivity() {
             setPadding(56, 24, 56, 0)
             addView(input)
         }
+        // Defaults on: everything a normal consumer needs. Notifications are
+        // off, because that is the one worth an explicit decision.
+        val checked = grantable.map { it.first in ClientRegistry.Cap.DEFAULT }.toBooleanArray()
+
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.client_new_title)
             .setView(wrap)
+            .setMultiChoiceItems(
+                grantable.map { it.second }.toTypedArray(), checked
+            ) { _, which, isChecked -> checked[which] = isChecked }
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.create) { _, _ ->
                 val id = input.text.toString().trim().lowercase()
+                val caps = grantable.filterIndexed { i, _ -> checked[i] }.map { it.first }.toSet()
                 runCatching {
                     // Namespace == id keeps the mental model simple: one client,
                     // one prefix, no separate thing to remember.
-                    registry.create(id, id, id, ClientRegistry.Cap.DEFAULT)
+                    registry.create(id, id, id, caps)
                 }.onSuccess { c ->
-                    val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    cm.setPrimaryClip(ClipData.newPlainText("Medha token: ${c.id}", c.token))
-                    MaterialAlertDialogBuilder(this)
-                        .setTitle(c.id)
-                        .setMessage(
-                            "Token copied to clipboard.\n\n${c.token}\n\n" +
-                                "Namespace: ${c.namespace}:*\n" +
-                                "This is the only time it is shown in full."
-                        )
-                        .setPositiveButton(R.string.close, null)
-                        .show()
+                    copyText("Medha token: ${c.id}", c.token)
+                    restartServiceIfLive()
+                    showTokenDialog(c)
                 }.onFailure { e -> toast(e.message ?: "could not create client") }
             }
             .show()
     }
 
-    private fun showSmsDialog() {
-        val st = sms.status()
-        if (!st.supported) {
-            MaterialAlertDialogBuilder(this)
-                .setTitle(R.string.sms_title)
-                .setIcon(R.drawable.ic_sms)
-                .setMessage(getString(R.string.sms_unsupported))
-                .setPositiveButton(R.string.close, null)
-                .show()
-            return
-        }
+    /**
+     * Generates a pairing code and shows it.
+     *
+     * This is the web-app half of the access story. An installed Android app
+     * gets a token through [com.adabala.medha.auth.AccessRequestActivity],
+     * where the system tells Medha who is calling. A web app has no package
+     * to report, so the user vouches for it instead by carrying six digits
+     * from this screen to the browser. See PairingManager for why six digits
+     * is sufficient.
+     */
+    private fun showPairWebDialog() {
+        // Capability picker first: "grant something" should never be a
+        // question answered on the user's behalf, and the code embeds the
+        // answer, so it has to be chosen before the code is generated.
+        val offered = grantable
+        val checked = offered.map { it.first == ClientRegistry.Cap.NOTIFY ||
+            it.first in ClientRegistry.Cap.DEFAULT }.toBooleanArray()
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.pair_choose_caps)
+            .setIcon(R.drawable.ic_pair)
+            .setMultiChoiceItems(
+                offered.map { it.second }.toTypedArray(), checked
+            ) { _, which, isChecked -> checked[which] = isChecked }
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.create) { _, _ ->
+                val caps = offered.filterIndexed { i, _ -> checked[i] }.map { it.first }.toSet()
+                // Pairing is already deliberate -- generate a code, carry it
+                // to the other device, type it in -- but the exposure is the
+                // same one, and here there is not even a package name to
+                // show, because whoever types the code inside the expiry
+                // window becomes the holder. So it is confirmed here too.
+                if (ClientRegistry.Cap.CAPTURES in caps) {
+                    confirmCaptures(getString(R.string.cap_captures_subject_paired)) {
+                        issueAndShowPairingCode(caps)
+                    }
+                } else {
+                    issueAndShowPairingCode(caps)
+                }
+            }
+            .show()
+    }
+
+    private fun issueAndShowPairingCode(caps: Set<String>) {
+        val pending = PairingManager.shared().issue(caps)
+        val expires = android.text.format.DateFormat.getTimeFormat(this)
+            .format(Date(pending.expiresAt))
+
+        val notificationsOff = caps.contains(ClientRegistry.Cap.NOTIFY) &&
+            !NotificationManagerCompat.from(this).areNotificationsEnabled()
+
         val body = buildString {
-            append("Read permission: ").append(if (st.canRead) "granted" else "NOT granted").append("\n")
-            append("Send permission: ").append(if (st.canSend) "granted" else "not granted").append("\n")
-            append("Default SMS app: ").append(if (st.isDefaultSmsApp) "yes" else "no").append("\n")
-            if (st.canRead) append("Messages visible: ").append(st.totalMessages).append("\n")
-            append("\nPWAs reach SMS through Medha at /connectors/sms/*, because a\n")
-            append("browser page cannot read SMS at all. A client needs the\n")
-            append("'sms.read' capability; sending additionally requires being the\n")
-            append("default SMS app.")
+            append(getString(R.string.pair_intro)).append("\n\n")
+            append("        ").append(pending.display).append("\n\n")
+            append(getString(R.string.pair_expires, expires)).append("\n")
+            append(getString(R.string.pair_url, currentPort())).append("\n\n")
+            append(getString(R.string.pair_caps_title)).append(":\n")
+            caps.sorted().forEach { append("  •  ").append(capLabel(it)).append('\n') }
+            append('\n').append(getString(R.string.pair_code_hint))
+            // Worth saying up front rather than letting the integrator debug
+            // a successful POST /notify that produces no visible card.
+            if (notificationsOff) append("\n\n").append(getString(R.string.pair_notifications_off))
+            if (uiState != UiState.RUNNING) append("\n\n").append(getString(R.string.pair_server_off))
         }
+
         val b = MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.sms_title)
-            .setIcon(R.drawable.ic_sms)
+            .setTitle(R.string.pair_title)
+            .setIcon(R.drawable.ic_pair)
             .setMessage(body)
             .setPositiveButton(R.string.close, null)
-        if (!st.canRead) {
-            b.setNeutralButton(R.string.sms_grant) { _, _ ->
-                smsPerm.launch(SmsConnector.READ_PERMISSIONS)
+            .setNegativeButton(R.string.pair_cancel_code) { _, _ ->
+                PairingManager.shared().cancel()
+                toast(getString(R.string.pair_cancelled))
             }
+        if (notificationsOff) {
+            b.setNeutralButton(R.string.pair_grant_notifications) { _, _ -> ensureNotifPerm() }
         }
         b.show()
     }
+
+    /** Shared with the consent screen's wording so labels cannot diverge. */
+    private fun capLabel(cap: String): String =
+        grantable.firstOrNull { it.first == cap }?.second ?: cap
+
+    /** The full brief, the same screen the home-screen widget opens. */
+    private fun openBrief() {
+        startActivity(Intent(this, BriefActivity::class.java))
+    }
+
+    /**
+     * Rotation interval for the brief widget.
+     *
+     * A short list of choices rather than a slider: the useful range is a
+     * handful of values, every one of them costs a Binder call into the
+     * launcher on each tick, and a slider invites someone to pick 2 seconds
+     * and then wonder about battery.
+     */
 
     private fun showSchedulerDialog() {
         val js = lastSchedulerJson
@@ -500,19 +1090,38 @@ class MainActivity : AppCompatActivity() {
 
             GET   /v1/models
             POST  /v1/chat/completions OpenAI-compatible
+                  text, and image/audio parts when
+                  /health reports those capabilities
+            POST  /v1/audio/transcriptions
+                  multipart: file, model, language?,
+                  prompt?, response_format?
+                  WAV or raw 16-bit PCM, up to 30s
             POST  /v1/embeddings       501 (no embedder)
 
             POST  /rag/ingest
             POST  /rag/query
             GET   /rag/collections
             DEL   /rag/collections/{name}
+
+            PUT   /store/{key}
+            GET   /store/{key}
+            DEL   /store/{key}
+
+            POST  /pair                {code}   (no auth)
+            GET   /notify/capabilities
+            POST  /notify              {id, title, text, ongoing?}
+            DEL   /notify/{id}
+            PUT   /widget/content      v2 {obligations:[...]} | v1 {items:[...]}
+            GET   /widget/content
+            DEL   /widget/content
+            GET   /captures?since=     notification stream  (cap: captures)
         """.trimIndent()
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.endpoints_title)
             .setIcon(R.drawable.ic_book)
             .setMessage(body)
             .setPositiveButton(R.string.close, null)
-            .setNeutralButton(R.string.copy_token) { _, _ -> copyToken() }
+            .setNeutralButton(R.string.copy_token_action) { _, _ -> copyToken() }
             .show()
     }
 
@@ -567,6 +1176,154 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    /**
+     * Local-only, on-demand view into [Diagnostics]: past crash dumps (if
+     * any) plus an explicit "export now" action for capturing the current
+     * in-memory buffer without needing an actual crash to see one.
+     * Nothing here transmits anything — sharing is always a separate,
+     * explicit action the person takes afterward.
+     */
+    /**
+     * What the installed LiteRT-LM AAR exposes for images and audio.
+     *
+     * Exists as a screen rather than only as a /system field because the
+     * answer is needed exactly once, by a person, to decide whether a
+     * vision binding can be written at all — and making them find a token
+     * and run curl on a phone for a one-shot diagnostic is a tax on the
+     * wrong person.
+     *
+     * Needs no model loaded and no server running: the probe reflects over
+     * the AAR's classes, which are present from install. That answers the
+     * API question. Whether the model *file* carries the encoders is a
+     * separate question, and only worth asking if this one says yes.
+     */
+    private fun showMultimodalDialog() {
+        val r = com.adabala.medha.oai.MultimodalProbe.probeInstalled()
+        val report = buildString {
+            append("Medha ").append(BuildInfo.VERSION).append('\n')
+            append("litertlm AAR probe\n\n")
+            append("vision: ").append(r.vision).append('\n')
+            append("audio:  ").append(r.audio).append('\n')
+            append("summary: ")
+                .append(com.adabala.medha.oai.MultimodalProbe.summary(r)).append("\n\n")
+
+            // The evidence, not just the verdict. v1 of this probe reported
+            // false on an AAR that supports both and gave no way to see
+            // why, which cost a release to diagnose.
+            if (r.visionEvidence.isNotEmpty()) {
+                append("vision evidence:\n")
+                r.visionEvidence.forEach { append("  ").append(it).append('\n') }
+                append('\n')
+            }
+            if (r.audioEvidence.isNotEmpty()) {
+                append("audio evidence:\n")
+                r.audioEvidence.forEach { append("  ").append(it).append('\n') }
+                append('\n')
+            }
+            append("paths: session=").append(r.hasSessionPath)
+                .append(" conversation=").append(r.hasConversationPath).append("\n\n")
+
+            if (r.classesMissing.isNotEmpty()) {
+                append("classes NOT found (").append(r.classesMissing.size).append("):\n")
+                r.classesMissing.forEach { append("  ").append(it).append('\n') }
+                append('\n')
+            }
+            append("classes found (").append(r.classesFound.size).append("):\n")
+            r.classesFound.forEach { append("  ").append(it).append('\n') }
+            append('\n')
+
+            // The full surface matters most when the verdict is false: the
+            // capability may be expressed in a way the probe does not yet
+            // recognise, and only the real list can show that. It is how
+            // v1's bug was eventually found.
+            append("all SDK methods (").append(r.allMethods.size).append("):\n")
+            r.allMethods.forEach { append("  ").append(it).append('\n') }
+        }
+
+        val enabled = prefs.getBoolean(InferenceService.KEY_MULTIMODAL, true)
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.multimodal_title)
+            .setIcon(R.drawable.ic_book)
+            .setMessage(report)
+            .setPositiveButton(R.string.close, null)
+            // The escape hatch. Each failed rung of LlmEngine's init ladder
+            // costs a full model load, so on a model with no encoders a
+            // cold start pays ~25s to discover that every single time.
+            // Once you know, turning it off makes starts fast again.
+            .setNegativeButton(
+                if (enabled) R.string.multimodal_disable else R.string.multimodal_enable
+            ) { _, _ ->
+                prefs.edit().putBoolean(InferenceService.KEY_MULTIMODAL, !enabled).apply()
+                toast(
+                    getString(
+                        R.string.multimodal_toggled,
+                        getString(if (enabled) R.string.off else R.string.on)
+                    )
+                )
+            }
+            .setNeutralButton(R.string.multimodal_share) { _, _ ->
+                startActivity(
+                    Intent.createChooser(
+                        Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_SUBJECT, "Medha multimodal probe")
+                            putExtra(Intent.EXTRA_TEXT, report)
+                        },
+                        getString(R.string.multimodal_share)
+                    )
+                )
+            }
+            .show()
+    }
+
+    private fun showDiagnosticsDialog() {
+        val files = Diagnostics.listDumps(this)
+        val dateFmt = SimpleDateFormat("MMM d, HH:mm", Locale.US)
+        val labels = files.map { f ->
+            val kb = f.length() / 1024
+            "${dateFmt.format(Date(f.lastModified()))}   (${kb} KB)\ntap to share"
+        }.toTypedArray()
+
+        val builder = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.diagnostics_title)
+            .setIcon(R.drawable.ic_book)
+            .setPositiveButton(R.string.close, null)
+            .setNeutralButton(R.string.diagnostics_export_now) { _, _ -> exportDiagnosticsNow() }
+
+        if (files.isEmpty()) {
+            builder.setMessage(getString(R.string.diagnostics_hint) + "\n\n" + getString(R.string.diagnostics_none))
+        } else {
+            builder.setMessage(R.string.diagnostics_hint)
+            builder.setItems(labels) { _, i -> shareDiagnosticsFile(files[i]) }
+        }
+        builder.show()
+    }
+
+    private fun exportDiagnosticsNow() {
+        val header = buildString {
+            append("Medha ").append(BuildInfo.VERSION).append(" — manual export\n")
+            append("Package ").append(packageName).append('\n')
+            lastSystemJson?.let { append("\nLast known /system:\n").append(it) }
+        }
+        val file = Diagnostics.dumpToFile(this, header)
+        if (file == null) {
+            toast(getString(R.string.diagnostics_export_failed))
+        } else {
+            toast(getString(R.string.diagnostics_exported))
+            shareDiagnosticsFile(file)
+        }
+    }
+
+    private fun shareDiagnosticsFile(file: File) {
+        val uri = FileProvider.getUriForFile(this, "$packageName.diagnostics", file)
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(Intent.createChooser(intent, getString(R.string.diagnostics_share)))
+    }
+
     private fun confirmRegenerateToken() {
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.regen_title)
@@ -605,6 +1362,37 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         polling = true
         pollHandler.post(pollRunnable)
+        refreshCrashBanner()
+    }
+
+    /**
+     * Surface the newest crash dump on Home, once, until it is dismissed.
+     *
+     * Everything here is best-effort and wrapped: a banner about a crash
+     * must not be able to cause one. If the dump directory cannot be read,
+     * the banner simply stays hidden.
+     */
+    private fun refreshCrashBanner() {
+        val newest = runCatching {
+            Diagnostics.listDumps(this).maxByOrNull { it.lastModified() }
+        }.getOrNull()
+
+        val seen = prefs.getLong(KEY_CRASH_SEEN, 0L)
+        if (newest == null || newest.lastModified() <= seen) {
+            binding.crashBanner.visibility = View.GONE
+            return
+        }
+
+        binding.crashDetail.text = getString(
+            R.string.crash_body,
+            SimpleDateFormat("MMM d, HH:mm", Locale.US).format(Date(newest.lastModified()))
+        )
+        binding.crashBanner.visibility = View.VISIBLE
+        binding.btnCrashShare.setOnClickListener { shareDiagnosticsFile(newest) }
+        binding.btnCrashDismiss.setOnClickListener {
+            prefs.edit().putLong(KEY_CRASH_SEEN, newest.lastModified()).apply()
+            binding.crashBanner.visibility = View.GONE
+        }
     }
 
     override fun onPause() {
@@ -772,8 +1560,8 @@ class MainActivity : AppCompatActivity() {
     private fun renderSchedulerCard(sched: String?) {
         if (sched == null) {
             binding.schedState.text = getString(R.string.sched_idle)
-            binding.statQueue.text = "—"
-            binding.statThermal.text = "—"
+            binding.statQueue.text = getString(R.string.stat_placeholder)
+            binding.statThermal.text = getString(R.string.stat_placeholder)
             return
         }
         runCatching {
@@ -798,15 +1586,51 @@ class MainActivity : AppCompatActivity() {
         if (health == null) {
             // Give a freshly started service a grace period before calling it
             // dead; the model load can take a while on a cold cache.
-            val starting = startRequestedAt > 0 &&
+            // A failure stamped after this start request means the attempt is
+            // already over, so the grace period has nothing left to wait for.
+            val failedAt = prefs.getLong(InferenceService.KEY_LAST_SERVER_ERROR_AT, 0L)
+            val alreadyFailed = failedAt > startRequestedAt
+            val starting = startRequestedAt > 0 && !alreadyFailed &&
                 System.currentTimeMillis() - startRequestedAt < START_GRACE_MS
-            binding.statusText.setTextColor(Color.parseColor(COLOR_IDLE))
-            binding.statusText.text =
-                if (starting) "● Starting…" else "● Not running"
-            binding.statusDetail.text =
-                if (starting) "Waiting for the service" else "Tap Start to load the model"
-            binding.systemText.text = "Backend: —\nMemory: —\nDevice: —"
-            binding.metricsText.text = "Requests: 0\nAvg speed: —\nStored: —"
+            // Why the server is not up, from the one place that does not need
+            // the server. Without this the screen said "Not running · Tap
+            // Start" while every Start failed on a port another app held --
+            // the reason sat behind /health, which only answers when the
+            // problem is absent.
+            val serverError = prefs.getString(InferenceService.KEY_LAST_SERVER_ERROR, null)
+                ?.takeIf { it.isNotBlank() && !starting }
+
+            setStatus(
+                when {
+                    starting -> getString(R.string.status_starting)
+                    serverError != null -> getString(R.string.status_cannot_start)
+                    else -> getString(R.string.status_not_running)
+                },
+                when {
+                    starting -> R.color.dot_working
+                    serverError != null -> R.color.dot_error
+                    else -> R.color.dot_idle
+                }
+            )
+            binding.statusDetail.text = when {
+                starting -> getString(R.string.status_waiting_for_service)
+                // Say the actual problem. "Tap Start" when Start cannot
+                // start anything is how a screen becomes a dead end.
+                // Say where the fix is, not just what is wrong. The port
+                // field is in Settings, which is two taps away and not
+                // obviously the place to look when the Home screen is the
+                // one reporting the problem.
+                serverError != null ->
+                    if (serverError.contains("in use")) {
+                        serverError + " " + getString(R.string.status_port_where)
+                    } else {
+                        serverError
+                    }
+                !hasModel() -> getString(R.string.status_no_model)
+                else -> getString(R.string.status_tap_start)
+            }
+            binding.systemText.text = getString(R.string.runtime_placeholder)
+            binding.metricsText.text = getString(R.string.metrics_placeholder)
             if (!starting) startRequestedAt = 0L
             applyState(if (starting) UiState.STARTING else UiState.IDLE)
             return
@@ -827,19 +1651,17 @@ class MainActivity : AppCompatActivity() {
                 else -> UiState.LOADING
             }
             when (next) {
-                UiState.RUNNING -> {
-                    binding.statusText.setTextColor(Color.parseColor(COLOR_OK))
-                    binding.statusText.text =
-                        if (busy) "● Running · generating" else "● Running · model loaded"
-                }
-                UiState.ERROR -> {
-                    binding.statusText.setTextColor(Color.parseColor(COLOR_ERR))
-                    binding.statusText.text = "● Load failed"
-                }
-                else -> {
-                    binding.statusText.setTextColor(Color.parseColor(COLOR_WARN))
-                    binding.statusText.text = "● Loading model…"
-                }
+                UiState.RUNNING -> setStatus(
+                    if (busy) getString(R.string.status_running_generating)
+                    else getString(R.string.status_running_loaded),
+                    R.color.dot_running
+                )
+                UiState.ERROR -> setStatus(
+                    getString(R.string.status_load_failed), R.color.dot_error
+                )
+                else -> setStatus(
+                    getString(R.string.status_loading_model), R.color.dot_working
+                )
             }
             binding.statusDetail.text = if (err.isNotEmpty()) err else "Backend: $backend"
         }
@@ -870,9 +1692,21 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        if (metrics == null) binding.statSpeed.text = getString(R.string.stat_placeholder)
+
         metrics?.let {
             runCatching {
                 val m = JSONObject(it)
+
+                // Set here, NOT inside the buildString below. A view update
+                // hidden in a string builder only runs when that string gets
+                // built, so this pill stayed empty for the whole of every
+                // session where metrics were never fetched -- while the two
+                // beside it showed an em dash. One blank box in a row of
+                // three, and nothing in the code looked wrong.
+                binding.statSpeed.text =
+                    String.format(Locale.US, "%.0f", m.optDouble("lastTokensPerSec", 0.0))
+
                 binding.metricsText.text = buildString {
                     append("Requests: ").append(m.optLong("totalRequests"))
                     val fails = m.optLong("totalFailures")
@@ -881,8 +1715,6 @@ class MainActivity : AppCompatActivity() {
                     append(String.format(Locale.US, "%.1f", m.optDouble("avgTokensPerSec", 0.0)))
                     append(" tok/s  ·  last ")
                     append(String.format(Locale.US, "%.1f", m.optDouble("lastTokensPerSec", 0.0)))
-                    binding.statSpeed.text =
-                        String.format(Locale.US, "%.0f", m.optDouble("lastTokensPerSec", 0.0))
                     append("\nStored: ").append(m.optInt("db_conversations")).append(" chats, ")
                     append(m.optInt("db_messages")).append(" msgs, ")
                     append(m.optInt("db_chunks")).append(" chunks")
@@ -916,5 +1748,8 @@ class MainActivity : AppCompatActivity() {
         private const val COLOR_WARN = "#F5E4B7"
         private const val COLOR_ERR = "#F5C0B7"
         private const val COLOR_IDLE = "#B9A9EC"
+
+        // Timestamp of the newest crash dump the user has already been shown.
+        private const val KEY_CRASH_SEEN = "crash_banner_seen_at"
     }
 }

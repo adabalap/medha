@@ -1,5 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
+  COLOURS ARE THEME ATTRIBUTES, NOT LITERALS.
+
+  These were @color/on_indigo (white) and #D8CCF4, which were correct while
+  the toolbar sat on a solid indigo bar. v0.17.0 made the toolbar transparent
+  over colorSurface and the title became white text on a near-white
+  background: invisible, and invisible in a way no checker can see, because
+  every resource reference still resolved perfectly.
+-->
+<!--
   Custom toolbar title. The default two-line Toolbar title/subtitle clipped the
   descenders on Telugu glyphs at ?attr/actionBarSize, because that height is
   computed for Latin metrics. A wrap_content custom view sizes to the actual
@@ -28,7 +37,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/nav_header_title"
-            android:textColor="@color/on_indigo"
+            android:textColor="?android:attr/textColorPrimary"
             android:textSize="18sp"
             android:textStyle="bold"
             android:includeFontPadding="true"
@@ -40,7 +49,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/state_stopped"
-            android:textColor="#D8CCF4"
+            android:textColor="?android:attr/textColorSecondary"
             android:textSize="11sp"
             android:maxLines="1"
             android:ellipsize="end" />

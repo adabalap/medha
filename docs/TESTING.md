@@ -1,0 +1,367 @@
+# Testing the v0.8.3 changes
+
+Three tiers, because the changes span pure logic, coroutine concurrency, and
+things only a real phone can tell you the truth about. None of them requires
+guesswork about whether something "should" work — each tier either ran and
+printed a number, or has an exact command for you to run and see one.
+
+---
+
+## Tier 1 — pure logic. Already run, in this review, right now.
+
+`SchedulerConfig.validated()` (the queue-depth clamp, the thermal hysteresis
+math) and `Embedder`'s codec/normalise/dot/prefix functions have zero Android
+or kotlinx.coroutines dependency. They were compiled and executed directly
+against the real source files, no device, no Gradle, no mocks:
+
+```
+$ tools/tests/run.sh
+== SchedulerConfigTest ==
+SchedulerConfigTest: 18 checks, 0 failed
+
+== EmbedderTest ==
+EmbedderTest: 18 checks, 0 failed
+```
+
+This is now wired into `verify.sh`, so it runs every time you do your normal
+pre/post-change check:
+
+```
+$ ./verify.sh
+```
+
+Needs `kotlinc` on your PATH (any recent version; this review used 2.0.21)
+and nothing else — no network, no Android SDK. Grab it from
+https://github.com/JetBrains/kotlin/releases if you don't have it.
+
+**What this tier does NOT cover:** anything that touches a real coroutine
+dispatcher, a real Context, or native code. That's tiers 2 and 3.
+
+### Also tier 1: the bundled demo webapp's JS
+
+`tools/tests/webapp_markdown_test.js` and `tools/tests/webapp_sse_test.js`
+extract the real `escapeHtml`/`renderMarkdown` and SSE-framing functions from
+`app/src/main/assets/webapp/index.html` and run them under Node — no browser,
+no Android, no mocking. `tools/tests/run.sh` runs these automatically if
+`node` is on PATH (skipped with a note otherwise). 21 checks total, covering
+the two things most worth getting right in a page that renders streamed
+model output as HTML: that a raw `<script>`/`onerror` payload from the model
+is neutralized rather than executed, and that an SSE event split across a
+network chunk boundary reassembles instead of corrupting.
+
+**A third test, `webapp_smoke_test.js`, exists because those two weren't
+enough.** A real build shipped with `var history = [];` at the top level of
+the script — a name that collides with `window.history`, a real,
+non-configurable, getter-only property every browser provides. Node has no
+such global, so `node --check` and both function-level tests above passed
+cleanly; the bug only threw in an actual Window, which halted the *entire*
+script the instant it ran — before a single event handler got wired up. The
+page still rendered fine (HTML/CSS are unaffected by a JS error), which is
+exactly why it looked like "the demo doesn't reach the model, nothing
+happens" rather than an obvious crash: every button was simply inert.
+
+`webapp_smoke_test.js` loads the real file into an actual DOM via `jsdom`,
+runs the real script, and checks two things: that nothing throws during
+execution, and that every interactive control actually has its handler
+attached afterward. This needs a one-time setup step the other two tests
+don't:
+
+```
+$ cd tools/tests && npm install
+$ node webapp_smoke_test.js
+```
+
+`tools/tests/run.sh` runs it automatically if `node_modules/jsdom` is
+present, and skips it with that same instruction otherwise — the same
+graceful-skip pattern already used for a missing `kotlinc` or `node` itself.
+
+---
+
+## Tier 2 — scheduler concurrency. Written, not yet run — run it via Gradle.
+
+`app/src/test/java/com/adabala/medha/sched/InferenceSchedulerConcurrencyTest.kt`
+exercises the actual admission-control/queue-cap/timeout logic added this
+session, using `kotlinx-coroutines-test`'s virtual clock so it runs in
+milliseconds rather than actually waiting out a 2-minute timeout. It covers:
+
+- queue depth returns to 0 after a request completes, and after one that throws
+- the `(maxQueueDepth+1)`th concurrent request is rejected immediately, not queued
+- a request stacked behind a permanently-hung one gets `TimedOut` instead of
+  hanging forever
+- two `INTERACTIVE` requests never run the engine concurrently (mutex holds)
+- `acquire()`/`Permit.close()` used directly, including double-close safety
+
+Run it with:
+
+```
+./gradlew testCoreDebugUnitTest --tests "*InferenceSchedulerConcurrencyTest*"
+```
+
+**Be the first to actually run this file.** The sandbox this repo was
+reviewed in has no route to a real `kotlinx-coroutines-core` jar — Maven
+Central is blocked and the project doesn't publish raw jars via GitHub
+Releases — so this test was written and reasoned through by hand, but never
+compiled or executed anywhere. Every other file in this delivery either ran
+successfully in the sandbox or is explicitly marked as unverified below; this
+is the one piece of new code without either. If it doesn't compile cleanly or
+a case fails, that's real signal, not sandbox noise — file it back.
+
+Newly added `testImplementation` deps for this (in `app/build.gradle.kts`):
+`junit:junit:4.13.2`, `org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1`,
+`io.mockk:mockk:1.13.11`. First run will need network access to Google's/Maven
+Central to resolve them.
+
+---
+
+## Tier 3 — on-device. Nothing below this line can be faked from a sandbox.
+
+Install a debug build (`./gradlew installCoreDebug` or `installFullDebug`),
+load a model, grab the admin token from the app UI, and run these from a
+machine on the same network (or `adb reverse tcp:8001 tcp:8001` and use
+`localhost`).
+
+### 3a-pre. Instrumented tests — run these first
+
+```
+./gradlew connectedCoreDebugAndroidTest --tests "*MedhaDatabaseMigrationTest*"
+```
+
+Same "be the first to run this" caveat as tier 2: this exercises the actual
+v1 -> v4 on-disk SQLite upgrade (hand-builds the real v1 schema, forces the
+real `onUpgrade` path against it, checks conversations/messages/chunk text
+survive, unattributed old embeddings get cleared rather than silently
+misused, and FTS4 is backfilled and searchable immediately) plus FTS
+insert/delete sync — the single highest-consequence previously-untested path
+in the app, per `docs/PRODUCTION-READINESS.md`. Needs a connected device or a
+running emulator; there is no way to fake real SQLite upgrade behavior from a
+desktop JDBC driver.
+
+### 3a. Streaming/OpenAI-compat now goes through admission control
+
+This is the actual bug this session fixed — before, these two endpoints had
+zero protection. Confirm the 429 fires on the endpoints that used to skip it:
+
+```bash
+TOKEN="<your admin token>"
+HOST="http://127.0.0.1:8001"
+
+# Fire more concurrent streaming requests than maxQueueDepth (default 8).
+# The (N+1)th response should come back fast with HTTP 429, not hang.
+for i in $(seq 1 12); do
+  curl -sS -o /dev/null -w "%{http_code}\n" -X POST "$HOST/v1/chat/completions" \
+    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+    -d '{"model":"medha","stream":true,"messages":[{"role":"user","content":"count to 200 slowly"}]}' &
+done
+wait
+```
+
+Expect a mix of `200` and `429`, not 12×`200` and not any request hanging
+past `requestTimeoutMs` (2 min default). Same test against `POST
+/generate/stream` should show the same shape.
+
+### 3b. Timeout actually bounds a wedged request
+
+Hard to induce a genuinely wedged native call safely, so the practical proxy:
+set a short config value in prefs before starting the service —
+
+```bash
+adb shell run-as com.adabala.medha
+# inside the app's data dir, or use the in-app settings screen if it exposes
+# request timeout — check app/src/main/res for the preference key
+```
+
+— then fire two overlapping requests and confirm the second returns `504`
+inside roughly your configured window, not left hanging. `GET /system` while
+this is happening should show `queueDepth` and `inFlight` reflecting both
+requests, not silently dropping the stuck one.
+
+### 3c. Embedder dimension probe
+
+```
+adb logcat -s AiEdgeEmbedder
+```
+
+restart Medha with an embedding model dropped in `models/embed/` (see
+`docs/EMBEDDINGS.md` for exactly where and which files). You should see one
+of:
+
+- `Embedder ready: <name>@<N> (seq=<S>, measured via startup probe)` — note
+  `<N>` is now measured, not assumed. If you're running a 768-dim export this
+  will read `@768` same as before; the fix only changes behavior on a
+  Matryoshka-truncated (256/512/128-dim) variant, where it now reports the
+  *actual* dimension instead of a wrong static guess.
+- `Constructed ... but a startup probe embed produced no output; RAG stays
+  lexical` — the SDK loaded but the probe call itself failed. This is new:
+  previously a bad model file would silently keep pretending to be a working
+  768-dim embedder until the first real query quietly failed.
+- `No embedding model in .../models/embed; RAG stays lexical` or `AI Edge RAG
+  SDK not on the classpath` — unchanged from before, expected if you haven't
+  uncommented the gradle deps / pushed model files yet.
+
+Then confirm retrieval quality end to end:
+
+```bash
+curl -sS -X POST "$HOST/rag/reindex" -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{}'
+# repeat until "remaining": 0
+
+curl -sS -X POST "$HOST/v1/embeddings" -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"input":["test query"],"input_type":"query"}' | head -c 300
+```
+
+A vector of the length reported in the logcat line above (not necessarily
+768) confirms the measured dimension is actually what's being stored and
+served.
+
+### 3d. Client CRUD (unchanged this session, spot-check while you're in there)
+
+From the app UI: create a client, copy its token, curl an endpoint with it,
+rotate the token and confirm the old one now 401s, try revoking the last
+admin and confirm it's refused.
+
+### 3e. Diagnostics
+
+Open the drawer → Diagnostics. With no crash yet, it should show
+"No diagnostics files yet." Tap "Export current logs now" — a file should
+appear in the list immediately and the share sheet should open with a
+readable text file containing recent log lines. To test the crash path
+itself, trigger an actual uncaught exception (e.g. temporarily throw one from
+a button handler in a debug build), relaunch the app, and confirm a dump
+appears in the list dated at the crash time — with the previous default
+handler still having run too (i.e. the app still shows its normal "has
+stopped" behavior; diagnostics capture must never replace that).
+
+### 3f. Dark theme
+
+Toggle system dark mode (Settings → Display) with Medha open, or launch it
+with dark mode already on. The status card/toolbar/nav header should stay the
+same brand indigo in both modes — that's intentional, not a bug. The other
+four cards (runtime, model/backend, scheduler, clients/about) should switch
+to a dark elevated surface with light text, not stay stark white. Open the
+drawer → Diagnostics and Clients dialogs in dark mode too, since those use
+the same `card_surface`/`text_primary` colors. Nothing here was verified on
+an actual display — only computed WCAG contrast ratios on the hex values —
+so this is the first real check of whether it actually looks right.
+
+### 3g. Client list
+
+Drawer → API clients, with at least two clients created. Confirm: the admin
+client shows the key-icon badge, the row's capability line shows
+`namespace:*  •  capabilities`, tapping anywhere on the row opens the same
+action sheet (copy token / rotate / edit / revoke) as tapping the trailing
+overflow button, and the list scrolls internally rather than pushing the
+dialog's Close/Add buttons off-screen once you have enough clients to
+overflow `maxHeight`. With zero clients, drawer → API clients should still
+jump straight to "Add client" (unchanged behavior) rather than showing the
+list's own empty state — the empty state view exists as a defensive
+fallback and is not expected to be reachable through the current UI.
+
+### 3h. Streaming actually streams, and reads correctly
+
+This is the fix for the reported "stream doesn't work" bug. Open the demo
+(drawer → "Open demo in browser"), send a message with "Stream response"
+checked, and confirm the reply grows token-by-token rather than arriving as
+one block or as a garbled Kotlin object dump (`Message(role=...)` or
+similar). Uncheck streaming and resend the same question — the non-streaming
+path uses the same `extractText()` fix, so its output should read as clean
+prose too, not something that merely *used to look* acceptable.
+
+### 3i. RAG through the OpenAI-compatible endpoint
+
+In the demo's "Knowledge base" card, ingest a paragraph into a collection.
+In "Chat", tick "Use knowledge base" (defaults to the same collection name)
+and ask a question the pasted text actually answers. Confirm the reply
+reflects the ingested text, and that the response's meta line shows
+"· from <collection>". Then confirm authorization is enforced correctly: from
+`curl`, hit `/v1/chat/completions` with a `collection` field using a token
+that has `GENERATE` but not `RAG` — expect `403 forbidden`, not silent
+ignoring of the field.
+
+### 3j. Authorization on the two previously-open endpoints
+
+Create a client with an empty capability set (or just `MEMORY`, no
+`GENERATE`). Confirm `POST /generate/stream` and `POST /v1/chat/completions`
+both now return `403` for that token — before this session's fix, both
+endpoints would happily generate text for a client with zero capabilities.
+
+### 3k. Consent loop — grants are auditable and revocable
+
+The point of the handshake is that a grant can be reviewed and cut off later,
+which only works if the user can recognise what they approved. Drawer → API
+clients, after a third-party app has been granted access. Confirm each row
+shows the app's **real name** ("Notes App"), not its derived slug
+(`com-notes-app-8a464e05`), and a meta line reading e.g. "Granted to an app ·
+used today". The built-in admin client should read "Built in"; anything you
+created yourself, "Created by you".
+
+Then check last-use actually updates: note the meta line, make an API call
+with that client's token, reopen the list. It should read "used today". Note
+that `ClientRegistry.touch` throttles writes to once per hour per client, so
+a second call minutes later deliberately will *not* move the timestamp — that
+is correct behaviour, not a bug.
+
+Finally, revoke a granted app and confirm its token now returns `401`, and
+that the app can recover by re-running the handshake (which should re-prompt,
+since the grant is gone).
+
+### 3L. Minified release build — R8 keep rules
+
+**This is the one that cannot be verified by a debug build**, because
+minification does not run in debug. `isMinifyEnabled = true` is now on for
+release, backed by `app/proguard-rules.pro`.
+
+```
+./gradlew assembleCoreRelease
+```
+
+Install the resulting APK and check, in order:
+1. The app launches at all (a missing keep rule on an entry point shows up
+   here as an immediate ClassNotFoundException).
+2. `GET /health` responds — proves Ktor's reflective plugin resolution and
+   kotlinx.serialization survived.
+3. **Generate something and read the output carefully.** This is the real
+   test. If `extractText`'s reflective probe was stripped, responses come
+   back as a Kotlin object dump like `Message(role=ASSISTANT, ...)` rather
+   than prose — plausible-looking, non-crashing, completely wrong. Compare
+   against the same prompt on a debug build.
+4. If an embedding model is installed, check `/system` still reports
+   `vectorSearch: true`; a stripped `GeckoEmbeddingModel` makes RAG silently
+   fall back to lexical.
+
+### 3M. Document ingest in the sample
+
+Sample app → **Add document**. Try each of: a PDF, a .docx, a .xlsx, and a
+.csv. Expect a progress line counting chunks, then a confirmation, then the
+knowledge-base toggle flipping on automatically. Ask a question only that
+document can answer and confirm the answer reflects it.
+
+Legacy `.doc`/`.xls` should report "unsupported" clearly rather than ingesting
+garbage — that is deliberate, since a half-working binary-format parser
+poisons a RAG corpus with plausible nonsense.
+
+---
+
+## Summary table
+
+| What | Verified how | Confidence |
+|---|---|---|
+| `SchedulerConfig.validated()` clamping | Executed in sandbox, real source | High |
+| `Embedder` codec/normalize/dot/prefixes | Executed in sandbox, real source | High |
+| Demo webapp markdown rendering (XSS safety) | Executed in sandbox (Node), real source, 13 checks | High |
+| Demo webapp SSE frame parsing | Executed in sandbox (Node), real source, 8 checks | High |
+| Demo webapp script executes without throwing; all controls wired | Executed in sandbox (Node + jsdom), real source, real DOM | High — this is what caught the `history` bug |
+| Scheduler admission/queue-cap/timeout concurrency | Written, reasoned by hand, **not executed anywhere yet** | Run tier 2 first |
+| `MedhaDatabase` v1->v4 migration + FTS sync | Written, reasoned by hand against real `onUpgrade`, **not executed anywhere yet** | Run tier 3a-pre first |
+| `/generate/stream`, `/v1/chat/completions` now admission-controlled | Code review + `check_symbols`/`check_overrides` clean | Needs tier 3a |
+| `LlmEngine.extractText()` fix (the streaming bug) | Researched against official LiteRT-LM docs/samples across all language bindings; code review only, no real AAR available to test against | Needs tier 3h, on a real device |
+| `/generate/stream`, `/v1/chat/completions` now require GENERATE | Code review + `check_symbols`/`check_overrides` clean | Needs tier 3j |
+| RAG wired into `/v1/chat/completions` | Code review + `check_symbols`/`check_overrides` clean | Needs tier 3i |
+| Embedder dimension probe correctness | Code review only | Needs tier 3c, on real SDK |
+| Diagnostics ring buffer + crash handler + share flow | Code review + `check_overrides` clean (correctly sees `override fun onCreate`) | Needs tier 3e |
+| Dark theme colors | WCAG contrast computed on hex values, not seen rendered | Needs tier 3f |
+| Client list RecyclerView conversion | `check_symbols`/`check_overrides`/`check_resources` clean, logic unchanged from prior dialog flow | Needs tier 3g |
+| Client CRUD | Unchanged this session | Already working per prior sessions |
+| Integration handshake end-to-end | **Verified on a real device** | Done |
+| R8 keep rules | Written; R8 parses them at build time. Runtime behaviour of a minified build **not** verified | Run tier 3L before any release |
+| Document extraction (docx/xlsx/csv chunking) | Chunking executed in sandbox, 10 checks incl. content preservation. Extraction itself not run against real files | Run tier 3M |

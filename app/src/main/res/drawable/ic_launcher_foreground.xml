@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Medha mark: a diya flame inside an SoC package.
-  Flame = medhā (intelligence). Chip = it runs on *this device*, not a server.
+  Medha mark: an atomic orbital inside an SoC package.
+  Orbital = intelligence/computation. Chip = it runs on *this device*, not a
+  server.
 
   All content sits within x,y ∈ [25,83] of the 108 viewport, i.e. inside the
   66dp adaptive-icon keyline, so no launcher mask clips it.
@@ -36,22 +37,63 @@
         android:strokeColor="#FFEDE7FF"
         android:strokeWidth="3" />
 
-    <!-- flame -->
-    <path android:pathData="M54,41 C61,49 64,53.5 64,58.5 C64,64.3 59.5,68 54,68 C48.5,68 44,64.3 44,58.5 C44,53.5 47,49 54,41 Z">
+    <!--
+      Atomic orbital: three electron paths at 0/60/120 degrees around a
+      nucleus, all centred on (54,54) — the chip's exact centre.
+
+      Radial symmetry is the point. The previous diya flame was a teardrop:
+      its bounding box was roughly centred, but a teardrop carries its visual
+      mass low, so it read as sinking toward the bottom of the chip. An
+      orbital has no such bias — every rotation looks the same, so "centred
+      on the chip" and "looks centred" are the same thing here.
+
+      rx=14.5 keeps the widest orbit at x ∈ [39.5,68.5], clear of the chip
+      body's inner edge (~35.5 after its 3dp stroke). ry is 4.5 rather than
+      something fatter because three overlapping wide ellipses merge into a
+      solid rosette at launcher size and stop reading as an atom at all —
+      checked by rendering at a true 48px, not by eye at full size.
+    -->
+    <group android:pivotX="54" android:pivotY="54">
+        <path
+            android:pathData="M39.5,54 a14.5,4.5 0 1,0 29,0 a14.5,4.5 0 1,0 -29,0"
+            android:strokeColor="#FFFFC24B"
+            android:strokeWidth="2.8"
+            android:fillColor="#00000000" />
+    </group>
+    <group android:pivotX="54" android:pivotY="54" android:rotation="60">
+        <path
+            android:pathData="M39.5,54 a14.5,4.5 0 1,0 29,0 a14.5,4.5 0 1,0 -29,0"
+            android:strokeColor="#FFFFC24B"
+            android:strokeWidth="2.8"
+            android:fillColor="#00000000" />
+    </group>
+    <group android:pivotX="54" android:pivotY="54" android:rotation="120">
+        <path
+            android:pathData="M39.5,54 a14.5,4.5 0 1,0 29,0 a14.5,4.5 0 1,0 -29,0"
+            android:strokeColor="#FFFFC24B"
+            android:strokeWidth="2.8"
+            android:fillColor="#00000000" />
+    </group>
+
+    <!--
+      Nucleus, drawn last so the orbits pass behind it. The dark ring is
+      deliberate rather than an attempt to match the chip interior: that
+      colour is a semi-transparent fill over a gradient plus a radial lift,
+      so any opaque "blend" value is only correct at one point. An explicit
+      outline reads as depth and is right everywhere.
+    -->
+    <path android:pathData="M54,48.4 a5.6,5.6 0 1,0 0,11.2 a5.6,5.6 0 1,0 0,-11.2"
+        android:fillColor="#FF2E1C63" />
+    <path android:pathData="M54,50 a4,4 0 1,0 0,8 a4,4 0 1,0 0,-8">
         <aapt:attr name="android:fillColor">
             <gradient
-                android:startX="54" android:startY="41"
-                android:endX="54" android:endY="68"
+                android:startX="50" android:startY="50"
+                android:endX="58" android:endY="58"
                 android:type="linear">
                 <item android:offset="0.0" android:color="#FFFFE8A3" />
-                <item android:offset="0.45" android:color="#FFFFC24B" />
+                <item android:offset="0.55" android:color="#FFFFC24B" />
                 <item android:offset="1.0" android:color="#FFF4802E" />
             </gradient>
         </aapt:attr>
     </path>
-
-    <!-- inner highlight -->
-    <path
-        android:pathData="M54,50.5 C57.6,55 59,57 59,59.4 C59,62.3 56.8,64.4 54,64.4 C51.2,64.4 49,62.3 49,59.4 C49,57 50.4,55 54,50.5 Z"
-        android:fillColor="#EBFFF6DA" />
 </vector>

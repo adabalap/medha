@@ -279,7 +279,7 @@ A 500 MB POST body would be buffered before any handler ran.
 Aimed at the stated goal — decoupled PWAs consuming this service.
 
 - `GET /sessions`, `GET /sessions/{id}/messages`, `DELETE /sessions/{id}` —
-  an SMS organizer needs to list and prune threads, which was impossible before.
+  a client needs to list and prune its own sessions, which was impossible before.
 - `GET /rag/collections`, `DELETE /rag/collections/{name}` — same for knowledge.
 - `POST /v1/embeddings` — returns `501` with an explanatory message rather than
   a fabricated vector. Storage already round-trips embeddings, so implementing

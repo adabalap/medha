@@ -1,0 +1,28 @@
+# Paths in this checkout that are YOURS, not Medha's.
+#
+# tools/check_stale.py reports any file under app/src, tools, docs, samples
+# or .github that this release does not ship, because a release zip extracted
+# over your checkout adds and overwrites but never deletes -- so anything
+# removed upstream stays in your repo and breaks the build from behind.
+#
+# A file you added yourself is not a leftover. Without this list the check
+# cannot tell the two apart, and would tell you to delete your own work.
+# List it here and the check leaves it alone.
+#
+# One path per line, relative to the project root, forward slashes. A line
+# ending in / covers everything beneath it:
+#
+#     docs/my-device-notes.md
+#     tools/scratch/
+#
+# Listing a path that a release DOES ship has no effect -- a shipped file is
+# never an orphan -- and the check says so rather than failing.
+#
+# This list does NOT override tools/removed.txt. A path recorded there is one
+# Medha deleted deliberately, with the reason written down, and under app/src
+# that reason is usually that the file still compiles into the APK. To keep
+# one of those, remove its entry from removed.txt, where the next person to
+# read the history can see the decision.
+#
+# This file ships empty on purpose. Nothing is ignored by default, because a
+# forgotten entry here is how a stale file survives another nine releases.

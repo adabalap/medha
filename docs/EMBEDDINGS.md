@@ -45,7 +45,7 @@ Dense retrieval is strong on paraphrase and weak on **exact tokens**. Embeddings
 of `order AX-99213` and `order AX-99871` sit almost on top of each other,
 because the model encodes *"an order reference"* and not the digits.
 
-For your SMS organizer that is the common case, not an edge case: OTP codes,
+For transactional corpora that is the common case, not an edge case: order codes,
 tracking numbers, account digits, short names. So Medha runs both and fuses them
 with **Reciprocal Rank Fusion**:
 
@@ -111,14 +111,22 @@ Models: `litert-community/embeddinggemma-300m` on Hugging Face. Gecko variants
 also work — smaller and ~2.6× faster, less accurate.
 
 **3. Restart Medha.** `/system` will report `vectorSearch: true` and
-`embeddingModel: "<name>@768"`.
+`embeddingModel: "<name>@<dims>"`, where `<dims>` is *measured*, not assumed —
+Medha runs one real embed call against the loaded model at startup and records
+the length of what comes back. This matters because EmbeddingGemma and Gecko
+both ship Matryoshka-truncated variants (768/512/256/128 dims) with no
+filename convention every checkpoint follows; a static guess would be a coin
+flip on anything but the default export, and guessing wrong doesn't throw — it
+silently fails every future embed call and pins RAG in lexical mode with no
+clear signal why. If the probe embed produces nothing, `createOrNull` logs why
+and returns `NoEmbedder` right there rather than shipping a broken dimension.
 
 **4. Backfill existing chunks:**
 
 ```bash
 curl -X POST -H "Authorization: Bearer $TOKEN" \
      -H 'Content-Type: application/json' -d '{}' \
-     http://127.0.0.1:8080/rag/reindex
+     http://127.0.0.1:8001/rag/reindex
 # {"embedded":64,"remaining":112,"status":"more remaining","model":"..."}
 ```
 

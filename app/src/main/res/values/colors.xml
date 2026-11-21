@@ -12,4 +12,143 @@
     <color name="err_red">#C0392B</color>
     <color name="neutral_grey">#7F8C8D</color>
     <color name="surface_soft">#F3F0FF</color>
+
+    <!--
+      Added for dark-theme support: these were previously hardcoded hex
+      literals directly in activity_main.xml (cardBackgroundColor="#FFFFFF",
+      textColor="#333333"/"#555555"), which meant the four non-brand cards
+      stayed stark white with dark text no matter what system theme setting
+      was active. values-night/colors.xml overrides these three; every other
+      color in this file is a fixed brand/status color that's intentionally
+      the same in both themes (the indigo status card, toolbar, and nav
+      header all use a permanently dark brand background by design, same as
+      the widget).
+    -->
+    <color name="card_surface">#FFFFFF</color>
+    <color name="text_primary">#333333</color>
+    <color name="text_secondary">#555555</color>
+
+    <!--
+      Brief surfaces.
+
+      The widget used to be a fixed indigo gradient with hex literals in the
+      layout, which read as a coloured block sitting on the wallpaper while
+      every system widget around it was a soft translucent card. These follow
+      the system theme via values-night, the way Samsung's own Now Brief card
+      does, so Medha's widget belongs on the same home screen rather than
+      competing with it.
+
+      Alpha is deliberate: the widget background is translucent so the
+      wallpaper shows through, which is most of what makes a card read as
+      part of the launcher rather than pasted on top.
+    -->
+    <color name="brief_widget_bg">#E8FFFFFF</color>
+    <color name="brief_widget_title">#1A1033</color>
+    <color name="brief_widget_body">#4A4060</color>
+    <color name="brief_widget_meta">#7A6FA8</color>
+    <color name="brief_widget_brand">#5B3FA8</color>
+    <color name="brief_accent">#5B3FA8</color>
+    <color name="brief_accent_wash">#145B3FA8</color>
+    <color name="brief_accent_hairline">#385B3FA8</color>
+
+    <color name="brief_screen_bg">#F7F4FF</color>
+    <color name="brief_card_bg">#FFFFFF</color>
+    <color name="brief_headline">#1A1033</color>
+
+    <!-- ===================================================================
+         URGENCY BANDS — fixed, and deliberately absent from values-v31.
+
+         Everything structural in the widget takes the system's colour on
+         Android 12+. These three do not. A wallpaper that turns "payment
+         missed" sage green has recoloured the one row that has to be read
+         correctly at a glance, so the chrome adapts and the signal does not.
+         Verified for contrast on the light card: #C0341A is 5.4:1.
+         =================================================================== -->
+    <color name="band_overdue">#C0341A</color>
+    <color name="band_soon">#8A5A00</color>
+    <color name="band_later">#4A38C4</color>
+    <!-- An item with no dueAt is unranked, not far away: a quiet bar, not a
+         cool one, so it never reads as "due eventually". -->
+    <color name="band_none">#9A93B8</color>
+    <!-- A 10% wash of the overdue colour, for the count pill. -->
+    <color name="band_overdue_tint">#1AC0341A</color>
+
+    <!-- =================================================================
+         USER-PICKED ACCENTS.
+
+         The accent is the only thing a theme choice changes. Surfaces
+         and text always follow the system, and the three urgency
+         colours never follow anything: a wallpaper, or a preference,
+         must not be able to make "overdue" look calm.
+
+         Each is a resource, never a runtime colour. The widget hands
+         the launcher a drawable id and the launcher resolves the
+         colour inside it, which is what keeps dark mode correct out
+         there; a picked colour resolved in Medha's process could not.
+         ================================================================= -->
+    <color name="accent_indigo">#4A38C4</color>
+    <color name="accent_teal">#116B5C</color>
+    <color name="accent_rose">#A52562</color>
+    <color name="accent_amber">#8A5A00</color>
+
+    <!-- Washes behind the kind tile and the countdown pill.
+
+         The band colour at low alpha, as literal ARGB rather than a
+         reference: Android colour resources cannot apply an alpha to
+         another colour, so the wash has to be written out per theme. Fixed
+         like the bands they belong to, and absent from values-v31 for the
+         same reason. -->
+    <color name="band_soon_tint">#1A8A5A00</color>
+    <color name="band_later_tint">#1A4A38C4</color>
+    <color name="band_none_tint">#12000000</color>
+
+    <!-- ===================================================================
+         KIND COLOURS.
+
+         The second axis, and the one that makes the brief look like
+         something rather than a list. A row now says two things at once:
+         the TILE says what it is, the PILL says when it is due.
+
+         That split is deliberate. Putting urgency in both places gave four
+         colours and a wall of red when several things were late; putting
+         identity in the tile gives six, and the urgency signal stays
+         unambiguous because it has the pill to itself.
+
+         Kind is description, not warning, so unlike the bands these are
+         free to be pretty.
+         =================================================================== -->
+    <color name="kind_bill">#1A5FB4</color>          <!-- money owed -->
+    <color name="kind_bill_wash">#141A5FB4</color>
+    <color name="kind_date">#6A3FB5</color>          <!-- a dated obligation -->
+    <color name="kind_date_wash">#146A3FB5</color>
+    <color name="kind_event">#0F6E63</color>          <!-- something at a time -->
+    <color name="kind_event_wash">#140F6E63</color>
+    <color name="kind_alert">#B3412A</color>          <!-- something wrong now -->
+    <color name="kind_alert_wash">#14B3412A</color>
+    <color name="kind_done">#157A3A</color>          <!-- finished -->
+    <color name="kind_done_wash">#14157A3A</color>
+    <color name="kind_note">#4A5568</color>          <!-- everything else -->
+    <color name="kind_note_wash">#144A5568</color>
+
+    <!-- ===================================================================
+         RUN / STOP, and the status dot.
+
+         The status line used to be drawn in #B7F5C8, #F5E4B7, #F5C0B7 and
+         #B9A9EC: four pale tints chosen when the card behind them was deep
+         purple. On today's light card they are nearly invisible, which is
+         what "the colour isn't looking great" meant. The TEXT is now
+         ordinary primary text and only the leading dot carries colour, so
+         state is still readable at a glance without the sentence fading out.
+
+         These are the saturated versions, contrast-checked against the card
+         rather than against the old purple.
+         =================================================================== -->
+    <color name="run_green">#1B7A3C</color>          <!-- go, and running -->
+    <color name="run_green_on">#FFFFFF</color>
+    <color name="stop_maroon">#8C1D2B</color>        <!-- stop -->
+    <color name="stop_maroon_on">#FFFFFF</color>
+    <color name="dot_running">#1B7A3C</color>
+    <color name="dot_working">#9A6400</color>        <!-- starting, loading -->
+    <color name="dot_error">#A8261B</color>
+    <color name="dot_idle">#6B6880</color>
 </resources>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="surface">#0D1414</color>
+    <color name="card">#16211F</color>
+    <color name="line">#2A3B3A</color>
+    <color name="text_primary">#E6F0EF</color>
+    <color name="text_secondary">#A3BAB8</color>
+    <color name="bubble_bot">#1E2C2B</color>
+</resources>

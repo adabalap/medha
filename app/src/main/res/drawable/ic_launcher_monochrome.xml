@@ -31,7 +31,37 @@
         android:strokeWidth="3.4"
         android:fillColor="#00000000" />
 
+    <!--
+      Atomic orbital, centred on the chip at (54,54). Solid strokes only: the
+      launcher retints this whole drawable with wallpaper colours, so a
+      gradient here just muddies it. No dark ring around the nucleus either —
+      a themed icon is a single-colour silhouette, so a "ring" would be
+      invisible; the nucleus simply merges with the orbit crossings into a
+      solid centre, which still reads as an atom at icon size.
+    -->
+    <group android:pivotX="54" android:pivotY="54">
+        <path
+            android:pathData="M39.5,54 a14.5,4.5 0 1,0 29,0 a14.5,4.5 0 1,0 -29,0"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="3.4"
+            android:fillColor="#00000000" />
+    </group>
+    <group android:pivotX="54" android:pivotY="54" android:rotation="60">
+        <path
+            android:pathData="M39.5,54 a14.5,4.5 0 1,0 29,0 a14.5,4.5 0 1,0 -29,0"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="3.4"
+            android:fillColor="#00000000" />
+    </group>
+    <group android:pivotX="54" android:pivotY="54" android:rotation="120">
+        <path
+            android:pathData="M39.5,54 a14.5,4.5 0 1,0 29,0 a14.5,4.5 0 1,0 -29,0"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="3.4"
+            android:fillColor="#00000000" />
+    </group>
+
     <path
-        android:pathData="M54,41 C61,49 64,53.5 64,58.5 C64,64.3 59.5,68 54,68 C48.5,68 44,64.3 44,58.5 C44,53.5 47,49 54,41 Z"
+        android:pathData="M54,49 a5,5 0 1,0 0,10 a5,5 0 1,0 0,-10"
         android:fillColor="#FFFFFFFF" />
 </vector>

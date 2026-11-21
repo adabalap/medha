@@ -1,15 +1,21 @@
 package com.adabala.medha
 
 import android.content.Context
-import android.util.Log
+import com.adabala.medha.diag.Diagnostics
+import com.adabala.medha.oai.BackendConstraint
+import com.adabala.medha.oai.MultimodalLadder
+import com.adabala.medha.oai.MultimodalProbe
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
+import com.google.ai.edge.litertlm.Content
+import com.google.ai.edge.litertlm.Contents
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -47,6 +53,45 @@ class LlmEngine(private val appContext: Context) {
     @Volatile var loadMs: Long = 0; private set
     @Volatile var loadedAt: Long = 0; private set
 
+    // --- multimodal state -------------------------------------------------
+    //
+    // Two separate facts, and conflating them is what produced a /health
+    // block that lied for three releases:
+    //
+    //   aarCapabilities  what the installed AAR can express and configure
+    //   visionActive /   whether THIS engine actually came up with those
+    //   audioActive      backends enabled, which additionally depends on the
+    //                    loaded .litertlm carrying the encoder
+    //
+    // /health advertises the second pair, never the first. A model with no
+    // audio tower makes Engine.initialize() fail with audioBackend set, and
+    // a client told "audio: true" on that build would stop falling back and
+    // start failing — the exact outcome the capability block exists to
+    // prevent.
+
+    /** What the installed AAR supports. Fixed for the process lifetime. */
+    val aarCapabilities: MultimodalProbe.Report by lazy { MultimodalProbe.probeInstalled() }
+
+    @Volatile var visionActive: Boolean = false; private set
+    @Volatile var audioActive: Boolean = false; private set
+
+    /** Why multimodal is off when the AAR supports it; null when it is on. */
+    @Volatile var multimodalError: String? = null; private set
+
+    /**
+     * Set when [multimodalError] is the model declaring a backend
+     * requirement rather than something going wrong.
+     *
+     * These mean opposite things and v0.11.3 reported them identically.
+     * `gemma-4-E4B-it` declares its audio encoder requires CPU, so running
+     * audio on CPU is the only configuration those weights permit — not a
+     * degradation, and not something anyone can fix from this side.
+     */
+    @Volatile var multimodalConstraint: BackendConstraint.Mismatch? = null; private set
+
+    /** Which rung of the init ladder the live engine came up on. */
+    @Volatile var multimodalMode: String = "text-only"; private set
+
     private val inFlight = AtomicLong(0)
 
     val isLoaded: Boolean get() = engine != null
@@ -62,12 +107,41 @@ class LlmEngine(private val appContext: Context) {
      * close() + initialize(), which tore down a live engine underneath any
      * request that happened to be running.
      */
-    fun load(modelPath: String, backend: ConfiguredBackend, force: Boolean = false) {
+    fun load(
+        modelPath: String,
+        backend: ConfiguredBackend,
+        force: Boolean = false,
+        enableMultimodal: Boolean = true,
+        /**
+         * The [MultimodalLadder.Rung] label that worked last time, if any.
+         *
+         * Which rung a given (model, device) pair accepts does not change
+         * between starts, and each rung it has to walk past costs a full
+         * model load — about 8.6s on an SM8850. The first real device to
+         * run this rejected audio-on-GPU, so without a hint every single
+         * start would pay for that discovery again.
+         */
+        rungHint: String? = null,
+        /**
+         * The constraint message recorded alongside [rungHint], if any.
+         *
+         * Without this, `/health` is non-deterministic across restarts for
+         * an identical configuration: a cold start walks rung 1, records
+         * why it failed, and reports it; the next start goes straight to
+         * the cached rung, never fails anything, and reports nothing. Same
+         * model, same device, same capabilities, two different answers —
+         * and a client polling /health would watch a diagnostic appear and
+         * vanish with nothing having changed.
+         *
+         * So the reason is persisted with the rung and handed back here.
+         */
+        constraintHint: String? = null
+    ) {
         synchronized(lifecycle) {
             if (!force && engine != null &&
                 loadedModelPath == modelPath && configuredBackend == backend
             ) {
-                Log.i(TAG, "Model already loaded with the same config; skipping reload")
+                Diagnostics.i(TAG, "Model already loaded with the same config; skipping reload")
                 return
             }
             val f = File(modelPath)
@@ -76,29 +150,144 @@ class LlmEngine(private val appContext: Context) {
 
             closeLocked()
             lastError = null
+            multimodalError = null
+            multimodalConstraint = null
+            visionActive = false
+            audioActive = false
+            multimodalMode = "text-only"
             configuredBackend = backend
 
-            val be = when (backend) {
-                ConfiguredBackend.GPU -> Backend.GPU()
-                ConfiguredBackend.CPU -> Backend.CPU()
-                ConfiguredBackend.NPU ->
-                    Backend.NPU(nativeLibraryDir = appContext.applicationInfo.nativeLibraryDir)
-            }
-            val config = EngineConfig(
-                modelPath = modelPath,
-                backend = be,
-                cacheDir = appContext.cacheDir.path
-            )
+            val caps = aarCapabilities
+            val wantVision = enableMultimodal && caps.vision
+            val wantAudio = enableMultimodal && caps.audio
             val start = System.currentTimeMillis()
-            val e = Engine(config)
-            e.initialize()
+
+            // Init ladder, ordered by MultimodalLadder (which is where the
+            // reasoning and the tests live). Each rung costs a full model
+            // load, so this only ever descends on failure, and [rungHint]
+            // normally makes the first attempt the right one.
+            val rungs = MultimodalLadder.order(
+                backend = backend.name,
+                wantVision = wantVision,
+                wantAudio = wantAudio,
+                hint = rungHint
+            )
+
+            var live: Engine? = null
+            for (rung in rungs) {
+                val attempt = runCatching {
+                    val e = Engine(
+                        EngineConfig(
+                            modelPath = modelPath,
+                            backend = backendOf(backend),
+                            visionBackend = rung.visionBackend?.let { backendOf(parseBackend(it)) },
+                            audioBackend = rung.audioBackend?.let { backendOf(parseBackend(it)) },
+                            maxNumImages =
+                                if (rung.visionBackend != null) MAX_IMAGES_PER_REQUEST else null,
+                            cacheDir = appContext.cacheDir.path
+                        )
+                    )
+                    // initialize() is where a model without the encoder
+                    // fails, so the Engine object already exists by then and
+                    // leaks native memory unless it is closed on the way out.
+                    runCatching { e.initialize() }.onFailure {
+                        runCatching { e.close() }
+                        throw it
+                    }
+                    e
+                }
+
+                attempt.onSuccess {
+                    live = it
+                    visionActive = rung.visionBackend != null
+                    audioActive = rung.audioBackend != null
+                    multimodalMode = rung.label
+                }
+                if (live != null) break
+
+                val why = attempt.exceptionOrNull()?.let { "${it.javaClass.simpleName}: ${it.message}" }
+                    ?: "unknown"
+                // The first failure is the one worth keeping: it is the
+                // most capable configuration this model refused, so its
+                // message is the one that explains the final mode.
+                if (multimodalError == null) multimodalError = why
+                Diagnostics.w(TAG, "Engine init rung '${rung.label}' failed -- $why")
+            }
+
+            // A cached hint means the rung that would have failed was never
+            // tried, so nothing was recorded this time. Restore the reason
+            // from the cache so /health answers the same way either way.
+            if (multimodalError == null && !constraintHint.isNullOrBlank() &&
+                multimodalMode != MultimodalLadder.preferredLabel(backend.name)
+            ) {
+                multimodalError = constraintHint
+            }
+            multimodalConstraint = BackendConstraint.parse(multimodalError)
+
+            val e = live ?: error("Engine failed to initialize on every configuration")
             loadMs = System.currentTimeMillis() - start
             engine = e
             loadedModelPath = modelPath
             loadedAt = System.currentTimeMillis()
-            Log.i(TAG, "Engine initialized: $modelPath backend=$backend in ${loadMs}ms")
+            Diagnostics.i(
+                TAG,
+                "Engine initialized: $modelPath backend=$backend mode=$multimodalMode " +
+                    "vision=$visionActive audio=$audioActive in ${loadMs}ms"
+            )
         }
     }
+
+    /**
+     * A fresh Backend instance per config slot.
+     *
+     * Not a shared one: the same object would be handed to the main, vision
+     * and audio slots, and these are native-backed handles whose lifecycle
+     * the Kotlin layer does not document. Three cheap allocations beat one
+     * shared handle closed three times.
+     */
+    private fun backendOf(b: ConfiguredBackend): Backend = when (b) {
+        ConfiguredBackend.GPU -> Backend.GPU()
+        ConfiguredBackend.CPU -> Backend.CPU()
+        ConfiguredBackend.NPU ->
+            Backend.NPU(nativeLibraryDir = appContext.applicationInfo.nativeLibraryDir)
+    }
+
+    /**
+     * MultimodalLadder works in plain strings so it stays Android-free and
+     * testable; this turns one back into an enum. Falls back to CPU rather
+     * than throwing, because the ladder's own names are the only values
+     * that reach here and CPU is the safe one if that ever stops being
+     * true.
+     */
+    private fun parseBackend(name: String): ConfiguredBackend =
+        runCatching { ConfiguredBackend.valueOf(name) }.getOrDefault(ConfiguredBackend.CPU)
+
+    /**
+     * True when the engine came up on a less capable rung than the AAR
+     * could have supported.
+     *
+     * Distinct from [multimodalError] being set: on the first device to
+     * run this, audio-on-GPU was refused and audio-on-CPU succeeded, so
+     * there IS a recorded error and audio works perfectly well. Reporting
+     * that error as a fault would tell every client something is broken
+     * when nothing is.
+     */
+    val multimodalDegraded: Boolean
+        get() = isLoaded && multimodalError != null &&
+            multimodalConstraint == null &&
+            multimodalMode != MultimodalLadder.preferredLabel(configuredBackend.name)
+
+    /**
+     * True when the engine is on a non-preferred rung because the MODEL
+     * said so. Not a fault, and not resolvable from here.
+     */
+    val multimodalConstrained: Boolean
+        get() = isLoaded && multimodalConstraint != null &&
+            multimodalMode != MultimodalLadder.preferredLabel(configuredBackend.name)
+
+    /** The rung label worth persisting for the next start, or null. */
+    val cacheableRung: String?
+        get() = multimodalMode.takeIf { isLoaded && MultimodalLadder.worthCaching(it) }
 
     /**
      * One-shot generation. Suspends (never blocks the caller's thread) while
@@ -129,6 +318,191 @@ class LlmEngine(private val appContext: Context) {
         } finally {
             inFlight.decrementAndGet()
         }
+    }
+
+    /**
+     * One-shot generation with a hard output cap.
+     *
+     * The LiteRT-LM surface Medha binds takes no max-tokens parameter, so
+     * `max_tokens` was advisory: a client could ask for 300 and get a
+     * thousand. This enforces it by generating through the *streaming* path
+     * and stopping early, which is a real cap rather than a truncation —
+     * tokens past the limit are never produced, so the phone does not spend
+     * the compute. That matters most for Telugu, which costs roughly 2.2x
+     * the tokens for the same text.
+     *
+     * Returns the text and whether the cap was what ended it, so the caller
+     * can report `finish_reason: "length"` honestly instead of guessing.
+     *
+     * Falls back to [generate] when the installed AAR has no async path, in
+     * which case the cap is applied by truncation and [Capped.truncated]
+     * says so.
+     */
+    suspend fun generateCapped(
+        prompt: String,
+        systemInstruction: String? = null,
+        maxTokens: Int?
+    ): Capped {
+        if (maxTokens == null || maxTokens <= 0) {
+            val r = generate(prompt, systemInstruction)
+            return Capped(r.text, r.promptTokens, r.tokens, r.ms, hitCap = false, truncated = false)
+        }
+
+        val start = System.currentTimeMillis()
+        val sb = StringBuilder()
+        var hitCap = false
+        // takeWhile checks BEFORE each emission, so the chunk that crosses
+        // the cap is appended in full and the next one stops the flow.
+        // Overrunning by at most one chunk is deliberate: cutting mid-chunk
+        // would truncate a word, and takeWhile cancels the upstream, so the
+        // model genuinely stops rather than being left to finish.
+        //
+        // NOT a hand-rolled `collectWhile` -- no such operator exists in
+        // kotlinx.coroutines, and with the library off this classpath an
+        // invented name compiles to the same "unresolved reference" noise as
+        // every real Android symbol. takeWhile and collect are both already
+        // used in this file.
+        generateStream(prompt, systemInstruction)
+            .takeWhile { !hitCap }
+            .collect { delta ->
+                sb.append(delta)
+                if (SystemInfo.estimateTokens(sb.toString()) >= maxTokens) hitCap = true
+            }
+        val ms = System.currentTimeMillis() - start
+        val text = sb.toString()
+        val inTokens = SystemInfo.estimateTokens(composePrompt(prompt, systemInstruction))
+        return Capped(text, inTokens, SystemInfo.estimateTokens(text), ms, hitCap, truncated = false)
+    }
+
+    /**
+     * Raised when a request needs a modality this engine did not come up
+     * with. Carries enough for the caller to answer accurately rather than
+     * returning a bare 500.
+     */
+    class MultimodalUnavailable(
+        val modality: String,
+        val reason: String
+    ) : Exception("$modality input is not available on this build: $reason")
+
+    /**
+     * One-shot generation over mixed text, image and audio input.
+     *
+     * ## Why Conversation and not Session
+     *
+     * v0.11.0 through v0.11.4 used `Session.generateContent(List<InputData>)`
+     * on the reasoning that a transcription is stateless and a Conversation
+     * would carry a KV cache and chat formatting nobody asked for. That
+     * reasoning is fine and the conclusion was wrong: on a real device every
+     * audio request failed with
+     *
+     *     INTERNAL: Audio must be preprocessed before being used in
+     *     SessionAdvanced.
+     *
+     * The JNI layer wraps `InputData.Audio(bytes)` as a raw
+     * `InputAudio(std::string)`, and `PreprocessContents` in
+     * runtime/core/session_utils.cc accepts audio only when it is already a
+     * TensorBuffer or embeddings — it rejects raw bytes rather than
+     * converting them. The same is true of images. So the Session path
+     * cannot take media at all unless the caller has already produced
+     * tensors, which no Kotlin API exposes.
+     *
+     * `Conversation.sendMessage(Contents)` goes through
+     * runtime/conversation/, whose `Gemma4DataProcessor` constructs an
+     * `AudioPreprocessorMiniAudio` (16 kHz, mono, mel-spectrogram) and does
+     * the conversion. That is the path that works, and the KV cache is
+     * discarded with the conversation immediately afterwards.
+     *
+     * Media comes before the text instruction. These models are trained
+     * with the media tokens preceding the question, and the reverse order
+     * measurably degrades the answer — the model has already started
+     * composing a reply to a question about nothing.
+     */
+    suspend fun generateMultimodal(
+        text: String,
+        images: List<ByteArray> = emptyList(),
+        audio: List<ByteArray> = emptyList(),
+        systemInstruction: String? = null
+    ): Result {
+        val e = engine ?: error("No model loaded")
+
+        if (images.isNotEmpty() && !visionActive) {
+            throw MultimodalUnavailable("image", visionUnavailableReason())
+        }
+        if (audio.isNotEmpty() && !audioActive) {
+            throw MultimodalUnavailable("audio", audioUnavailableReason())
+        }
+        require(images.size <= MAX_IMAGES_PER_REQUEST) {
+            "at most $MAX_IMAGES_PER_REQUEST images per request"
+        }
+
+        val prompt = composePrompt(text, systemInstruction)
+        val parts = buildList<Content> {
+            images.forEach { add(Content.ImageBytes(it)) }
+            audio.forEach { add(Content.AudioBytes(it)) }
+            if (prompt.isNotBlank()) add(Content.Text(prompt))
+        }
+        if (parts.isEmpty()) return Result("", 0, 0, 0)
+
+        inFlight.incrementAndGet()
+        try {
+            return gate.withLock {
+                withContext(Dispatchers.IO) {
+                    val start = System.currentTimeMillis()
+                    val out = e.createConversation().use { conv ->
+                        extractText(conv.sendMessage(Contents.of(parts)))
+                    }
+                    val ms = System.currentTimeMillis() - start
+                    val outTokens = SystemInfo.estimateTokens(out)
+                    // Media tokens are not text tokens and estimateTokens
+                    // cannot see them, so the prompt count here covers the
+                    // text only. Reported as such rather than guessed at:
+                    // a fabricated image-token count would corrupt every
+                    // downstream cost and throughput figure.
+                    val inTokens = SystemInfo.estimateTokens(prompt)
+                    SystemInfo.record(inTokens, outTokens, ms)
+                    Result(out, inTokens, outTokens, ms)
+                }
+            }
+        } finally {
+            inFlight.decrementAndGet()
+        }
+    }
+
+    /** Why vision is off, in words a client can act on. */
+    fun visionUnavailableReason(): String = when {
+        engine == null -> "no model is loaded"
+        !aarCapabilities.vision ->
+            "the installed LiteRT-LM AAR has no image binding (${aarCapabilities.summary()})"
+        multimodalError != null ->
+            "the loaded model did not initialize with a vision backend: $multimodalError"
+        else -> "vision was disabled for this engine"
+    }
+
+    /** Why audio is off, in words a client can act on. */
+    fun audioUnavailableReason(): String = when {
+        engine == null -> "no model is loaded"
+        !aarCapabilities.audio ->
+            "the installed LiteRT-LM AAR has no audio binding (${aarCapabilities.summary()})"
+        multimodalError != null ->
+            "the loaded model did not initialize with an audio backend: $multimodalError"
+        else -> "audio was disabled for this engine"
+    }
+
+    private fun MultimodalProbe.Report.summary(): String = MultimodalProbe.summary(this)
+
+    data class Capped(
+        val text: String,
+        val promptTokens: Int,
+        val tokens: Int,
+        val ms: Long,
+        /** True when generation was stopped by the cap rather than by the model. */
+        val hitCap: Boolean,
+        /** True when the cap was applied after the fact rather than during. */
+        val truncated: Boolean
+    ) {
+        /** Matches Result.tokensPerSec so callers can treat the two alike. */
+        val tokensPerSec: Double
+            get() = if (ms > 0) tokens * 1000.0 / ms else 0.0
     }
 
     /**
@@ -207,11 +581,134 @@ class LlmEngine(private val appContext: Context) {
         if (systemInstruction.isNullOrBlank()) prompt
         else "System: $systemInstruction\n\n$prompt"
 
+    /**
+     * Extracts plain text from whatever the installed LiteRT-LM AAR's
+     * `Message` type actually looks like.
+     *
+     * Every other official LiteRT-LM binding represents a response as
+     * `content: [{type: "text", text: "..."}]`, not a flat string — e.g.
+     * `response.content[0].text` in the JS SDK, `response["content"][0]
+     * ["text"]` in Python. The Kotlin `Message` class very likely mirrors
+     * that shape rather than exposing a flat `getText()`. The previous
+     * version only tried `getText()` and fell back to `msg.toString()` on
+     * anything else — which, if `getText()` doesn't actually exist on this
+     * type, means every streamed AND non-streamed response silently became
+     * the raw Kotlin data-class dump of the Message object (something like
+     * `Message(role=ASSISTANT, content=[Text(text=Hello)])`) instead of the
+     * reply text. That failure mode never throws, so it looks exactly like
+     * "streaming is broken" or "the model returns garbage" without any
+     * exception anywhere to point at it.
+     *
+     * Tries, in order: a direct `getText()`; then a `content`/`contents`
+     * list, walking it for text-typed items only (so a tool-call or
+     * image/audio entry never leaks its raw payload into chat text); then
+     * gives up to `toString()` as a genuine last resort — logging loudly
+     * when it has to, so a future SDK shape change is visible instead of
+     * silently wrong.
+     */
     private fun extractText(msg: Any?): String {
         if (msg == null) return ""
-        return runCatching {
-            (msg.javaClass.getMethod("getText").invoke(msg) as? String) ?: msg.toString()
-        }.getOrElse { msg.toString() }
+
+        runCatching {
+            val t = msg.javaClass.getMethod("getText").invoke(msg) as? String
+            if (!t.isNullOrEmpty()) return t
+        }
+
+        runCatching {
+            val content = listOf("getContent", "getContents", "getParts", "getItems")
+                .firstNotNullOfOrNull { name ->
+                    runCatching { msg.javaClass.getMethod(name).invoke(msg) }.getOrNull()
+                }
+            val text = textFrom(content)
+            if (!text.isNullOrEmpty()) return text
+        }
+
+        warnOnce(msg.javaClass)
+        return msg.toString()
+    }
+
+    /**
+     * Text out of a content holder, whether it is a list or wraps one.
+     *
+     * `getContents()` on 0.13.1's Message does not return a List -- it
+     * returns a `Contents`, which the SDK probe reports as its own class.
+     * The previous version tested `content is Iterable<*>`, that was false,
+     * and every generation fell through to Message.toString(): a Kotlin
+     * data-class rendering, so chat output carried `Message(role=..., ...)`
+     * scaffolding around the real answer and the only sign was a log line.
+     *
+     * Rather than hard-code an accessor name for one version, this unwraps
+     * one level by looking for any no-argument getter that yields an
+     * Iterable. That survives the SDK renaming it.
+     */
+    private fun textFrom(content: Any?): String? {
+        if (content == null) return null
+
+        if (content is Iterable<*>) {
+            val text = content.mapNotNull(::extractTextFromContentItem).joinToString("")
+            return text.ifEmpty { null }
+        }
+
+        // A single content item, not a collection of them.
+        extractTextFromContentItem(content)?.let { if (it.isNotEmpty()) return it }
+
+        // A wrapper. Any no-arg getter returning an Iterable will do.
+        for (m in runCatching { content.javaClass.methods }.getOrNull().orEmpty()) {
+            if (m.parameterTypes.isNotEmpty()) continue
+            if (!m.name.startsWith("get") && m.name != "iterator") continue
+            if (m.name == "getClass") continue
+            val v = runCatching { m.invoke(content) }.getOrNull() ?: continue
+            if (v is Iterable<*> || v is Iterator<*>) {
+                val items = if (v is Iterator<*>) v.asSequence().toList() else (v as Iterable<*>).toList()
+                val text = items.mapNotNull(::extractTextFromContentItem).joinToString("")
+                if (text.isNotEmpty()) return text
+            }
+        }
+        return null
+    }
+
+    /**
+     * The fallback warning, once per class rather than once per generation.
+     *
+     * It fired on every message, so a device log was six identical lines
+     * saying the output might be wrong and not one saying what to do about
+     * it. The method list is what actually ends the guessing: it names the
+     * accessor this build should be reading.
+     */
+    private fun warnOnce(cls: Class<*>) {
+        if (!warnedClasses.add(cls.name)) return
+        val methods = runCatching {
+            cls.methods.filter { it.parameterTypes.isEmpty() }
+                .map { "${it.name}(): ${it.returnType.simpleName}" }
+                .sorted()
+        }.getOrNull().orEmpty()
+        Diagnostics.w(
+            TAG,
+            "extractText: no known text accessor on ${cls.name}; falling back to " +
+                "toString(), so generated text may carry wrapper scaffolding. " +
+                "No-arg methods on it: ${methods.joinToString(", ").ifEmpty { "none" }}"
+        )
+    }
+
+    private val warnedClasses = java.util.Collections.newSetFromMap(
+        java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+    )
+
+    /** One item of a Message's content list; null if it isn't a text item. */
+    private fun extractTextFromContentItem(item: Any?): String? {
+        if (item == null) return null
+        // Skip anything explicitly typed as non-text (tool calls, images,
+        // audio) so their raw payload never leaks into chat output.
+        val type = runCatching {
+            item.javaClass.getMethod("getType").invoke(item)?.toString()
+        }.getOrNull()
+        if (type != null && !type.equals("text", ignoreCase = true)) return null
+
+        for (name in listOf("getText", "component1")) {
+            val v = runCatching { item.javaClass.getMethod(name).invoke(item) as? String }.getOrNull()
+            if (!v.isNullOrEmpty()) return v
+        }
+        return null
     }
 
     fun close() {
@@ -240,5 +737,17 @@ class LlmEngine(private val appContext: Context) {
 
     companion object {
         private const val TAG = "LlmEngine"
+
+        /**
+         * Hard cap on images in one request, passed to
+         * `EngineConfig.maxNumImages`.
+         *
+         * Each image costs a few hundred vision tokens against a 4096-token
+         * context, so four is already most of the window. The limit is here
+         * rather than only in the parser because the engine needs the number
+         * at init: a request with more images than the engine was configured
+         * for fails natively, with a message about tensor shapes.
+         */
+        const val MAX_IMAGES_PER_REQUEST = 4
     }
 }

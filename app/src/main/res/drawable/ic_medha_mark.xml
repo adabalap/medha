@@ -39,15 +39,36 @@
     <path android:pathData="M19,13 h10 a6,6 0 0 1 6,6 v10 a6,6 0 0 1 -6,6 h-10 a6,6 0 0 1 -6,-6 v-10 a6,6 0 0 1 6,-6 z"
         android:fillColor="#59241261" android:strokeColor="#FFEDE7FF" android:strokeWidth="1.8" />
 
-    <path android:pathData="M24,17 C28,21.5 29.7,24 29.7,26.8 C29.7,30 27.1,32.1 24,32.1 C20.9,32.1 18.3,30 18.3,26.8 C18.3,24 20,21.5 24,17 Z">
+    <!--
+      Atomic orbital, centred on the chip at (24,24). Same construction as
+      ic_launcher_foreground, scaled proportionally to this 48 viewport
+      (48/108): rx=7.6 keeps the widest orbit clear of the chip's inner edge
+      (~13.9 after its 1.8dp stroke), and holds the same rx:ry ratio as the
+      launcher icon so both marks read identically.
+    -->
+    <group android:pivotX="24" android:pivotY="24">
+        <path android:pathData="M16.4,24 a7.6,2.4 0 1,0 15.2,0 a7.6,2.4 0 1,0 -15.2,0"
+            android:strokeColor="#FFFFC24B" android:strokeWidth="1.25" android:fillColor="#00000000" />
+    </group>
+    <group android:pivotX="24" android:pivotY="24" android:rotation="60">
+        <path android:pathData="M16.4,24 a7.6,2.4 0 1,0 15.2,0 a7.6,2.4 0 1,0 -15.2,0"
+            android:strokeColor="#FFFFC24B" android:strokeWidth="1.25" android:fillColor="#00000000" />
+    </group>
+    <group android:pivotX="24" android:pivotY="24" android:rotation="120">
+        <path android:pathData="M16.4,24 a7.6,2.4 0 1,0 15.2,0 a7.6,2.4 0 1,0 -15.2,0"
+            android:strokeColor="#FFFFC24B" android:strokeWidth="1.25" android:fillColor="#00000000" />
+    </group>
+
+    <path android:pathData="M24,21.5 a2.5,2.5 0 1,0 0,5 a2.5,2.5 0 1,0 0,-5"
+        android:fillColor="#FF2E1C63" />
+    <path android:pathData="M24,22.2 a1.8,1.8 0 1,0 0,3.6 a1.8,1.8 0 1,0 0,-3.6">
         <aapt:attr name="android:fillColor">
-            <gradient android:startX="24" android:startY="17" android:endX="24" android:endY="32" android:type="linear">
+            <gradient android:startX="22.2" android:startY="22.2" android:endX="25.8" android:endY="25.8"
+                android:type="linear">
                 <item android:offset="0.0" android:color="#FFFFE8A3" />
-                <item android:offset="0.45" android:color="#FFFFC24B" />
+                <item android:offset="0.55" android:color="#FFFFC24B" />
                 <item android:offset="1.0" android:color="#FFF4802E" />
             </gradient>
         </aapt:attr>
     </path>
-    <path android:pathData="M24,22.4 C26,24.9 26.8,26 26.8,27.4 C26.8,29 25.6,30.2 24,30.2 C22.4,30.2 21.2,29 21.2,27.4 C21.2,26 22,24.9 24,22.4 Z"
-        android:fillColor="#EBFFF6DA" />
 </vector>

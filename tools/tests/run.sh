@@ -1,0 +1,385 @@
+#!/usr/bin/env bash
+# Compiles and runs the pure-logic test harness in this directory against the
+# REAL source files under app/src/main/java — not copies — plus the demo
+# webapp's own pure JS functions, extracted from the real
+# app/src/main/assets/webapp/index.html rather than duplicated.
+#
+# What this does NOT cover, and why: everything else that changed in the
+# scheduler/streaming/embedder work (InferenceScheduler's admission control,
+# AiEdgeEmbedder's reflection probe) needs a real Android classpath and a real
+# kotlinx.coroutines jar to even compile, let alone run meaningfully — a
+# thermal-headroom reading or a LiteRT native call can't be faked into
+# something worth trusting. Those live as instrumented/Robolectric-backed
+# tests under app/src/test and app/src/androidTest instead, run via
+# `./gradlew testCoreDebugUnitTest` / `connectedCoreDebugAndroidTest`, and as
+# the manual on-device checklist in docs/TESTING.md.
+#
+# Requires: kotlinc, java for the Kotlin tests; node for the webapp tests
+# (skipped with a note if node isn't on PATH). None require network access or
+# an Android SDK.
+set -euo pipefail
+cd "$(dirname "$0")"
+SRC="../../app/src/main/java/com/adabala/medha"
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+
+# The checkers themselves, FIRST and before the kotlinc guard below, because
+# these need nothing but python3 and because a wrong checker is worse than no
+# checker -- its green is read as evidence. Four of them were wrong in two
+# days, and every one was found by a build failing instead of by a test.
+echo "== check_stale_mutations =="
+./check_stale_mutations.sh
+
+echo
+echo "== check_symbols_mutations =="
+./check_symbols_mutations.sh
+
+echo
+echo "== check_imports_mutations =="
+./check_imports_mutations.sh
+
+echo
+echo "== check_sliders_mutations =="
+./check_sliders_mutations.sh
+echo
+
+if ! command -v kotlinc >/dev/null 2>&1; then
+  echo "kotlinc not found on PATH — skipping pure-logic test run."
+  echo "Get it from https://github.com/JetBrains/kotlin/releases (kotlin-compiler-*.zip)."
+  exit 0
+fi
+
+echo "== SchedulerConfigTest =="
+kotlinc "$SRC/sched/SchedulerConfig.kt" SchedulerConfigTest.kt \
+  -include-runtime -d "$WORK/sched.jar"
+java -jar "$WORK/sched.jar"
+
+echo
+echo "== EmbedderTest =="
+kotlinc "$SRC/rag/Embedder.kt" EmbedderTest.kt \
+  -include-runtime -d "$WORK/embed.jar"
+java -jar "$WORK/embed.jar"
+
+echo
+echo "== AccessContractTest =="
+kotlinc AccessContractTest.kt -include-runtime -d "$WORK/access.jar"
+java -jar "$WORK/access.jar"
+
+echo
+echo "== BriefPolicyTest =="
+# Medha's own brief: the multi-client home-screen digest that exists because
+# Samsung's Now Brief has no third-party API. Merge, expiry, ordering, bounds.
+kotlinc "$SRC/notify/BriefPolicy.kt" BriefPolicyTest.kt \
+  -include-runtime -d "$WORK/brief.jar"
+java -jar "$WORK/brief.jar"
+
+echo
+echo "== BriefRenderTest =="
+# What the widget decides to draw. Lived inside the provider until v0.13.0,
+# where nothing short of Gradle could compile it and so nothing tested it --
+# which is how dueAt went two releases being stored and ignored.
+kotlinc "$SRC/notify/BriefPolicy.kt" "$SRC/notify/BriefRender.kt" \
+  BriefRenderTest.kt -include-runtime -d "$WORK/render.jar"
+java -jar "$WORK/render.jar"
+
+echo
+echo "== BriefTriageTest =="
+# What earns a place in the brief. The screen that prompted the rule had 19
+# items, 17 undated: a 2.5-lakh instalment and a 17:30 meeting sharing a
+# scroll with a shopping list and "Thanq thanq". The checks that matter are
+# that nothing is DISCARDED and that the rule cannot be talked into
+# promoting an undated item by sounding urgent.
+kotlinc "$SRC/notify/BriefPolicy.kt" "$SRC/notify/BriefTriage.kt" \
+  BriefTriageTest.kt -include-runtime -d "$WORK/triage.jar"
+java -jar "$WORK/triage.jar"
+
+echo
+echo "== BriefIntakeTest =="
+# The PUT /widget/content protocol boundary: which of the two shapes
+# arrived, and what each field of it is allowed to become. Lives apart from
+# the route because LocalServer.kt is not compilable here, and every
+# decision this project left in that file eventually went wrong in a way
+# nobody could execute a test against.
+kotlinc stubs/org/json/Stubs.kt "$SRC/notify/BriefPolicy.kt" \
+  "$SRC/notify/BriefJson.kt" "$SRC/notify/BriefIntake.kt" \
+  BriefIntakeTest.kt -include-runtime -d "$WORK/intake.jar"
+java -jar "$WORK/intake.jar"
+
+echo
+echo "== BriefResolveTest =="
+# The same obligation arriving twice, from two apps that cannot see each
+# other. The checks that matter are the ones asserting what must NOT be
+# collapsed -- a recurring meeting's future instances, two bills from one
+# merchant, a one-word title -- and the permutation property: three
+# obligations must resolve the same way whatever order the sections arrive
+# in. The first implementation did not, and returned two rows for three
+# orderings and one row for the other three.
+kotlinc "$SRC/notify/BriefPolicy.kt" "$SRC/notify/BriefResolve.kt" \
+  BriefResolveTest.kt -include-runtime -d "$WORK/resolve.jar"
+java -jar "$WORK/resolve.jar"
+
+echo
+echo "== BriefClockTest =="
+# When the widget next has to be redrawn. updatePeriodMillis is 0 and there
+# was no alarm, so the widget's urgency was frozen at whatever the last
+# posting app left behind. The null cases matter as much as the rest: an
+# undated brief must not arm a daily wakeup to redraw an identical picture.
+kotlinc "$SRC/notify/BriefPolicy.kt" "$SRC/notify/BriefClock.kt" \
+  BriefClockTest.kt -include-runtime -d "$WORK/clock.jar"
+java -jar "$WORK/clock.jar"
+
+echo
+echo "== WidgetCodesTest =="
+# Where a tap goes. PendingIntents are keyed on request code plus filter
+# equality, which ignores extras and compares a URI by prefix, so two rows
+# sharing a code become one intent and the later row steals the earlier
+# row's tap. The first draft had exactly that collision.
+kotlinc "$SRC/notify/BriefPolicy.kt" "$SRC/notify/BriefRender.kt" \
+  "$SRC/notify/WidgetCodes.kt" WidgetCodesTest.kt \
+  -include-runtime -d "$WORK/wcodes.jar"
+java -jar "$WORK/wcodes.jar"
+
+echo
+echo "== BriefDismissTest =="
+# Removing a line from your own brief and having it STAY removed. Clients
+# own their section and re-post it whole, so a dismissal cannot live in the
+# content; it is applied on every read instead.
+kotlinc "$SRC/notify/BriefPolicy.kt" "$SRC/notify/BriefDismiss.kt" BriefDismissTest.kt \
+  -include-runtime -d "$WORK/dismiss.jar"
+java -jar "$WORK/dismiss.jar"
+
+echo
+echo "== BriefNudgeTest =="
+# Whether Medha should interrupt you. The easiest thing in an app to get
+# wrong, and the wrongness is invisible in review: a nudge that fires twice,
+# or at 3am, or on every widget redraw, reads as reasonable logic right up
+# until it is on a real phone at 3am.
+kotlinc "$SRC/notify/BriefPolicy.kt" "$SRC/notify/BriefNudge.kt" BriefNudgeTest.kt \
+  -include-runtime -d "$WORK/nudge.jar"
+java -jar "$WORK/nudge.jar"
+
+echo
+echo "== WidgetCallShapesTest =="
+# The BriefPolicy and BriefRender call shapes used by BriefWidgets.kt and
+# LocalServer. Those three need an Android classpath, so no stage before
+# Gradle type-checks them; this compiles the same argument shapes against the
+# real BriefPolicy so a signature change fails here in seconds instead of in
+# CI minutes later.
+kotlinc "$SRC/notify/BriefPolicy.kt" "$SRC/notify/BriefRender.kt" \
+  WidgetCallShapesTest.kt -include-runtime -d "$WORK/shapes.jar"
+java -jar "$WORK/shapes.jar"
+
+echo
+echo "== NotificationFilterTest =="
+# What a notification is allowed to become. Medha asks for the one Android
+# switch that reads EVERY notification, because a work calendar inside
+# Outlook or Teams never reaches CalendarContract. This is the evidence for
+# the promise that comes with that -- above all, that a one-time passcode
+# can never reach a home screen.
+kotlinc "$SRC/connect/NotificationFilter.kt" NotificationFilterTest.kt \
+  -include-runtime -d "$WORK/nfilter.jar"
+java -jar "$WORK/nfilter.jar"
+
+echo
+echo "== NotificationItemTest =="
+# And what it becomes: which glyph, what time the words mean, and keeping
+# the same meeting from appearing four times as its countdown ticks down.
+kotlinc "$SRC/notify/BriefPolicy.kt" "$SRC/connect/NotificationFilter.kt" \
+  "$SRC/connect/NotificationItem.kt" NotificationItemTest.kt \
+  -include-runtime -d "$WORK/nitem.jar"
+java -jar "$WORK/nitem.jar"
+
+echo
+echo "== CapturePolicyTest =="
+# The bounds on the capture log -- the route that hands the notification
+# stream to the agent. Both limits are checked because either alone leaves
+# the other case unbounded: a quiet month hits the clock, a busy week hits
+# the row ceiling. `overBy` returns the whole overage rather than one row,
+# because a log that trims one per insert never catches up with a burst.
+kotlinc "$SRC/connect/CapturePolicy.kt" CapturePolicyTest.kt \
+  -include-runtime -d "$WORK/capture.jar"
+java -jar "$WORK/capture.jar"
+
+echo
+echo "== SavePolicyTest =="
+# The save outbox. Shares a shape with the capture log and not its lifetime:
+# a capture is something Medha noticed and may age out, a save is something a
+# person pressed a button for and must not. The fingerprint tests are the
+# other half -- they have to stop a double tap WITHOUT stopping the same
+# grocery list being saved again next week, which is why postedAt is in the
+# key and why the separator is a character notification text cannot contain.
+kotlinc "$SRC/connect/SavePolicy.kt" "$SRC/connect/CapturePolicy.kt" "$SRC/notify/BriefPolicy.kt" SavePolicyTest.kt \
+  -include-runtime -d "$WORK/save.jar"
+java -jar "$WORK/save.jar"
+
+echo
+echo "== BriefJsonTest =="
+# The brief's on-disk format, INCLUDING the v0.9.0 -> v0.9.1 migration. Runs
+# against the real BriefJson.kt plus stubs/org/json, which mirror Android's
+# org.json signatures closely enough to execute the migration rather than
+# merely type-check it. A migration that is only reasoned about is a
+# migration that silently wipes someone's widget.
+kotlinc stubs/org/json/Stubs.kt "$SRC/notify/BriefPolicy.kt" "$SRC/notify/BriefJson.kt" \
+  BriefJsonTest.kt -include-runtime -d "$WORK/briefjson.jar"
+java -jar "$WORK/briefjson.jar"
+
+echo
+echo "== ChatRequestParserTest =="
+# The OpenAI-shaped request parser, including the multimodal content-part
+# form. Before it, an image part threw and became a 500 -- the one answer a
+# client built to fall back on 4xx cannot act on.
+kotlinc stubs/org/json/Stubs.kt "$SRC/oai/ChatRequestParser.kt" ChatRequestParserTest.kt \
+  -include-runtime -d "$WORK/chatreq.jar"
+java -jar "$WORK/chatreq.jar"
+
+echo
+echo "== MultimodalProbeTest =="
+# Decides what /health advertises. Claiming a capability this build does not
+# have would stop clients falling back and make them fail instead -- and
+# HIDING one, which is what v1 of the probe did for three releases, means
+# shipping a whisper.cpp sidecar to do what the model already does. The
+# first test in here replays v1's hint list against the real 0.13.1 surface
+# and asserts it matches nothing.
+kotlinc "$SRC/oai/MultimodalProbe.kt" MultimodalProbeTest.kt \
+  -include-runtime -d "$WORK/probe.jar"
+java -jar "$WORK/probe.jar"
+
+echo
+echo "== MultimodalLadderTest =="
+# The order the engine tries vision/audio backends in. Every rung costs a
+# full model load (~8.6s on an SM8850), and the first real device to run
+# this refused audio-on-GPU while accepting audio-on-CPU -- so the ladder
+# is the difference between "this model has no audio encoder" and audio
+# working. Ordering, de-duplication, the cached-rung hint, and the
+# constraint parser that tells "the model declares it requires CPU" apart
+# from "something went wrong" -- opposite meanings, reported identically
+# until v0.11.4.
+kotlinc "$SRC/oai/MultimodalLadder.kt" "$SRC/oai/BackendConstraint.kt" \
+  MultimodalLadderTest.kt -include-runtime -d "$WORK/ladder.jar"
+java -jar "$WORK/ladder.jar"
+
+echo
+echo "== WavTest =="
+# InputData.Audio takes WAV only, and AudioRecord produces headerless PCM,
+# so every audio request goes through this file. Two silent killers: the
+# RIFF size field is total-8 and not total, and chunk walking has to honour
+# the word-align pad byte or a perfectly valid ffmpeg WAV reports a wrong
+# duration and gets rejected against the 30s limit.
+kotlinc "$SRC/audio/Wav.kt" WavTest.kt -include-runtime -d "$WORK/wav.jar"
+java -jar "$WORK/wav.jar"
+
+echo
+echo "== ResampleTest =="
+# Getting a video's audio to the 16 kHz mono the engine demands. The alias
+# check is the one that matters: naive decimation folds 12 kHz down onto
+# speech at full strength and nothing about it looks broken, so the test
+# drives real tones through and measures what survives.
+kotlinc "$SRC/audio/Resample.kt" ResampleTest.kt -include-runtime -d "$WORK/resample.jar"
+java -jar "$WORK/resample.jar"
+
+echo
+echo "== TranscriptionRequestTest =="
+# POST /v1/audio/transcriptions -- the endpoint that replaces whisper.cpp
+# for hg_agent. Validation, the Telugu script instruction, and the cleanup
+# that strips the model's conversational scaffolding without eating real
+# transcript text.
+kotlinc "$SRC/audio/Wav.kt" "$SRC/oai/TranscriptionRequest.kt" \
+  TranscriptionRequestTest.kt -include-runtime -d "$WORK/trans.jar"
+java -jar "$WORK/trans.jar"
+
+echo
+echo "== TokenCapTest =="
+# max_tokens on the multimodal path is a truncation, not a cap. Getting the
+# character budget wrong empties every capped response rather than
+# shortening it.
+kotlinc "$SRC/oai/TokenCap.kt" TokenCapTest.kt -include-runtime -d "$WORK/tokencap.jar"
+java -jar "$WORK/tokencap.jar"
+
+echo
+echo "== EngineFailureTest =="
+# An engine limit is not a server fault. "Input token ids are too long:
+# 4275 >= 4096" reached the generic Throwable handler and came back as 500
+# internal_error, which a client can only retry -- identically, forever.
+kotlinc "$SRC/oai/EngineFailure.kt" EngineFailureTest.kt \
+  -include-runtime -d "$WORK/enginefail.jar"
+java -jar "$WORK/enginefail.jar"
+
+echo
+echo "== PortProbeTest =="
+# Whether a port is bindable, asked before Ktor asks. Real sockets, because
+# the bug it guards is a disagreement between two socket configurations:
+# Ktor's CIO sets SO_REUSEADDR, and a stricter probe would call a port taken
+# whenever Medha's own last run left one in TIME_WAIT.
+kotlinc "$SRC/net/PortProbe.kt" PortProbeTest.kt -include-runtime -d "$WORK/port.jar"
+java -jar "$WORK/port.jar"
+
+echo
+echo "== NetPolicyTest =="
+# Origin matching, the CORS decision, the Private Network Access preflight,
+# the notify rate limiter and the pairing-code state machine. This is the
+# access-control boundary for every web app that pairs with Medha, so it runs
+# against the real sources rather than a copy.
+kotlinc "$SRC/net/WebOrigin.kt" "$SRC/net/CorsPolicy.kt" "$SRC/net/RateLimiter.kt" \
+  "$SRC/auth/PairingManager.kt" NetPolicyTest.kt \
+  -include-runtime -d "$WORK/net.jar"
+java -jar "$WORK/net.jar"
+
+echo
+echo "== hg_agent_transcribe_test (Python) =="
+# samples/hg-agent-transcribe.py is what replaces whisper.cpp for hg_agent,
+# and its multipart encoder is hand-rolled. Real HTTP round trips against a
+# stub server, parsed back with the stdlib's email parser -- a multipart bug
+# produces a truncated upload that looks like a corrupt audio file.
+if command -v python3 >/dev/null 2>&1; then
+  python3 -I hg_agent_transcribe_test.py
+
+  echo
+  echo "== medha_brief_py_test (Python) =="
+  # samples/medha_brief.py is the server-side client -- what hg_agent and
+  # anything else on the device imports, including the /captures reader.
+  # Real HTTP against a stdlib http.server on loopback, so urllib
+  # behaviour, header casing and JSON round-tripping are executed rather
+  # than stubbed.
+  #
+  # This suite existed for several releases WITHOUT being listed here, so
+  # its checks never ran in CI: the file every local client copies was the
+  # one thing the pipeline did not exercise. Found while adding the
+  # captures reader to it.
+  python3 -I medha_brief_py_test.py
+else
+  echo "python3 not found on PATH — skipping."
+fi
+
+if command -v node >/dev/null 2>&1; then
+  echo
+  echo "== webapp_markdown_test (Node) =="
+  node webapp_markdown_test.js
+
+  echo
+  echo "== webapp_sse_test (Node) =="
+  node webapp_sse_test.js
+
+  echo
+  echo "== medha_brief_client_test (Node) =="
+  # samples/medha-brief.js is the file every PWA copies, so a bug in it is a
+  # bug in all of them at once. Needs no jsdom -- it stubs fetch instead.
+  node medha_brief_client_test.js
+
+  echo
+  echo "== webapp_smoke_test (Node + jsdom) =="
+  if [ -d node_modules/jsdom ]; then
+    node webapp_smoke_test.js
+    echo
+    echo "== sample_pwa_smoke_test (Node + jsdom) =="
+    node sample_pwa_smoke_test.js
+  else
+    echo "jsdom not installed — run 'npm install' in tools/tests/ first, then re-run this script."
+    echo "This is the test that catches a script-level bug (like a variable"
+    echo "colliding with a built-in window property) silently halting the"
+    echo "whole page with no visible error — worth the one-time npm install."
+  fi
+else
+  echo
+  echo "node not found on PATH — skipping the three webapp JS tests."
+  echo "Get it from https://nodejs.org/, then re-run this script."
+fi

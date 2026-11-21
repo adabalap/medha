@@ -1,0 +1,218 @@
+#!/usr/bin/env bash
+# Confirms Medha extracted correctly and is buildable. Run from the extract dir.
+set -uo pipefail
+fail=0
+say() { printf "  %-8s %s\n" "$1" "$2"; }
+need() { if [ -e "$1" ]; then say OK "$1"; else say MISSING "$1"; fail=1; fi }
+
+echo "Gradle build"
+for f in settings.gradle.kts build.gradle.kts gradle.properties gradlew \
+         gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties; do need "$f"; done
+
+echo; echo "App module"
+for f in app/build.gradle.kts app/src/main/AndroidManifest.xml; do need "$f"; done
+
+echo; echo "Sources"
+for f in MainActivity InferenceService LlmEngine LocalServer SystemInfo MemoryRepository \
+         MedhaApplication; do
+  need "app/src/main/java/com/adabala/medha/$f.kt"; done
+for f in auth/ClientRegistry sched/InferenceScheduler sched/SchedulerConfig \
+         notify/NotificationHub notify/MedhaWidgetProvider data/MedhaDatabase \
+         data/Entities rag/Retriever rag/Embedder rag/AiEdgeEmbedder diag/Diagnostics \
+         ui/ClientListAdapter auth/MedhaAccessContract auth/AccessRequestActivity; do
+  need "app/src/main/java/com/adabala/medha/$f.kt"; done
+
+echo; echo "Tests"
+need "app/src/test/java/com/adabala/medha/sched/InferenceSchedulerConcurrencyTest.kt"
+need "app/src/androidTest/java/com/adabala/medha/data/MedhaDatabaseMigrationTest.kt"
+need "tools/tests/webapp_markdown_test.js"
+need "tools/tests/webapp_sse_test.js"
+need "tools/tests/webapp_smoke_test.js"
+need "tools/tests/AccessContractTest.kt"
+need "tools/tests/package.json"
+
+echo; echo "Bundled demo webapp"
+need "app/src/main/assets/webapp/index.html"
+
+# Standalone Gradle project, deliberately not part of this build (see its
+# settings.gradle.kts). Checked for presence only -- building it is a separate
+# "open samples/hello-medha in Android Studio" step.
+echo; echo "Integration sample"
+need "samples/notify-pwa/index.html"
+need "samples/notify-pwa/README.md"
+need "docs/NOTIFICATIONS.md"
+need "tools/tests/NetPolicyTest.kt"
+need "tools/tests/BriefPolicyTest.kt"
+need "tools/tests/BriefJsonTest.kt"
+need "docs/MULTIMODAL-SPEC-RESPONSE.md"
+need "tools/tests/ChatRequestParserTest.kt"
+need "tools/tests/MultimodalProbeTest.kt"
+need "app/src/main/java/com/adabala/medha/oai/ChatRequestParser.kt"
+need "app/src/main/java/com/adabala/medha/oai/MultimodalProbe.kt"
+need "app/src/main/java/com/adabala/medha/BriefActivity.kt"
+need "app/src/main/java/com/adabala/medha/notify/BriefWidgets.kt"
+need "app/src/main/java/com/adabala/medha/notify/BriefRender.kt"
+need "app/src/main/res/layout/activity_brief.xml"
+need "tools/tests/stubs/org/json/Stubs.kt"
+need "tools/check_workflows.py"
+need "tools/check_widget_layouts.py"
+need "tools/check_widget_wiring.py"
+need "tools/check_reachable.py"
+need "tools/check_stale.py"
+need "tools/check_mirrored_caps.py"
+need "tools/check_dialog_buttons.py"
+need "tools/manifest.txt"
+need "tools/make_manifest.py"
+need "tools/removed.txt"
+need "samples/medha-brief.js"
+need "samples/INTEGRATING.md"
+need "samples/medha_brief.py"
+need "samples/hg-agent-brief.py"
+need "tools/tests/medha_brief_py_test.py"
+need "tools/tests/medha_brief_client_test.js"
+need "tools/tests/sample_pwa_smoke_test.js"
+need "samples/hello-medha/README.md"
+need "samples/hello-medha/app/src/main/java/com/example/hellomedha/MainActivity.kt"
+need "samples/hello-medha/app/src/main/java/com/example/hellomedha/MedhaClient.kt"
+# Build scaffolding. Checked explicitly because a missing gradle.properties
+# (no android.useAndroidX) already cost one CI round-trip, and every one of
+# these fails only after a push, a queue wait and a Gradle download.
+need "samples/hello-medha/settings.gradle.kts"
+need "samples/hello-medha/build.gradle.kts"
+need "samples/hello-medha/gradle.properties"
+need "samples/hello-medha/app/build.gradle.kts"
+need "samples/hello-medha/app/src/main/AndroidManifest.xml"
+need "samples/hello-medha/gradlew"
+need "samples/hello-medha/gradle/wrapper/gradle-wrapper.jar"
+need "samples/hello-medha/gradle/wrapper/gradle-wrapper.properties"
+if grep -q "^android.useAndroidX=true" samples/hello-medha/gradle.properties 2>/dev/null; then
+  say OK "sample sets android.useAndroidX"
+else
+  say BAD "samples/hello-medha/gradle.properties must set android.useAndroidX=true"; fail=1
+fi
+# INTERNET is required even for 127.0.0.1: Android gates socket() on it and
+# loopback is not exempt. Its absence fails at runtime with an opaque
+# "socket failed: EPERM", not at build time -- so it has to be checked here.
+if grep -q "android.permission.INTERNET" samples/hello-medha/app/src/main/AndroidManifest.xml 2>/dev/null; then
+  say OK "sample declares INTERNET (needed even for loopback)"
+else
+  say BAD "sample manifest must declare android.permission.INTERNET"; fail=1
+fi
+# Visibility is still declared by intent action rather than a fixed package.
+# v0.9.0 pinned the applicationId to com.adabala.medha for every variant, so a
+# literal package name would now work -- but resolving the action keeps working
+# if that ever changes again, and costs nothing.
+if grep -q "com.adabala.medha.action.REQUEST_ACCESS" samples/hello-medha/app/src/main/AndroidManifest.xml 2>/dev/null; then
+  say OK "sample queries Medha by intent action, not fixed package"
+else
+  say BAD "sample manifest must declare <queries><intent> for REQUEST_ACCESS"; fail=1
+fi
+
+echo; echo "Hygiene"
+[ -x gradlew ] && say OK "gradlew is executable" || { say FIX "chmod +x gradlew"; }
+if find . -name "*[{}]*" -not -path "./.git/*" | grep -q .; then
+  say BAD "filenames with braces (some extractors fail on these)"; fail=1
+else say OK "no problematic filenames"; fi
+if [ -d medha ]; then say BAD "nested medha/ folder - flatten it"; fail=1; fi
+
+# BuildInfo.VERSION drifted from app/build.gradle.kts's versionName once
+# already (shipped 0.8.3 with the About page and /system still reporting
+# 0.8.2) because it was a separately hand-maintained literal. It now reads
+# BuildConfig.VERSION_NAME instead, so this just confirms nobody reverts that.
+if grep -q 'const val VERSION = "' app/src/main/java/com/adabala/medha/LocalServer.kt 2>/dev/null; then
+  say BAD "BuildInfo.VERSION is hardcoded again instead of reading BuildConfig.VERSION_NAME"
+  fail=1
+else say OK "BuildInfo.VERSION sources from BuildConfig, not a literal"; fi
+
+# --- absence guards -------------------------------------------------------
+# These check that things are GONE. A presence check cannot catch a feature
+# being reintroduced, and both of these were removed for reasons that still
+# hold: SMS permissions trip Play Protect on a sideloaded APK, and a variable
+# applicationId breaks every consumer that has to name the package.
+#
+# These match CODE TOKENS, not the word "sms". A blanket word match also hits
+# the comments that explain why SMS was removed, and a guard that cries wolf
+# on its own rationale is a guard somebody deletes.
+SMS_TOKENS='SmsConnector|READ_SMS|SEND_SMS|RECEIVE_SMS|READ_CONTACTS|"sms\.read"|"sms\.send"|/connectors/sms|R\.id\.nav_sms|R\.string\.sms_|R\.drawable\.ic_sms'
+if grep -rqE "$SMS_TOKENS" app/src 2>/dev/null; then
+  say BAD "SMS code is back in app/src -- removed in v0.9.0 (Play Protect)"
+  grep -rlE "$SMS_TOKENS" app/src 2>/dev/null | sed 's/^/           /'
+  fail=1
+else say OK "no SMS code or permissions in app/src"; fi
+
+# Strip // and # comments before matching, same reason.
+gradle_code() { sed 's|//.*||' app/build.gradle.kts; }
+if gradle_code | grep -q "applicationIdSuffix"; then
+  say BAD "applicationIdSuffix is back -- the package must stay com.adabala.medha"
+  fail=1
+else say OK "applicationId is com.adabala.medha for every variant"; fi
+
+# The widget row count used to be checked here, against one layout and one
+# provider. There are three of each now, so it moved into
+# tools/check_widget_wiring.py (run above), which compares the manifest
+# receiver, the provider xml, the layout and the provider class for every
+# size -- and catches the v0.9.0 failure this block was written for, where a
+# three-row layout faced a server accepting five items and dropped two in
+# silence.
+
+if gradle_code | grep -q "productFlavors"; then
+  say BAD "product flavours are back -- v0.9.0 collapsed them to one variant"
+  fail=1
+else say OK "single build variant, no flavour dimension"; fi
+
+echo
+if [ "$fail" -eq 0 ]; then
+  echo "Ready.  ./gradlew assembleDebug"
+  echo "        ./gradlew assembleRelease"
+else
+  echo "Fix the items above first."; exit 1
+fi
+
+echo
+echo "Pure-logic tests (SchedulerConfig, Embedder — no Android SDK needed)"
+./tools/tests/run.sh || { echo "Pure-logic tests failed."; exit 1; }
+
+echo
+# Before anything else: a file deleted by a release but left behind by a zip
+# extracted over an old checkout makes every check below report a symptom
+# rather than the cause.
+python3 tools/check_stale.py || { echo "Stale file check failed."; exit 1; }
+
+python3 tools/check_resources.py || { echo "Resource reference check failed."; exit 1; }
+
+# CI is the only way this project gets built, so a broken workflow means no
+# APK at all -- and these failures happen during provisioning, before
+# anything compiles, so the logs look nothing like a build problem.
+python3 tools/check_workflows.py || { echo "Workflow check failed."; exit 1; }
+
+# A widget layout using a non-@RemoteView class is valid XML, compiles,
+# lints clean, and simply cannot be placed -- the launcher says
+# "Couldn't add widget." and the app logs nothing. v0.9.7 shipped exactly
+# that. Nothing else here can see it.
+python3 tools/check_widget_layouts.py || { echo "Widget layout check failed."; exit 1; }
+
+# The same widget, checked the other way: the manifest receiver, the
+# appwidget-provider xml, the layout and the provider class all name each
+# other, and nothing but this compares them.
+python3 tools/check_widget_wiring.py || { echo "Widget wiring check failed."; exit 1; }
+
+# A dialog nobody can open is a feature removed without anyone saying so.
+python3 tools/check_reachable.py || { echo "Reachability check failed."; exit 1; }
+
+# The sample clients mirror the server's caps on purpose, so a client shows
+# the user the loss locally instead of posting 20 items and being handed back
+# 5. A mirror drifts: MAX_ITEMS_PER_SECTION went 5 -> 20 and both reference
+# clients kept trimming to 5, silently, for every post. The tests could not
+# catch it because they were written against the same literals.
+python3 tools/check_mirrored_caps.py || { echo "Mirrored cap check failed."; exit 1; }
+
+# A dialog that stacks its buttons still works and still looks deliberate --
+# it just reads as a little scrolling list of actions instead of a row. The
+# failure is invisible on the machine that writes the string.
+python3 tools/check_dialog_buttons.py || { echo "Dialog button check failed."; exit 1; }
+
+# The Python client is the only thing here that can be exercised over a
+# REAL HTTP round trip -- a stdlib http.server stands in for Medha -- so
+# it runs unconditionally rather than behind a toolchain check.
+echo
+python3 tools/tests/medha_brief_py_test.py || { echo "Python client tests failed."; exit 1; }

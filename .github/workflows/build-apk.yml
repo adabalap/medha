@@ -1,8 +1,26 @@
 name: Build Medha APK
 
+# Runs on EVERY branch, deliberately.
+#
+# This used to be `branches: [ main, master ]`, which quietly meant the Medha
+# APK was never built on a feature branch -- while build-sample.yml has no
+# branch filter at all and happily built the sample from the same push. Push a
+# feature branch and the only artifact you got back was `hello-medha-apk`,
+# with nothing anywhere saying why the real one was missing.
+#
+# CI is the only way this project gets built, so the main build has to be the
+# one that always runs, not the one that runs least.
+#
+# `'**'` and not `'*'`: a single star does not match a `/`, and this repo's
+# branches are named `feature/20260807-124135`. `'*'` would have looked like a
+# fix and changed nothing.
+#
+# Safe to widen: the release step is gated on `refs/tags/`, so a feature
+# branch builds and uploads an artifact but never publishes a release, and
+# `cache-read-only` keeps non-main branches from writing the shared cache.
 on:
   push:
-    branches: [ main, master ]
+    branches: [ '**' ]
     tags: [ 'v*' ]
   pull_request:
     branches: [ main, master ]
@@ -65,14 +83,165 @@ jobs:
       # two fixes you actually want. Adding `override` to a click handler that
       # merely happens to be named onStart() compiles, then misfires on every
       # lifecycle transition.
+      # kotlinc without android.jar reports thousands of unresolved references,
+      # so a genuinely deleted declaration hides in the noise and only breaks on
+      # a machine with the real classpath. This finds project symbols that are
+      # called but declared nowhere.
+      # FIRST, deliberately. A file deleted by a release but left behind by
+      # a zip extracted over an old checkout breaks the build from behind,
+      # and every later check then reports a true but useless symptom --
+      # v0.13.0's leftover MedhaWidgetProvider.kt surfaced as a missing
+      # string. This names the file instead.
+      - name: Check for stale files
+        run: python3 tools/check_stale.py
+
+      - name: Check for missing declarations
+        run: python3 tools/check_symbols.py app/src/main/java
+
+      # The other half of an "Unresolved reference". check_symbols above
+      # answers "is this function declared where I can see it"; this answers
+      # "is this type imported". v0.18.3 shipped both halves of the same
+      # break at once -- BriefActivity had neither `private fun toast` nor
+      # `import android.widget.Toast` -- and nothing here could see either.
+      - name: Check imports
+        run: python3 tools/check_imports.py app/src/main/java
+
+      # A Material Slider validates in onDraw, so a value that is in range
+      # but off-tick is accepted in silence and crashes the first time the
+      # view is drawn. Both thermal sliders shipped on a v0.17.0 placeholder
+      # range with headroom fractions assigned to them; because they live in
+      # a tab that starts GONE, the crash landed on whoever opened Settings,
+      # and read as the app minimising itself.
+      - name: Check sliders
+        run: python3 tools/check_sliders.py
+
       - name: Check lifecycle overrides
         run: python3 tools/check_overrides.py app/src
+
+      - name: Check resource references
+        run: python3 tools/check_resources.py
+
+      # Catches workflow config that breaks the build before anything is
+      # compiled -- e.g. setup-android requesting the removed legacy
+      # `tools` SDK package, which kills the job during provisioning.
+      - name: Check workflow configuration
+        run: python3 tools/check_workflows.py
+
+      # A widget layout using a class RemoteViews cannot inflate builds
+      # and lints clean, then refuses to be placed on the home screen.
+      - name: Check widget layouts
+        run: python3 tools/check_widget_layouts.py
+
+      # A widget is wired through a manifest receiver, a provider xml, a
+      # layout and a provider class, which reference each other by name
+      # across three languages. check_widget_layouts catches a disallowed
+      # view; this catches a receiver pointing at a layout the class does
+      # not draw into, or a bound R.id that compiles because R.id is global
+      # and then is simply absent at inflation.
+      - name: Check widget wiring
+        run: python3 tools/check_widget_wiring.py
+
+      # v0.17.0 replaced a sixteen-item drawer with three destinations and
+      # wired every entry to its new home except one -- "Add an API client"
+      # had only ever been a button on a dialog that stopped being
+      # reachable, so the whole flow disappeared with a green build.
+      - name: Check every screen can be opened
+        run: python3 tools/check_reachable.py
+
+      # Adding an endpoint is three lines and forgetting the capability
+      # check is one of them -- the route then works, the tests pass, and
+      # any paired client can call it. This found exactly that on
+      # /rag/reindex, where a client paired only for notifications could
+      # name another client's collection and get its chunk counts back.
+      - name: Check route authorization
+        run: python3 tools/check_route_auth.py
+
+      # This sandbox has no Maven access, so nothing here compiles against
+      # Ktor and every Ktor call is written from reading the library source.
+      # v0.11.0 spent a build on `part.streamProvider()`, a Ktor 1.x name
+      # that still exists at 2.3.12 as a jvm-only extension property -- so
+      # the error read as a removed API rather than a missing import. A
+      # blacklist, not a type checker; CI is still the real verifier.
+      - name: Check for Ktor 1.x API names
+        run: python3 tools/check_ktor_api.py
+
+      # The sample clients mirror the server's caps on purpose, so a client
+      # shows the user the loss locally instead of posting 20 items and
+      # being handed back 5. A mirror drifts: MAX_ITEMS_PER_SECTION went
+      # 5 -> 20 and both reference clients kept trimming to 5, silently, for
+      # every post. The tests could not catch it because they were written
+      # against the same literals.
+      - name: Check mirrored caps have not drifted
+        run: python3 tools/check_mirrored_caps.py
+
+      # A MaterialAlertDialog silently stacks its buttons VERTICALLY when
+      # their combined width does not fit, with no warning anywhere. Six
+      # labels were over the line at once, which is what happens when each
+      # is written in isolation with no sense of the row it shares.
+      - name: Check dialog buttons fit on one row
+        run: python3 tools/check_dialog_buttons.py
+
+      # Real HTTP round trips against a stdlib server standing in for
+      # Medha. Needs no Android SDK, no Gradle and no network.
+      - name: Test the Python clients
+        run: |
+          python3 tools/tests/medha_brief_py_test.py
+          # samples/hg-agent-transcribe.py's multipart encoder is
+          # hand-rolled -- the stdlib has none and requests is not worth a
+          # dependency under Termux. A multipart bug produces a truncated
+          # upload that looks like a corrupt audio file on the far side, so
+          # this round-trips real bytes through a stub server and parses
+          # them back with the stdlib's own email parser.
+          python3 -I tools/tests/hg_agent_transcribe_test.py
+
+      # GitHub-hosted runners ship Node.js already; no setup-node step needed.
+      # These test the bundled demo webapp's actual shipped JS (markdown
+      # rendering, SSE frame parsing, and a full jsdom-driven smoke test that
+      # catches script-halting bugs like a variable colliding with a
+      # built-in window property — the exact bug this test suite exists
+      # because of, see webapp_smoke_test.js).
+      - name: Test demo webapp JS
+        run: |
+          node tools/tests/webapp_markdown_test.js
+          node tools/tests/webapp_sse_test.js
+          cd tools/tests && npm install --no-audit --no-fund && cd ../..
+          node tools/tests/webapp_smoke_test.js
+          node tools/tests/sample_pwa_smoke_test.js
+          node tools/tests/medha_brief_client_test.js
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+
+      # The Kotlin pure-logic tests (NetPolicyTest, AccessContractTest,
+      # SchedulerConfigTest, EmbedderTest) run against the real sources with
+      # no Android SDK and no Gradle. Until v0.9.0 they existed but CI never
+      # ran them, so "the tests pass" meant "they passed on someone's laptop
+      # at some point". NetPolicyTest covers the origin-matching and pairing
+      # logic that decides which web apps can drive the device, which is not
+      # something to leave unrun.
+      - name: Cache kotlinc
+        id: kotlinc-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/kotlinc
+          key: kotlinc-2.0.21
+
+      - name: Install kotlinc
+        if: steps.kotlinc-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          curl -sSL -o /tmp/kotlin.zip \
+            https://github.com/JetBrains/kotlin/releases/download/v2.0.21/kotlin-compiler-2.0.21.zip
+          unzip -q /tmp/kotlin.zip -d "$HOME"
+          "$HOME/kotlinc/bin/kotlinc" -version
+
+      - name: Pure-logic tests
+        run: |
+          export PATH="$HOME/kotlinc/bin:$PATH"
+          ./tools/tests/run.sh
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -81,6 +250,28 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # MUST be set explicitly. The action's default for this input is
+          # "tools platform-tools", and Google has removed the deprecated
+          # legacy `tools` package from the SDK repository index. sdkmanager
+          # then reports
+          #
+          #     Warning: Failed to find package 'tools'
+          #     Error: ... sdkmanager failed with exit code 1
+          #
+          # and the job dies during provisioning, before anything is compiled
+          # -- so the log looks nothing like a build problem. Overriding the
+          # input drops `tools` from the request.
+          #
+          # Do NOT "tidy this up" by removing the `with:` block, and do not
+          # set it to an empty string: it has to be a non-empty list that
+          # simply excludes `tools`. platform-tools is enough here because AGP
+          # downloads the platform and build-tools it needs itself, and this
+          # action has already accepted the licences.
+          #
+          # Upstream: android-actions/setup-android#537. Once their default
+          # drops `tools`, this block becomes redundant rather than wrong.
+          packages: "platform-tools"
 
       # The wrapper is committed, so this normally does nothing.
       #
@@ -126,8 +317,49 @@ jobs:
           echo "$MEDHA_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/medha.jks"
           echo "available=true" >> "$GITHUB_OUTPUT"
 
+      # One retry, and it is specifically for dependency resolution.
+      #
+      # v0.20.0's first CI run died configuring the root project: AGP's own
+      # plugin classpath could not resolve com.android.tools.build:apkzlib,
+      # four levels down from com.android.application. Nothing in the repo had
+      # changed -- build.gradle.kts, settings.gradle.kts and the wrapper were
+      # byte-identical to the previous green build, and the pure-Kotlin tests
+      # and every checker had already passed in the same job.
+      #
+      # Two things make that failure sticky rather than momentary:
+      #
+      #   1. `cache-read-only` is true on every branch but main, so the Gradle
+      #      dependency cache is restored from main and never written back. A
+      #      cache holding a partial download or a cached "not found" for one
+      #      artifact therefore replays on every feature-branch run, and no
+      #      amount of re-running clears it.
+      #   2. Gradle caches a missing-module result for a TTL. Once a Google
+      #      Maven hiccup is recorded, later runs do not retry the network --
+      #      which is exactly why the log shows a dependency PATH and no
+      #      download error underneath it.
+      #
+      # So: try normally, and on failure try once more with
+      # --refresh-dependencies, which ignores cached metadata and cached
+      # misses and goes back to the network. A poisoned cache or a momentary
+      # outage becomes a slower build instead of a red one.
+      #
+      # --info on the retry because the first attempt's output is the thing
+      # that was not actionable: Gradle prints the path it was resolving but
+      # not which repositories it tried or what each said. If the retry fails
+      # too, the log then names the real cause, and the cache is no longer a
+      # suspect -- which is the point.
+      #
+      # Deliberately NOT a blanket retry of the whole build: a compile error
+      # or a failing test must fail the first time and stay failed. The
+      # second attempt runs the same task, so anything that is genuinely
+      # broken in the code fails again in the same way.
       - name: Build debug APK
-        run: ./gradlew assembleCoreDebug assembleFullDebug --stacktrace --no-daemon
+        run: |
+          if ./gradlew assembleDebug --stacktrace --no-daemon; then
+            exit 0
+          fi
+          echo "::warning::Gradle failed; retrying once with --refresh-dependencies in case the dependency cache is stale or a repository blipped."
+          ./gradlew assembleDebug --stacktrace --no-daemon --refresh-dependencies --info
 
       - name: Build release APK
         if: steps.signing.outputs.available == 'true'
@@ -136,7 +368,7 @@ jobs:
           MEDHA_KEYSTORE_PASSWORD: ${{ secrets.MEDHA_KEYSTORE_PASSWORD }}
           MEDHA_KEY_ALIAS: ${{ secrets.MEDHA_KEY_ALIAS }}
           MEDHA_KEY_PASSWORD: ${{ secrets.MEDHA_KEY_PASSWORD }}
-        run: ./gradlew assembleCoreRelease assembleFullRelease --stacktrace --no-daemon
+        run: ./gradlew assembleRelease --stacktrace --no-daemon
 
       # AGP always writes app-<buildType>.apk. Renaming here rather than via the
       # Variant API keeps the build script free of AGP-version-specific plumbing.
@@ -146,18 +378,25 @@ jobs:
           mkdir -p dist
           V="${{ steps.ver.outputs.version }}"
           SHA=$(git rev-parse --short HEAD)
-          # Flavour builds land in apk/<flavour>/<buildType>/.
-          for FLAV in core full; do
-            for BT in debug release; do
-              APK=$(ls app/build/outputs/apk/$FLAV/$BT/*.apk 2>/dev/null | head -1 || true)
-              [ -n "$APK" ] && cp "$APK" "dist/medha-$V-$FLAV-$BT-$SHA.apk"
-            done
+          # Single variant since v0.9.0: APKs land in apk/<buildType>/ with no
+          # flavour directory in the path. Previously this loop walked
+          # apk/<flavour>/<buildType>/ for core and full.
+          for BT in debug release; do
+            APK=$(ls app/build/outputs/apk/$BT/*.apk 2>/dev/null | head -1 || true)
+            [ -n "$APK" ] && cp "$APK" "dist/medha-$V-$BT-$SHA.apk"
           done
           ls -la dist/
+          # The upload step is set to fail on an empty dist/, but failing here
+          # names the actual cause instead of blaming the uploader.
+          if [ -z "$(ls -A dist/ 2>/dev/null)" ]; then
+            echo "::error::no APKs found under app/build/outputs/apk/ -- did the variant layout change?"
+            find app/build/outputs/apk -name '*.apk' 2>/dev/null || true
+            exit 1
+          fi
 
       - name: Lint
         continue-on-error: true
-        run: ./gradlew lintCoreDebug --no-daemon
+        run: ./gradlew lintDebug --no-daemon
 
       - name: Upload APKs
         uses: actions/upload-artifact@v4
@@ -172,7 +411,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lint-report
-          path: app/build/reports/lint-results-coreDebug.html
+          path: app/build/reports/lint-results-debug.html
           if-no-files-found: ignore
 
       - name: Publish release (tags only)

@@ -5,6 +5,8 @@ import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import com.adabala.medha.connect.CapturePolicy
+import com.adabala.medha.connect.SavePolicy
 
 /**
  * Medha's long-term memory. Plain SQLite, hand-written SQL.
@@ -24,8 +26,8 @@ import android.database.sqlite.SQLiteOpenHelper
  * NOT drop user data. (v1 dropped every table on upgrade, silently destroying
  * all stored conversations on any schema bump.)
  */
-class MedhaDatabase private constructor(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, DB_NAME, null, DB_VERSION) {
+class MedhaDatabase private constructor(context: Context, dbName: String) :
+    SQLiteOpenHelper(context.applicationContext, dbName, null, DB_VERSION) {
 
     @Volatile private var ftsAvailable: Boolean = true
 
@@ -100,6 +102,71 @@ class MedhaDatabase private constructor(context: Context) :
 
         createFts(db)
         createStore(db)
+        createCaptures(db)
+        createSaves(db)
+    }
+
+    /**
+     * The capture log: raw notification observations, with a cursor.
+     *
+     * AUTOINCREMENT is load-bearing and not decoration. Without it SQLite
+     * reuses the highest rowid after a delete, so pruning the oldest rows
+     * would hand later inserts ids a client has already seen — and a
+     * caller polling `?since=` would skip every one of them, silently and
+     * forever. AUTOINCREMENT costs a row in sqlite_sequence and guarantees
+     * the cursor only ever moves forward.
+     */
+    private fun createCaptures(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS captures(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                at INTEGER NOT NULL,
+                pkg TEXT NOT NULL,
+                label TEXT NOT NULL,
+                category TEXT,
+                title TEXT NOT NULL,
+                text TEXT NOT NULL
+            )
+            """.trimIndent()
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_captures_at ON captures(at)")
+    }
+
+    /**
+     * The save outbox: things a person pressed Save on, waiting for
+     * Quicksilver to take them.
+     *
+     * AUTOINCREMENT for the same reason as the capture log, and one more
+     * besides: rows here are deleted on acknowledgement rather than by age,
+     * so the table is emptied routinely. Reused ids after an empty would let
+     * an ack for an old id delete a save that arrived afterwards.
+     *
+     * `fp` is UNIQUE, and that index IS the idempotence. The alternative --
+     * checking for an existing row before inserting -- is a race with
+     * itself: two taps a few milliseconds apart both read "absent" and both
+     * insert. Letting SQLite refuse the second one is the only version that
+     * is actually atomic.
+     *
+     * `truncated` records that the text was cut, so the agent can say so
+     * instead of presenting part of a notification as the whole of it.
+     */
+    private fun createSaves(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS saves(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                at INTEGER NOT NULL,
+                postedAt INTEGER NOT NULL,
+                origin TEXT NOT NULL,
+                title TEXT NOT NULL,
+                text TEXT NOT NULL,
+                truncated INTEGER NOT NULL DEFAULT 0,
+                fp TEXT NOT NULL
+            )
+            """.trimIndent()
+        )
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_saves_fp ON saves(fp)")
     }
 
     private fun createStore(db: SQLiteDatabase) {
@@ -118,6 +185,12 @@ class MedhaDatabase private constructor(context: Context) :
 
     override fun onUpgrade(db: SQLiteDatabase, oldV: Int, newV: Int) {
         // Additive migrations only. Never drop user memory.
+        if (oldV < 6) {
+            createSaves(db)
+        }
+        if (oldV < 5) {
+            createCaptures(db)
+        }
         if (oldV < 2) {
             createFts(db)
             if (ftsAvailable) {
@@ -521,6 +594,205 @@ class MedhaDatabase private constructor(context: Context) :
     fun kvDelete(scopedKey: String): Boolean =
         writableDatabase.delete("kv", "scopedKey=?", arrayOf(scopedKey)) > 0
 
+    // ---------------------------------------------------------------- captures
+
+    /** One observed notification. [id] is the cursor value. */
+    data class Capture(
+        val id: Long,
+        val at: Long,
+        val pkg: String,
+        val label: String,
+        val category: String?,
+        val title: String,
+        val text: String
+    )
+
+    /**
+     * Records an observation and enforces both retention bounds.
+     *
+     * Pruning here rather than on a timer: an insert is the only moment the
+     * log can grow, so it is the only moment it can need trimming, and a
+     * separate schedule is one more thing that can quietly stop running.
+     */
+    fun captureAdd(
+        at: Long,
+        pkg: String,
+        label: String,
+        category: String?,
+        title: String,
+        text: String
+    ): Long {
+        val db = writableDatabase
+        val v = ContentValues().apply {
+            put("at", at)
+            put("pkg", pkg)
+            put("label", label)
+            put("category", category)
+            put("title", title)
+            put("text", text)
+        }
+        val id = db.insert("captures", null, v)
+        prune(db, at)
+        return id
+    }
+
+    private fun prune(db: SQLiteDatabase, now: Long) {
+        db.delete("captures", "at < ?", arrayOf(CapturePolicy.cutoff(now).toString()))
+        val count = simpleCount("captures")
+        val over = CapturePolicy.overBy(count)
+        if (over > 0) {
+            // By id, not by `at`: ids are monotonic and `at` comes from the
+            // posting app's clock, which can go backwards.
+            db.execSQL(
+                "DELETE FROM captures WHERE id IN " +
+                    "(SELECT id FROM captures ORDER BY id ASC LIMIT ?)",
+                arrayOf<Any>(over)
+            )
+        }
+    }
+
+    /** Observations after [since], oldest first, at most [limit]. */
+    fun capturesSince(since: Long, limit: Int): List<Capture> =
+        readableDatabase.rawQuery(
+            "SELECT id, at, pkg, label, category, title, text FROM captures " +
+                "WHERE id > ? ORDER BY id ASC LIMIT ?",
+            arrayOf(since.toString(), limit.toString())
+        ).use { c ->
+            buildList {
+                while (c.moveToNext()) {
+                    add(
+                        Capture(
+                            c.getLong(0), c.getLong(1), c.getString(2), c.getString(3),
+                            if (c.isNull(4)) null else c.getString(4),
+                            c.getString(5), c.getString(6)
+                        )
+                    )
+                }
+            }
+        }
+
+    /**
+     * The highest id in the log, or 0 when it is empty.
+     *
+     * A caller that has consumed everything needs a cursor to resume from,
+     * and the last row of an empty page cannot supply one.
+     */
+    fun capturesHead(): Long =
+        readableDatabase.rawQuery("SELECT COALESCE(MAX(id), 0) FROM captures", null)
+            .use { c -> if (c.moveToFirst()) c.getLong(0) else 0L }
+
+    /**
+     * Empties the log, returning how many rows went.
+     *
+     * Called when no client holds the capture capability, which is the only
+     * thing that justifies the log existing. Revocation has to delete what
+     * was already collected, not merely stop collection: otherwise turning
+     * it off leaves a fortnight of notification history on the device,
+     * readable in full by whatever is granted the capability next.
+     *
+     * Not `DROP TABLE`: the schema stays so a later grant does not need a
+     * migration, and the ids keep climbing from where they were, so a stale
+     * cursor held by a revoked client cannot be replayed against new rows.
+     */
+    fun capturesClear(): Int = writableDatabase.delete("captures", null, null)
+
+    // ------------------------------------------------------------------ saves
+
+    /** One thing a person asked to keep. [id] is the cursor and the ack key. */
+    data class Save(
+        val id: Long,
+        val at: Long,
+        val postedAt: Long,
+        val origin: String,
+        val title: String,
+        val text: String,
+        val truncated: Boolean
+    )
+
+    /**
+     * Records a save. Returns the new row id, or -1 when this exact save is
+     * already waiting.
+     *
+     * CONFLICT_IGNORE rather than a read-then-write: two taps in the same
+     * handful of milliseconds would both see an empty table. -1 is not an
+     * error here, it is the answer to "did that do anything" -- the caller
+     * uses it to say "Saved" or "Already saved" instead of claiming a second
+     * save happened.
+     */
+    fun saveAdd(
+        at: Long,
+        postedAt: Long,
+        origin: String,
+        title: String,
+        text: String,
+        truncated: Boolean,
+        fp: String
+    ): Long {
+        val db = writableDatabase
+        val v = ContentValues().apply {
+            put("at", at)
+            put("postedAt", postedAt)
+            put("origin", origin)
+            put("title", title)
+            put("text", text)
+            put("truncated", if (truncated) 1 else 0)
+            put("fp", fp)
+        }
+        val id = db.insertWithOnConflict("saves", null, v, SQLiteDatabase.CONFLICT_IGNORE)
+        if (id != -1L) pruneSaves(db, at)
+        return id
+    }
+
+    private fun pruneSaves(db: SQLiteDatabase, now: Long) {
+        db.delete("saves", "at < ?", arrayOf(SavePolicy.cutoff(now).toString()))
+        val over = SavePolicy.overBy(simpleCount("saves"))
+        if (over > 0) {
+            db.execSQL(
+                "DELETE FROM saves WHERE id IN (SELECT id FROM saves ORDER BY id ASC LIMIT ?)",
+                arrayOf<Any>(over)
+            )
+        }
+    }
+
+    /** Pending saves after [since], oldest first, at most [limit]. */
+    fun savesSince(since: Long, limit: Int): List<Save> =
+        readableDatabase.rawQuery(
+            "SELECT id, at, postedAt, origin, title, text, truncated FROM saves " +
+                "WHERE id > ? ORDER BY id ASC LIMIT ?",
+            arrayOf(since.toString(), limit.toString())
+        ).use { c ->
+            buildList {
+                while (c.moveToNext()) {
+                    add(
+                        Save(
+                            c.getLong(0), c.getLong(1), c.getLong(2), c.getString(3),
+                            c.getString(4), c.getString(5), c.getInt(6) != 0
+                        )
+                    )
+                }
+            }
+        }
+
+    fun savesHead(): Long =
+        readableDatabase.rawQuery("SELECT COALESCE(MAX(id), 0) FROM saves", null)
+            .use { c -> if (c.moveToFirst()) c.getLong(0) else 0L }
+
+    fun savesPending(): Int = simpleCount("saves")
+
+    /**
+     * Drops everything up to and including [through], once Quicksilver says
+     * it has them.
+     *
+     * This is why delivery can be at-least-once without duplicating
+     * anything: if the agent creates the notes and then dies before acking,
+     * it reads the same rows again next time, and its own insert is keyed on
+     * the save's fingerprint so the second attempt lands on the row it
+     * already made. The guarantee lives on the consumer side, where it can
+     * actually be enforced.
+     */
+    fun savesAck(through: Long): Int =
+        writableDatabase.delete("saves", "id <= ?", arrayOf(through.toString()))
+
     fun kvDeleteByClient(clientId: String): Int =
         writableDatabase.delete("kv", "clientId=?", arrayOf(clientId))
 
@@ -606,7 +878,7 @@ class MedhaDatabase private constructor(context: Context) :
 
     companion object {
         private const val DB_NAME = "medha.db"
-        private const val DB_VERSION = 4
+        private const val DB_VERSION = 6
 
         /** Hard cap on rows pulled into memory by any single fallback scan. */
         const val MAX_SCAN = 2000
@@ -622,7 +894,21 @@ class MedhaDatabase private constructor(context: Context) :
 
         fun get(context: Context): MedhaDatabase =
             INSTANCE ?: synchronized(this) {
-                INSTANCE ?: MedhaDatabase(context).also { INSTANCE = it }
+                INSTANCE ?: MedhaDatabase(context, DB_NAME).also { INSTANCE = it }
             }
+
+        /**
+         * Test-only construction path that bypasses the process-wide
+         * [INSTANCE] cache. Instrumented tests exercise real on-disk SQLite
+         * upgrade behavior (see `MedhaDatabaseMigrationTest`), and each test
+         * needs its own independently-named database file rather than
+         * sharing whatever instance [get] has already cached in that test
+         * process — otherwise the second test to run would silently reuse
+         * the first test's already-upgraded database instead of exercising
+         * its own upgrade path.
+         */
+        @androidx.annotation.VisibleForTesting
+        fun forTesting(context: Context, dbName: String): MedhaDatabase =
+            MedhaDatabase(context, dbName)
     }
 }
